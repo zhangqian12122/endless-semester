@@ -1,0 +1,11 @@
+{
+  "name": "endless-semester-graybox",
+  "version": "0.3.0",
+  "description": "学生、星座与宠物羁绊主题的零依赖浏览器卡牌构筑游戏灰盒",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test"
+  }
+}
