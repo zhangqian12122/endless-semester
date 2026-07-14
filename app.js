@@ -12,8 +12,7 @@ import {
   PET_TALENT_DEFS,
   RARITY_LABELS,
   PUBLIC_REWARD_CARD_IDS,
-  SAFE_EVENT_IDS,
-  WEEK_PLAN
+  SAFE_EVENT_IDS
 } from "./game-data.js";
 import { SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
@@ -114,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.9 选牌建议</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.0 随机路线</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -210,7 +209,12 @@ function renderIntro() {
 }
 
 function renderMap() {
-  const nodes = WEEK_PLAN[game.week] || [];
+  const nodes = game.semesterPlan[game.week] || [];
+  const previewWeeks = Array.from(
+    { length: Math.min(4, Math.max(0, 16 - game.week)) },
+    (_, index) => game.week + index + 1
+  );
+  const nodeTypeName = (type) => ({ combat: "战斗", event: "未知", rest: "休息", shop: "商店" }[type]);
   const body = `
     <div class="semester-progress">
       ${Array.from({ length: 16 }, (_, index) => {
@@ -222,20 +226,36 @@ function renderMap() {
     </div>
     <div class="route-callout">
       <div><small>当前目标</small><strong>${game.week === 16 ? "通过期末考试" : `完成第 ${game.week} 周`}</strong></div>
-      <p>${game.week === 8 ? "期中精英战：拖得越久，伤害越高。" : game.week === 16 ? "一切意图都公开。用你的构筑交卷。" : "选择一条路线。完成后进入下一周。"}</p>
+      <p>${game.week === 8 ? "期中精英战：拖得越久，伤害越高。" : game.week === 16 ? "一切意图都公开。用你的构筑交卷。" : "本学期路线已经确定；先看四周，再选择本周节点。"}</p>
     </div>
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
+    ${previewWeeks.length ? `
+      <section class="route-preview" aria-label="未来四周路线">
+        <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>同一学期不会重随</span></div>
+        <div class="route-preview-weeks">
+          ${previewWeeks.map((week) => `
+            <article class="preview-week">
+              <small>第 ${week} 周</small>
+              <div class="preview-options">
+                ${game.semesterPlan[week].map((node) => `
+                  <span class="preview-option preview-${node.type}" title="${escapeHtml(node.label)}">
+                    <b>${ICONS[node.type]}</b><em>${nodeTypeName(node.type)}</em>
+                  </span>`).join("")}
+              </div>
+            </article>`).join("")}
+        </div>
+      </section>` : ""}
     <div class="node-grid">
       ${nodes.map((node, index) => `
         <button class="route-node node-${node.type}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${node.type === "combat" ? "战斗" : node.type === "event" ? "未知" : node.type === "rest" ? "休息" : "商店"}</small><strong>${node.label}</strong></span>
+          <span><small>${nodeTypeName(node.type)}</small><strong>${node.label}</strong></span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
-    <div class="map-tip"><b>本周规则：</b>你只需在可选节点中走一个；没有隐藏伤害，敌人下一步会在战斗中明确显示。</div>`;
+    <div class="map-tip"><b>路线规则：</b>第 1、2、8、16 周为固定考验，其余周提供两个不同类型的节点；每学期至少出现两次休息和两次商店机会。</div>`;
   return page(`第 ${game.week} 周`, `第 ${game.semester} 学期 · 16 周路线`, body, {
-    description: game.week < 8 ? "先建立构筑，再迎接期中考验。" : "越接近期末，卡组的缺点越难隐藏。",
+    description: game.week < 8 ? "路线在学期开始时生成并保存，可以提前规划构筑与补给。" : "越接近期末，卡组的缺点越难隐藏。",
     className: "map-page"
   });
 }
@@ -1056,7 +1076,7 @@ app.addEventListener("click", (event) => {
   } else if (action === "map") {
     if (screen !== "map") setToast("请先完成当前节点");
   } else if (action === "choose-node") {
-    startNode(WEEK_PLAN[game.week][Number(button.dataset.index)]);
+    startNode(game.semesterPlan[game.week][Number(button.dataset.index)]);
   } else if (action === "play-card") {
     const result = game.playCard(button.dataset.uid);
     if (!result.ok) setToast(result.reason);

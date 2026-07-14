@@ -17,6 +17,59 @@ const STARTING_DECK_CORE = [
   "cramming"
 ];
 
+const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
+
+function makeRouteNode(type, week, options = {}) {
+  if (type === "combat") {
+    const enemy = options.enemy;
+    const fixedLabels = {
+      1: "教学战：瞌睡虫",
+      2: "宠物教学：作业团",
+      8: "期中精英：卷王幻影",
+      16: "期末Boss：期末考试"
+    };
+    return { type, enemy, label: fixedLabels[week] || `普通战斗：${ENEMY_DEFS[enemy].name}` };
+  }
+  if (type === "event") {
+    const pool = options.pool === "safe" ? "safe" : "all";
+    return { type, pool, label: pool === "safe" ? "？ 低风险校园事件" : "？ 未知事件" };
+  }
+  if (type === "rest") return { type, label: "休息节点" };
+  return { type: "shop", label: "校园商店" };
+}
+
+function normalizeSemesterPlan(data) {
+  if (!Array.isArray(data) || data.length !== 17) return null;
+  const plan = Array.from({ length: 17 }, () => []);
+  let restOptions = 0;
+  let shopOptions = 0;
+  for (let week = 1; week <= 16; week += 1) {
+    const rawNodes = data[week];
+    const expectedCount = FIXED_ROUTE_WEEKS.has(week) ? 1 : 2;
+    if (!Array.isArray(rawNodes) || rawNodes.length !== expectedCount) return null;
+    const types = new Set();
+    for (const raw of rawNodes) {
+      if (!raw || !["combat", "event", "rest", "shop"].includes(raw.type) || types.has(raw.type)) return null;
+      types.add(raw.type);
+      if (raw.type === "combat") {
+        if (!ENEMY_DEFS[raw.enemy]) return null;
+        if (!FIXED_ROUTE_WEEKS.has(week) && ENEMY_DEFS[raw.enemy].kind !== "normal") return null;
+        plan[week].push(makeRouteNode("combat", week, { enemy: raw.enemy }));
+      } else if (raw.type === "event") {
+        plan[week].push(makeRouteNode("event", week, { pool: raw.pool }));
+      } else {
+        plan[week].push(makeRouteNode(raw.type, week));
+        if (raw.type === "rest") restOptions += 1;
+        if (raw.type === "shop") shopOptions += 1;
+      }
+    }
+  }
+  if (plan[1][0]?.enemy !== "sleepyBug" || plan[2][0]?.enemy !== "homeworkBlob"
+    || plan[8][0]?.enemy !== "rivalShadow" || plan[16][0]?.enemy !== "finalExam") return null;
+  if (restOptions < 2 || shopOptions < 2) return null;
+  return plan;
+}
+
 function startingDeckFor(archetypeId) {
   const archetype = ARCHETYPE_DEFS[archetypeId] || ARCHETYPE_DEFS.cancer;
   return [...STARTING_DECK_CORE, archetype.specialCard];
@@ -135,6 +188,7 @@ export class SemesterGame {
     this.rewardIndex = 0;
     this.tutorialSeen = false;
     this.combat = null;
+    this.semesterPlan = this.generateSemesterPlan();
   }
 
   get archetype() {
@@ -212,6 +266,52 @@ export class SemesterGame {
 
   randomEnemy() {
     return this.rng.pick(NORMAL_ENEMY_IDS);
+  }
+
+  generateSemesterPlan() {
+    const plan = Array.from({ length: 17 }, () => []);
+    plan[1] = [makeRouteNode("combat", 1, { enemy: "sleepyBug" })];
+    plan[2] = [makeRouteNode("combat", 2, { enemy: "homeworkBlob" })];
+    plan[8] = [makeRouteNode("combat", 8, { enemy: "rivalShadow" })];
+    plan[16] = [makeRouteNode("combat", 16, { enemy: "finalExam" })];
+
+    const anchors = {
+      3: { type: "event", pool: "safe" },
+      4: { type: "combat", enemy: "phoneSpirit" },
+      5: { type: "rest" },
+      6: { type: "combat", enemy: "alarmClock" },
+      7: { type: "shop" },
+      9: { type: "rest" },
+      10: { type: "event", pool: "all" },
+      11: { type: "combat" },
+      12: { type: "shop" },
+      13: { type: "event", pool: "all" },
+      14: { type: "combat" },
+      15: { type: "combat" }
+    };
+    let restOptions = 2;
+    let shopOptions = 2;
+    for (const week of Object.keys(anchors).map(Number)) {
+      const anchor = anchors[week];
+      const anchorNode = makeRouteNode(anchor.type, week, {
+        enemy: anchor.type === "combat" ? (anchor.enemy || this.randomEnemy()) : undefined,
+        pool: anchor.pool
+      });
+      let candidates = ["combat", "combat", "event", "event", "rest", "shop"]
+        .filter((type) => type !== anchor.type)
+        .filter((type) => type !== "rest" || restOptions < 4)
+        .filter((type) => type !== "shop" || shopOptions < 3);
+      if (!candidates.length) candidates = ["combat", "event"].filter((type) => type !== anchor.type);
+      const alternateType = this.rng.pick(candidates);
+      if (alternateType === "rest") restOptions += 1;
+      if (alternateType === "shop") shopOptions += 1;
+      const alternateNode = makeRouteNode(alternateType, week, {
+        enemy: alternateType === "combat" ? this.randomEnemy() : undefined,
+        pool: week <= 3 ? "safe" : "all"
+      });
+      plan[week] = this.rng.shuffle([anchorNode, alternateNode]);
+    }
+    return plan;
   }
 
   randomItem({ rarity, allowBoss = false } = {}) {
@@ -729,6 +829,7 @@ export class SemesterGame {
     this.maxHp += 2;
     this.hp = this.maxHp;
     this.combat = null;
+    this.semesterPlan = this.generateSemesterPlan();
   }
 
   toJSON() {
@@ -750,6 +851,7 @@ export class SemesterGame {
       flags: { ...this.flags },
       rewardIndex: this.rewardIndex,
       tutorialSeen: this.tutorialSeen,
+      semesterPlan: this.semesterPlan.map((nodes) => nodes.map((node) => ({ ...node }))),
       stats: {
         ...this.stats,
         cardPlays: { ...this.stats.cardPlays }
@@ -793,6 +895,9 @@ export class SemesterGame {
     game.flags = { ...game.flags, ...(data.flags || {}) };
     game.rewardIndex = Math.max(0, Number(data.rewardIndex) || 0);
     game.tutorialSeen = Boolean(data.tutorialSeen);
+    const savedRngState = game.rng.state;
+    game.semesterPlan = normalizeSemesterPlan(data.semesterPlan) || game.generateSemesterPlan();
+    game.rng.state = savedRngState;
     if (data.stats && typeof data.stats === "object") {
       const defaults = game.stats;
       game.stats = {
