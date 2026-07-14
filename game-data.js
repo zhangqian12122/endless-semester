@@ -333,6 +333,28 @@ export const ENEMY_DEFS = {
       { name: "边刷边撞", attack: 5, debuff: "distracted" }
     ]
   },
+  groupChat: {
+    id: "groupChat", name: "群聊99+", maxHp: 26, kind: "normal",
+    subtitle: "你不回复，它也会自己越聊越多。",
+    pattern: "攻击 3×2 → 塞入 1 张紧张 → 攻击 5 并塞紧张",
+    tip: "多段攻击会逐段消耗护甲；紧张会污染下一轮抽牌，适合尽快解决。",
+    intents: [
+      { name: "消息轰炸", attack: 3, hits: 2 },
+      { name: "疯狂艾特", addStatus: { id: "nervous", count: 1, zone: "discard" } },
+      { name: "催你回复", attack: 5, addStatus: { id: "nervous", count: 1, zone: "discard" } }
+    ]
+  },
+  printerJam: {
+    id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal",
+    subtitle: "越着急，它越能吐出一叠没用的纸。",
+    pattern: "护甲 8 并塞待办 → 攻击 9 → 攻击 4×2",
+    tip: "它卡纸时不会攻击，但会加护甲。用这个回合准备增伤，不要把爆发撞在护甲上。",
+    intents: [
+      { name: "疯狂卡纸", block: 8, addStatus: { id: "todo", count: 1, zone: "discard" } },
+      { name: "突然出纸", attack: 9 },
+      { name: "双面打印", attack: 4, hits: 2 }
+    ]
+  },
   rivalShadow: {
     id: "rivalShadow", name: "卷王幻影", maxHp: 48, kind: "elite",
     subtitle: "每拖一个回合，它都比刚才更强。",
@@ -358,14 +380,14 @@ export const ENEMY_DEFS = {
   }
 };
 
-export const NORMAL_ENEMY_IDS = ["sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit"];
+export const NORMAL_ENEMY_IDS = ["sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit", "groupChat", "printerJam"];
 
 export const ACHIEVEMENT_DEFS = {
   firstWin: { id: "firstWin", icon: "✓", name: "顺利下课", text: "赢得第一场战斗。", metric: "combatsWon", target: 1 },
   cleanWin: { id: "cleanWin", icon: "♥", name: "一滴没掉", text: "无伤赢得一场战斗。", metric: "cleanWins", target: 1 },
   quickWin: { id: "quickWin", icon: "3", name: "三回合下课", text: "在 3 回合内赢得一场战斗。", metric: "quickWins", target: 1 },
   gooseCall: { id: "gooseCall", icon: "鹅", name: "鹅来！", text: "累计让暴躁鹅出手 5 次。", metric: "petUses", target: 5 },
-  campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现全部 4 种普通敌人。", metric: "normalEnemies", target: 4 },
+  campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现任意 4 种普通敌人。", metric: "normalEnemies", target: 4 },
   midtermPass: { id: "midtermPass", icon: "中", name: "期中不挂科", text: "击败一次精英敌人。", metric: "eliteWins", target: 1 },
   finalSubmitted: { id: "finalSubmitted", icon: "末", name: "期末交卷", text: "击败一次期末考试。", metric: "bossWins", target: 1 },
   cardRiver: { id: "cardRiver", icon: "∞", name: "出牌如流水", text: "生涯累计打出 100 张牌。", metric: "cardsPlayed", target: 100 }

@@ -16,6 +16,7 @@ import {
   WEEK_PLAN
 } from "./game-data.js";
 import { SemesterGame, cardDefinition } from "./game-engine.js";
+import { analyzeBuild, BUILD_STYLE_DEFS } from "./build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -113,7 +114,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.7 复盘与成就</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.8 构筑诊断</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -282,6 +283,7 @@ function combatRecapAdvice(summary) {
 function renderCombatResult(combat) {
   const summary = combat.summary || game.combatSummary();
   const enemy = ENEMY_DEFS[summary.enemyId];
+  const build = analyzeBuild(game);
   const unlocked = (combat.newAchievements || []).map((id) => ACHIEVEMENT_DEFS[id]).filter(Boolean);
   return `<div class="result-overlay">
     <div class="result-card recap-card ${combat.status}">
@@ -295,6 +297,7 @@ function renderCombatResult(combat) {
         <span><b>${summary.hpLost}</b>掉血</span>
       </div>
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
+      <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
       ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
       ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
       <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
@@ -449,8 +452,20 @@ function renderSelection() {
   return page(context.title, context.eyebrow || "选择卡牌", body, { description: context.description });
 }
 
+function buildProfileHtml(build, compact = false) {
+  return `<section class="build-profile ${compact ? "compact" : ""}">
+    <div class="build-identity"><span>${build.primary.sign}</span><div><small>当前主流派</small><h2>${build.primary.label}</h2><p>${build.primary.text}</p></div></div>
+    <div class="build-tendencies">
+      ${Object.values(BUILD_STYLE_DEFS).map((style) => `<div><span>${style.label}</span><i><b style="width:${build.tendencies[style.id]}%"></b></i><em>${build.tendencies[style.id]}%</em></div>`).join("")}
+    </div>
+    <div class="build-risk"><small>当前短板</small><strong>${build.risk}</strong><p>${build.suggestion}</p></div>
+  </section>`;
+}
+
 function renderDeck() {
+  const build = analyzeBuild(game);
   const body = `
+    ${buildProfileHtml(build)}
     <div class="collection-summary">
       <span>攻击 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "attack").length}</span>
       <span>技能 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "skill").length}</span>
@@ -524,6 +539,7 @@ function renderRules() {
 
 function renderStats() {
   const stats = game.stats;
+  const build = analyzeBuild(game);
   const winRate = stats.combatsCompleted ? Math.round((stats.combatsWon / stats.combatsCompleted) * 100) : 0;
   const averageTurns = stats.combatsCompleted ? (stats.combatTurns / stats.combatsCompleted).toFixed(1) : "—";
   const averageHpLost = stats.combatsStarted ? (stats.combatHpLost / stats.combatsStarted).toFixed(1) : "—";
@@ -537,6 +553,7 @@ function renderStats() {
       <article><small>累计出牌</small><strong>${stats.cardsPlayed}</strong><span>张</span></article>
       <article><small>宠物出手</small><strong>${stats.petUses}</strong><span>次</span></article>
     </div>
+    ${buildProfileHtml(build, true)}
     <div class="stats-columns">
       <section class="stats-panel">
         <small>构筑选择</small><h2>你怎么拿牌</h2>
@@ -564,7 +581,7 @@ function renderStats() {
 function renderArchive() {
   const achievementTotal = Object.keys(ACHIEVEMENT_DEFS).length;
   const kindLabels = { normal: "普通", elite: "精英", boss: "期末" };
-  const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", rivalShadow: "卷", finalExam: "末" };
+  const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", groupChat: "99", printerJam: "印", rivalShadow: "卷", finalExam: "末" };
   const body = `
     <div class="archive-summary">
       <article><small>已解锁成就</small><strong>${career.unlockedAchievements.length}/${achievementTotal}</strong></article>

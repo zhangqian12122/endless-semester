@@ -2,7 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
-import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
+import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
+import { analyzeBuild } from "../build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -351,6 +352,42 @@ test("生涯档案跨对局记录发现与成就进度", () => {
   const restored = normalizeCareerProfile(JSON.parse(JSON.stringify(profile)));
   assert.equal(restored.cardsPlayed, 6);
   assert.deepEqual(restored.unlockedAchievements, profile.unlockedAchievements);
+});
+
+test("三种学生的初始卡组会识别为各自核心流派", () => {
+  assert.equal(analyzeBuild(new SemesterGame(201, "aries")).primary.id, "offense");
+  assert.equal(analyzeBuild(new SemesterGame(202, "gemini")).primary.id, "cycle");
+  assert.equal(analyzeBuild(new SemesterGame(203, "cancer")).primary.id, "defense");
+});
+
+test("宠物牌与羁绊路线足够集中时识别为鹅鹅协同", () => {
+  const game = new SemesterGame(204, "gemini");
+  game.deck = Array.from({ length: 8 }, () => game.createCard("feedPet"));
+  game.pet.talent = "scout";
+  game.pet.talentLevel = 2;
+  const analysis = analyzeBuild(game);
+  assert.equal(analysis.primary.id, "pet");
+  assert.equal(analysis.risk, "防御密度偏低");
+});
+
+test("随机池新增群聊99+与卡纸打印机，且机制按公开意图执行", () => {
+  assert.ok(NORMAL_ENEMY_IDS.includes("groupChat"));
+  assert.ok(NORMAL_ENEMY_IDS.includes("printerJam"));
+  for (const id of NORMAL_ENEMY_IDS) {
+    assert.ok(ENEMY_DEFS[id].pattern);
+    assert.ok(ENEMY_DEFS[id].tip);
+  }
+
+  const chatGame = new SemesterGame(205, "cancer");
+  chatGame.startCombat("groupChat");
+  chatGame.endTurn();
+  assert.equal(chatGame.hp, 48);
+
+  const printerGame = new SemesterGame(206, "cancer");
+  printerGame.startCombat("printerJam");
+  printerGame.endTurn();
+  assert.equal(printerGame.combat.enemy.block, 8);
+  assert.ok(printerGame.combat.discardPile.some((card) => card.id === "todo"));
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {
