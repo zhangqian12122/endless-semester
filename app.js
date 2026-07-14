@@ -15,7 +15,7 @@ import {
   SAFE_EVENT_IDS
 } from "./game-data.js";
 import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
-import { analyzeBuild, BUILD_STYLE_DEFS, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
+import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -113,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.3 奖励路线</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.4 构筑参谋</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -443,16 +443,33 @@ function availableChallengeItems() {
 
 function renderChallengeReward() {
   const affix = CHALLENGE_AFFIX_DEFS[context.affix];
-  const hasNewItems = availableChallengeItems().length > 0;
+  const availableItems = availableChallengeItems();
+  const hasNewItems = availableItems.length > 0;
+  const advice = challengeRewardGuidance(game, availableItems.length);
+  const recommendedReward = CHALLENGE_REWARD_DEFS[advice.recommendedId];
   const body = `
     <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>奖励只改变本局构筑，不提供跨对局永久数值。</span></div>
+    <div class="challenge-reward-advisor">
+      <span>${advice.build.sign}</span>
+      <div><small>本局构筑参谋</small><b>优先考虑：${recommendedReward.name}</b><p>${advice.options[advice.recommendedId].reason}</p></div>
+      <em>只读取当前构筑并解释判断，不改变奖励内容，也不会自动选择。</em>
+    </div>
     <div class="challenge-reward-grid">
       ${Object.values(CHALLENGE_REWARD_DEFS).map((reward) => {
+        const guide = advice.options[reward.id];
         const text = reward.id === "item" && !hasNewItems
           ? `随身物品已全部收集，选择后改为获得 ${reward.fallbackGold} 校园币。`
           : reward.text;
-        return `<button class="challenge-reward-option reward-${reward.id}" data-action="choose-challenge-reward" data-id="${reward.id}">
-          <span>${reward.icon}</span><small>奖励路线</small><strong>${reward.name}</strong><p>${text}</p><b>选择 →</b>
+        const preview = reward.id === "cards"
+          ? `结算后 ${game.gold + reward.gold} 币 · 再选 1 张牌`
+          : reward.id === "pet"
+            ? `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
+            : hasNewItems
+              ? `结算后 ${game.gold + reward.gold} 币 · 再选 1 件物品`
+              : `结算后 ${game.gold + reward.fallbackGold} 币`;
+        return `<button class="challenge-reward-option reward-${reward.id} ${guide.recommended ? "is-recommended" : ""}" data-action="choose-challenge-reward" data-id="${reward.id}">
+          ${guide.recommended ? '<i class="reward-recommend-badge">本局推荐</i>' : ""}
+          <span>${reward.icon}</span><small>奖励路线</small><strong>${reward.name}</strong><p>${text}</p><em>${guide.reason}</em><b>${preview} · 选择 →</b>
         </button>`;
       }).join("")}
     </div>`;

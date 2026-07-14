@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
-import { analyzeBuild, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
+import { analyzeBuild, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -387,6 +387,38 @@ test("选牌契合评估不会修改卡组或随机数状态", () => {
   const before = JSON.stringify(game.toJSON());
   evaluateCardFit(game, "feedPet");
   choiceGuidance(game, ["feedPet", "catCombo", "holdOn"]);
+  assert.equal(JSON.stringify(game.toJSON()), before);
+});
+
+test("挑战奖励参谋会根据卡组、宠物里程碑和书包状态给出唯一建议", () => {
+  const openBackpack = new SemesterGame(210, "cancer");
+  const itemAdvice = challengeRewardGuidance(openBackpack, 8);
+  assert.equal(itemAdvice.recommendedId, "item");
+  assert.match(itemAdvice.options.item.reason, /6 个空位/);
+  assert.equal(Object.values(itemAdvice.options).filter((option) => option.recommended).length, 1);
+
+  const nearMilestone = new SemesterGame(211, "cancer");
+  nearMilestone.pet.talent = "guardian";
+  nearMilestone.pet.talentLevel = 1;
+  nearMilestone.pet.bond = 8;
+  const petAdvice = challengeRewardGuidance(nearMilestone, 0);
+  assert.equal(petAdvice.recommendedId, "pet");
+  assert.match(petAdvice.options.pet.reason, /8 → 10/);
+
+  const finishedCollection = new SemesterGame(212, "aries");
+  finishedCollection.pet.talent = "fury";
+  finishedCollection.pet.talentLevel = 3;
+  finishedCollection.pet.bond = 25;
+  const cardAdvice = challengeRewardGuidance(finishedCollection, 0);
+  assert.equal(cardAdvice.recommendedId, "cards");
+  assert.match(cardAdvice.options.item.reason, /45 校园币/);
+});
+
+test("挑战奖励参谋只读取本局状态，不修改卡组、统计或随机数", () => {
+  const game = new SemesterGame(213, "gemini");
+  game.pet.bond = 8;
+  const before = JSON.stringify(game.toJSON());
+  challengeRewardGuidance(game, 5);
   assert.equal(JSON.stringify(game.toJSON()), before);
 });
 

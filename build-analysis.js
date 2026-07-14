@@ -167,3 +167,67 @@ export function choiceGuidance(game, cards) {
   if (game.deck.length >= 14) return `当前 ${game.deck.length} 张牌，候选牌都不直接补强主流派；跳过能保持抽牌稳定。`;
   return "本组没有直接补强项；可选择转型，也可以跳过等待更合适的牌。";
 }
+
+export function challengeRewardGuidance(game, availableItemCount = 0) {
+  const analysis = analyzeBuild(game);
+  const deckSize = game.deck.length;
+  const itemCount = game.items.length;
+  const freeItemSlots = Math.max(0, game.backpackCapacity - itemCount);
+  const options = [];
+
+  let cardScore = 40;
+  let cardReason;
+  if (deckSize <= 12) {
+    cardScore += 18;
+    cardReason = `卡组仅 ${deckSize} 张，仍适合补一张强化${analysis.primary.label}的专属牌。`;
+  } else if (deckSize >= 16) {
+    cardScore -= 18;
+    cardReason = `卡组已有 ${deckSize} 张，继续加牌会降低核心牌回手频率。`;
+  } else {
+    cardReason = `卡组 ${deckSize} 张，可寻找${analysis.primary.label}组件，但要留意牌库厚度。`;
+  }
+  options.push({ id: "cards", score: cardScore, reason: cardReason });
+
+  let petScore = 38;
+  let petReason;
+  const nextMilestone = !game.pet.talent ? 3 : game.pet.talentLevel < 2 ? 10 : game.pet.talentLevel < 3 ? 25 : null;
+  const nextBond = game.pet.bond + 2;
+  if (nextMilestone && game.pet.bond < nextMilestone && nextBond >= nextMilestone) {
+    petScore += 24;
+    const milestoneAction = !game.pet.talent ? "选择战斗路线" : game.pet.talentLevel < 2 ? "强化当前路线" : "精通当前路线";
+    petReason = `羁绊 ${game.pet.bond} → ${nextBond}，会立刻到达 ${nextMilestone} 并${milestoneAction}。`;
+  } else if (analysis.primary.id === "pet") {
+    petScore += 25;
+    petReason = `当前主流派是${analysis.primary.label}，羁绊 ${game.pet.bond} → ${nextBond} 能继续强化核心节奏。`;
+  } else if (nextMilestone) {
+    petReason = `羁绊 ${game.pet.bond} → ${nextBond}，距离 ${nextMilestone} 里程碑还 ${Math.max(0, nextMilestone - nextBond)}。`;
+  } else {
+    petScore -= 10;
+    petReason = `宠物路线已经精通；羁绊仍会增加，但不会立即解锁新效果。`;
+  }
+  options.push({ id: "pet", score: petScore, reason: petReason });
+
+  let itemScore;
+  let itemReason;
+  if (availableItemCount <= 0) {
+    itemScore = 18;
+    itemReason = "可收集物品已经拿齐，本路线会折算为 45 校园币。";
+  } else if (freeItemSlots > 0) {
+    itemScore = 42 + Math.min(12, freeItemSlots * 3) + (itemCount === 0 ? 8 : 0) - (availableItemCount === 1 ? 5 : 0);
+    itemReason = `书包还有 ${freeItemSlots} 个空位，当前有 ${availableItemCount} 件未拥有物品可进入候选。`;
+  } else {
+    itemScore = 34;
+    itemReason = `书包已满；仍有 ${availableItemCount} 件新物品，但拿取时必须替换旧物。`;
+  }
+  options.push({ id: "item", score: itemScore, reason: itemReason });
+
+  const recommendedId = options.reduce((best, option) => option.score > best.score ? option : best).id;
+  return {
+    build: analysis.primary,
+    recommendedId,
+    options: Object.fromEntries(options.map((option) => [option.id, {
+      ...option,
+      recommended: option.id === recommendedId
+    }]))
+  };
+}
