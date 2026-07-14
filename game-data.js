@@ -59,6 +59,42 @@ export const ENCHANTMENT_DEFS = {
   }
 };
 
+export const PET_TALENT_DEFS = {
+  fury: {
+    id: "fury",
+    icon: "凶",
+    name: "奶凶路线",
+    tagline: "简单直接，但不会无限膨胀",
+    levels: [
+      { damageBonus: 1, text: "追着啄额外造成 1 点伤害。" },
+      { damageBonus: 2, text: "追着啄额外造成 2 点伤害。" },
+      { damageBonus: 3, text: "追着啄额外造成 3 点伤害。" }
+    ]
+  },
+  guardian: {
+    id: "guardian",
+    icon: "护",
+    name: "护崽路线",
+    tagline: "把宠物出手变成攻防一体",
+    levels: [
+      { block: 3, text: "追着啄后获得 3 点护甲。" },
+      { block: 5, text: "追着啄后获得 5 点护甲。" },
+      { block: 7, text: "追着啄后获得 7 点护甲。" }
+    ]
+  },
+  scout: {
+    id: "scout",
+    icon: "叼",
+    name: "叼笔记路线",
+    tagline: "用一次出手换取更多构筑选择",
+    levels: [
+      { draw: 1, text: "追着啄后抽 1 张牌。" },
+      { draw: 1, nextDrawBonus: 1, text: "追着啄后抽 1 张牌，下回合多抽 1 张。" },
+      { draw: 2, nextDrawBonus: 1, text: "追着啄后抽 2 张牌，下回合多抽 1 张。" }
+    ]
+  }
+};
+
 export const CARD_DEFS = {
   textbookStrike: {
     id: "textbookStrike", name: "课本拍击", type: "attack", rarity: "starter", cost: 1,

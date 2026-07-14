@@ -5,6 +5,7 @@ import {
   ENEMY_DEFS,
   ITEM_DEFS,
   NORMAL_ENEMY_IDS,
+  PET_TALENT_DEFS,
   REGULAR_ITEM_IDS,
   PUBLIC_REWARD_CARD_IDS,
   ARCHETYPE_CARD_IDS
@@ -96,7 +97,15 @@ export class SemesterGame {
     this.deck = startingDeckFor(archetypeId).map((id) => this.createCard(id));
     this.items = [];
     this.backpackCapacity = 6;
-    this.pet = { name: "暴躁鹅", bond: 0, charge: 0, maxCharge: 2 };
+    this.pet = {
+      name: "暴躁鹅",
+      bond: 0,
+      charge: 0,
+      maxCharge: 2,
+      talent: null,
+      talentLevel: 0,
+      pendingMilestone: null
+    };
     this.cardCombatUses = {};
     this.flags = {
       nextCombatTension: 0,
@@ -193,6 +202,45 @@ export class SemesterGame {
       .filter((id) => !this.hasItem(id))
       .filter((id) => !rarity || ITEM_DEFS[id].rarity === rarity);
     return pool.length ? this.rng.pick(pool) : null;
+  }
+
+  petSkillPreview() {
+    const talent = this.pet.talent ? PET_TALENT_DEFS[this.pet.talent] : null;
+    const level = Math.min(3, Math.max(0, Number(this.pet.talentLevel) || 0));
+    const levelEffect = talent && level > 0 ? talent.levels[level - 1] : {};
+    return {
+      damage: 7 + (levelEffect.damageBonus || 0),
+      block: levelEffect.block || 0,
+      draw: levelEffect.draw || 0,
+      nextDrawBonus: levelEffect.nextDrawBonus || 0,
+      talent,
+      level,
+      text: levelEffect.text || "造成 7 点伤害。"
+    };
+  }
+
+  updatePetMilestone() {
+    if (this.pet.pendingMilestone) return this.pet.pendingMilestone;
+    if (!this.pet.talent && this.pet.bond >= 3) this.pet.pendingMilestone = "choose";
+    else if (this.pet.talent && this.pet.talentLevel < 2 && this.pet.bond >= 10) this.pet.pendingMilestone = "upgrade";
+    else if (this.pet.talent && this.pet.talentLevel < 3 && this.pet.bond >= 25) this.pet.pendingMilestone = "master";
+    return this.pet.pendingMilestone;
+  }
+
+  resolvePetMilestone(talentId = null) {
+    const milestone = this.pet.pendingMilestone;
+    if (milestone === "choose") {
+      if (!PET_TALENT_DEFS[talentId]) return false;
+      this.pet.talent = talentId;
+      this.pet.talentLevel = 1;
+    } else if (milestone === "upgrade" || milestone === "master") {
+      if (!PET_TALENT_DEFS[this.pet.talent]) return false;
+      this.pet.talentLevel = Math.min(3, this.pet.talentLevel + 1);
+    } else {
+      return false;
+    }
+    this.pet.pendingMilestone = null;
+    return true;
   }
 
   rewardCards(count = 3, forcedRarity = null) {
@@ -490,9 +538,22 @@ export class SemesterGame {
     combat.energy -= 1;
     combat.petUsed = true;
     this.pet.charge = 0;
-    const damage = this.pet.bond >= 25 ? 10 : this.pet.bond >= 10 ? 9 : this.pet.bond >= 3 ? 8 : 7;
-    const dealt = this.damageEnemy(damage, 1);
-    combat.log.push(`暴躁鹅·追着啄：造成 ${dealt} 伤害。`);
+    const preview = this.petSkillPreview();
+    const dealt = this.damageEnemy(preview.damage, 1);
+    const notes = [`造成 ${dealt} 伤害`];
+    if (preview.block) {
+      combat.playerBlock += preview.block;
+      notes.push(`获得 ${preview.block} 护甲`);
+    }
+    if (preview.draw) {
+      this.drawCards(preview.draw);
+      notes.push(`抽 ${preview.draw} 张牌`);
+    }
+    if (preview.nextDrawBonus) {
+      combat.nextDrawBonus += preview.nextDrawBonus;
+      notes.push(`下回合多抽 ${preview.nextDrawBonus} 张`);
+    }
+    combat.log.push(`暴躁鹅·追着啄：${notes.join("，")}。`);
     this.checkCombatEnd();
     return { ok: true };
   }
@@ -593,6 +654,7 @@ export class SemesterGame {
       combat.status = "won";
       combat.result = "won";
       this.pet.bond += 1;
+      this.updatePetMilestone();
       for (const uid of combat.usedCardUids) {
         if (this.deck.some((card) => card.uid === uid)) {
           this.cardCombatUses[uid] = (this.cardCombatUses[uid] || 0) + 1;
@@ -664,6 +726,15 @@ export class SemesterGame {
     game.items = Array.isArray(data.items) ? data.items.filter((id) => ITEM_DEFS[id]) : [];
     game.backpackCapacity = Math.min(12, Math.max(6, Number(data.backpackCapacity) || 6));
     game.pet = { ...game.pet, ...(data.pet || {}) };
+    if (!PET_TALENT_DEFS[game.pet.talent]) {
+      game.pet.talent = null;
+      game.pet.talentLevel = 0;
+      if (game.pet.pendingMilestone !== "choose") game.pet.pendingMilestone = null;
+    } else {
+      game.pet.talentLevel = Math.min(3, Math.max(1, Number(game.pet.talentLevel) || 1));
+      if (game.pet.pendingMilestone === "choose") game.pet.pendingMilestone = null;
+    }
+    if (![null, "choose", "upgrade", "master"].includes(game.pet.pendingMilestone)) game.pet.pendingMilestone = null;
     game.cardCombatUses = data.cardCombatUses && typeof data.cardCombatUses === "object" ? { ...data.cardCombatUses } : {};
     game.flags = { ...game.flags, ...(data.flags || {}) };
     game.rewardIndex = Math.max(0, Number(data.rewardIndex) || 0);

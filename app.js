@@ -8,6 +8,7 @@ import {
   ENCHANTMENT_DEFS,
   EVENT_DEFS,
   ITEM_DEFS,
+  PET_TALENT_DEFS,
   RARITY_LABELS,
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS,
@@ -78,9 +79,10 @@ function topBar() {
   if (screen === "intro") return "";
   const hpPercent = Math.max(0, (game.hp / game.maxHp) * 100);
   const bondStage = game.pet.bond >= 25 ? "生死之交" : game.pet.bond >= 10 ? "默契搭档" : game.pet.bond >= 3 ? "熟悉伙伴" : "刚认识";
+  const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.4 星座刻印</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.5 宠物路线</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -88,7 +90,7 @@ function topBar() {
       <div class="resource">◎ ${game.gold} 校园币</div>
       <div class="resource">▦ ${game.deck.length} 张牌</div>
       <div class="resource">♢ ${game.items.length}/${game.backpackCapacity} 物品</div>
-      <div class="resource pet-resource">鹅鹅羁绊 ${game.pet.bond} · ${bondStage}</div>
+      <div class="resource pet-resource">鹅鹅羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
       <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
       ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
       ${screen !== "deck" ? '<button class="quiet-button" data-action="open-deck">查看构筑</button>' : ""}
@@ -215,7 +217,12 @@ function renderCombat() {
   const intent = game.getIntent();
   const enemyHp = (combat.enemy.hp / combat.enemy.maxHp) * 100;
   const playerHp = (game.hp / game.maxHp) * 100;
-  const petDamage = game.pet.bond >= 25 ? 10 : game.pet.bond >= 10 ? 9 : game.pet.bond >= 3 ? 8 : 7;
+  const petPreview = game.petSkillPreview();
+  const petExtras = [
+    petPreview.block ? `护甲 ${petPreview.block}` : "",
+    petPreview.draw ? `抽 ${petPreview.draw}` : "",
+    petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
+  ].filter(Boolean).join(" · ");
   const body = `
     <div class="combat-board">
       <section class="fighter player-fighter">
@@ -248,7 +255,7 @@ function renderCombat() {
       <button class="pet-skill ${game.pet.charge >= game.pet.maxCharge && !combat.petUsed ? "ready" : ""}" data-action="pet-skill"
         ${game.pet.charge < game.pet.maxCharge || combat.petUsed || combat.energy < 1 || combat.status !== "active" ? "disabled" : ""}>
         <span class="pet-face">鹅</span>
-        <span><strong>追着啄</strong><small>1 能量 · ${petDamage} 伤害 · 每场一次</small><i>${"●".repeat(game.pet.charge)}${"○".repeat(game.pet.maxCharge - game.pet.charge)}</i></span>
+        <span><strong>追着啄${petPreview.talent ? ` · ${petPreview.talent.name}` : ""}</strong><small>1 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 每场一次</small><i>${"●".repeat(game.pet.charge)}${"○".repeat(game.pet.maxCharge - game.pet.charge)}</i></span>
       </button>
       <div class="pile-counts"><span>抽牌堆 <b>${combat.drawPile.length}</b></span><span>弃牌堆 <b>${combat.discardPile.length}</b></span><span>消耗 <b>${combat.exhaustPile.length}</b></span></div>
       <button class="end-turn" data-action="end-turn" ${combat.status !== "active" || combat.pendingDiscard ? "disabled" : ""}>结束回合</button>
@@ -372,6 +379,30 @@ function renderEnchantment() {
   });
 }
 
+function renderPetMilestone() {
+  const milestone = game.pet.pendingMilestone;
+  const isChoice = milestone === "choose";
+  const currentTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
+  const nextLevel = Math.min(3, game.pet.talentLevel + 1);
+  const body = isChoice ? `
+    <div class="pet-path-grid">
+      ${Object.values(PET_TALENT_DEFS).map((talent) => `
+        <button class="pet-path" data-action="select-pet-talent" data-id="${talent.id}">
+          <span>${talent.icon}</span><small>羁绊路线</small><strong>${talent.name}</strong><em>${talent.tagline}</em><p>Lv.1：${talent.levels[0].text}</p>
+        </button>`).join("")}
+    </div>` : `
+    <div class="pet-upgrade-card">
+      <span>${currentTalent.icon}</span>
+      <div><small>${milestone === "master" ? "终极默契" : "路线强化"}</small><h2>${currentTalent.name} Lv.${game.pet.talentLevel} → Lv.${nextLevel}</h2><p>${currentTalent.levels[nextLevel - 1].text}</p></div>
+      <button class="primary" data-action="upgrade-pet-talent">确认强化</button>
+    </div>`;
+  return page(isChoice ? "暴躁鹅想学点新的" : "羁绊路线升级", `羁绊 ${game.pet.bond} · 里程碑`, body, {
+    description: isChoice
+      ? "路线一旦选择便不会更换；每种效果都受“每场一次、消耗 1 能量”的限制。"
+      : "强化已有路线，不增加宠物每场出手次数。"
+  });
+}
+
 function renderRules() {
   const body = `
     <div class="rules-grid">
@@ -379,7 +410,7 @@ function renderRules() {
       <article><b>02</b><h2>意图</h2><p>敌人下一步完全公开。攻击、护甲、负面状态都不会藏数值。</p></article>
       <article><b>03</b><h2>护甲</h2><p>护甲先抵挡伤害，并在下一个玩家回合开始时清空。</p></article>
       <article><b>04</b><h2>构筑</h2><p>战后可三选一或跳过。卡组越薄，关键牌越容易再次抽到。</p></article>
-      <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；满 2 点后可主动攻击，每场一次。</p></article>
+      <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；满 2 点后可主动攻击，每场一次。羁绊 3、10、25 解锁路线成长。</p></article>
       <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。第 16 周通过期末后，可保留构筑进入更难的新学期。</p></article>
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
@@ -515,6 +546,7 @@ function render() {
     replaceItem: renderReplaceItem,
     selection: renderSelection,
     enchantment: renderEnchantment,
+    petMilestone: renderPetMilestone,
     deck: renderDeck,
     rest: renderRest,
     shop: renderShop,
@@ -622,6 +654,20 @@ function showEnchantmentReward(onDone = advanceWeek) {
   changeScreen("enchantment", { cards, enchantment, onDone });
 }
 
+function showPetMilestone(onDone) {
+  changeScreen("petMilestone", { onDone });
+}
+
+function gainPetBond(amount, onDone, message) {
+  game.pet.bond += amount;
+  game.updatePetMilestone();
+  if (game.pet.pendingMilestone) showPetMilestone(onDone);
+  else {
+    setToast(message);
+    onDone();
+  }
+}
+
 function resolveCombatResult() {
   if (game.combat.status === "lost") {
     clearSave();
@@ -630,6 +676,14 @@ function resolveCombatResult() {
     return;
   }
   const outcome = context.outcome;
+  if (game.pet.pendingMilestone) {
+    showPetMilestone(() => grantCombatRewards(outcome));
+    return;
+  }
+  grantCombatRewards(outcome);
+}
+
+function grantCombatRewards(outcome) {
   if (outcome === "boss") {
     game.gold += 50;
     showItemReward(BOSS_ITEM_IDS.filter((id) => !game.hasItem(id)), () => showSemesterSummary(), "期末纪念物");
@@ -694,8 +748,7 @@ function resolveEventChoice(choice) {
       finishEvent("纸箱怪叫了一声：失去 6 生命");
     }
   } else if (choice === "box-pet") {
-    game.pet.bond += 1;
-    finishEvent("暴躁鹅确认没有危险，羁绊 +1");
+    gainPetBond(1, advanceWeek, "暴躁鹅确认没有危险，羁绊 +1");
   } else if (choice === "quiz-upgrade") {
     game.hp = Math.max(1, game.hp - 5);
     const cards = game.deck.filter((card) => !card.upgraded);
@@ -707,8 +760,7 @@ function resolveEventChoice(choice) {
     showCardReward({ choices: pickFilteredCards(choice === "club-attack" ? "attack" : "skill"), title: "社团赠礼", allowReroll: false });
   } else if (choice === "club-pet") {
     game.gold -= 30;
-    game.pet.bond += 2;
-    finishEvent("暴躁鹅成为荣誉社员：羁绊 +2");
+    gainPetBond(2, advanceWeek, "暴躁鹅成为荣誉社员：羁绊 +2");
   } else if (choice === "meal-gold") {
     game.gold += 40;
     finishEvent("获得 40 校园币");
@@ -846,6 +898,18 @@ app.addEventListener("click", (event) => {
     }
   } else if (action === "skip-enchantment") {
     context.onDone();
+  } else if (action === "select-pet-talent") {
+    if (game.resolvePetMilestone(button.dataset.id)) {
+      const done = context.onDone;
+      setToast(`暴躁鹅选择了${PET_TALENT_DEFS[game.pet.talent].name}`);
+      done();
+    }
+  } else if (action === "upgrade-pet-talent") {
+    if (game.resolvePetMilestone()) {
+      const done = context.onDone;
+      setToast(`${PET_TALENT_DEFS[game.pet.talent].name}提升至 Lv.${game.pet.talentLevel}`);
+      done();
+    }
   } else if (action === "cancel-selection") {
     context.onCancel?.();
   } else if (action === "rest-heal") {
@@ -853,9 +917,7 @@ app.addEventListener("click", (event) => {
     setToast(`恢复 ${healed} 生命`);
     advanceWeek();
   } else if (action === "rest-pet") {
-    game.pet.bond += 2;
-    setToast("暴躁鹅羁绊 +2");
-    advanceWeek();
+    gainPetBond(2, advanceWeek, "暴躁鹅羁绊 +2");
   } else if (action === "rest-upgrade") {
     const cards = game.deck.filter((card) => !card.upgraded);
     showCardSelection({ title: "整理课堂笔记", eyebrow: "升级一张牌", cards, onSelect(card) { game.upgradeCard(card.uid); advanceWeek(); } });

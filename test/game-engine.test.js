@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
-import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
+import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 
 function putCardInHand(game, id) {
   const combat = game.combat;
@@ -134,6 +134,8 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   game.week = 7;
   game.gold = 123;
   game.pet.bond = 9;
+  game.updatePetMilestone();
+  game.resolvePetMilestone("scout");
   const savedCard = game.addCard("catCombo", true);
   game.enchantCard(savedCard.uid);
   game.addItem("autoPencil");
@@ -143,6 +145,8 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   assert.equal(restored.week, 7);
   assert.equal(restored.gold, 123);
   assert.equal(restored.pet.bond, 9);
+  assert.equal(restored.pet.talent, "scout");
+  assert.equal(restored.pet.talentLevel, 1);
   assert.equal(restored.deck.at(-1).id, "catCombo");
   assert.equal(restored.deck.at(-1).upgraded, true);
   assert.equal(restored.deck.at(-1).enchantment, "geminiQuick");
@@ -215,6 +219,64 @@ test("巨蟹守护刻印让卡牌基础护甲加 3，不能刻在纯攻击牌上
   assert.equal(cardDefinition(guard).effect.block, 8);
   game.upgradeCard(guard.uid);
   assert.equal(cardDefinition(guard).effect.block, 10);
+});
+
+test("宠物在羁绊 3、10、25 依次选择、强化和精通路线", () => {
+  const game = new SemesterGame(104, "aries");
+  game.pet.bond = 3;
+  assert.equal(game.updatePetMilestone(), "choose");
+  assert.equal(game.resolvePetMilestone("fury"), true);
+  assert.equal(game.petSkillPreview().damage, 8);
+
+  game.pet.bond = 10;
+  assert.equal(game.updatePetMilestone(), "upgrade");
+  assert.equal(game.resolvePetMilestone(), true);
+  assert.equal(game.petSkillPreview().damage, 9);
+
+  game.pet.bond = 25;
+  assert.equal(game.updatePetMilestone(), "master");
+  assert.equal(game.resolvePetMilestone(), true);
+  assert.equal(game.petSkillPreview().damage, 10);
+  assert.equal(game.pet.talentLevel, 3);
+});
+
+test("护崽路线让宠物技能获得护甲，但不增加出手次数", () => {
+  const game = new SemesterGame(105, "aries");
+  game.pet.talent = "guardian";
+  game.pet.talentLevel = 2;
+  game.startCombat("alarmClock");
+  game.pet.charge = 2;
+  game.combat.energy = 3;
+  assert.equal(game.usePetSkill().ok, true);
+  assert.equal(game.combat.playerBlock, 5);
+  assert.equal(game.usePetSkill().ok, false);
+});
+
+test("叼笔记路线立即抽牌并为下回合提供抽牌奖励", () => {
+  const game = new SemesterGame(106, "gemini");
+  game.pet.talent = "scout";
+  game.pet.talentLevel = 2;
+  game.startCombat("alarmClock");
+  game.pet.charge = 2;
+  game.combat.energy = 3;
+  const handSize = game.combat.hand.length;
+  game.usePetSkill();
+  assert.equal(game.combat.hand.length, handSize + 1);
+  assert.equal(game.combat.nextDrawBonus, 1);
+  assert.equal(game.petSkillPreview().talent, PET_TALENT_DEFS.scout);
+});
+
+test("战斗胜利跨过羁绊 3 时生成路线选择，不直接偷偷加数值", () => {
+  const game = new SemesterGame(107, "cancer");
+  game.pet.bond = 2;
+  game.startCombat("sleepyBug");
+  game.combat.enemy.hp = 1;
+  const strike = putCardInHand(game, "textbookStrike");
+  game.combat.energy = 3;
+  game.playCard(strike.uid);
+  assert.equal(game.pet.bond, 3);
+  assert.equal(game.pet.pendingMilestone, "choose");
+  assert.equal(game.petSkillPreview().damage, 7);
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {
