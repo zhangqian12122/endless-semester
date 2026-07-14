@@ -21,7 +21,8 @@ import {
   createCareerProfile,
   normalizeCareerProfile,
   recordCareerCombat,
-  recordEnemyEncounter
+  recordEnemyEncounter,
+  trialCollectionProgress
 } from "./career.js";
 
 const app = document.querySelector("#app");
@@ -113,7 +114,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.5 星座试炼</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.6 试炼册</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -674,6 +675,7 @@ function renderStats() {
 
 function renderArchive() {
   const achievementTotal = Object.keys(ACHIEVEMENT_DEFS).length;
+  const trialProgress = trialCollectionProgress(career);
   const kindLabels = { normal: "普通", elite: "精英", boss: "期末" };
   const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", groupChat: "99", printerJam: "印", rivalShadow: "卷", finalExam: "末" };
   const body = `
@@ -682,6 +684,21 @@ function renderArchive() {
       <article><small>发现敌人</small><strong>${career.discoveredEnemies.length}/${Object.keys(ENEMY_DEFS).length}</strong></article>
       <article><small>生涯胜场</small><strong>${career.combatsWon}</strong></article>
       <article><small>生涯出牌</small><strong>${career.cardsPlayed}</strong></article>
+    </div>
+    <div class="archive-heading"><div><small>跨对局收藏</small><h2>星座试炼册</h2></div><p>完成挑战战中的星座试炼即可盖章。印章只记录经历，不提供永久战力。</p></div>
+    <div class="trial-stamp-grid">
+      ${Object.entries(ARCHETYPE_TRIAL_DEFS).map(([archetypeId, trial]) => {
+        const count = career.trialCompletions?.[archetypeId] || 0;
+        const archetype = ARCHETYPE_DEFS[archetypeId];
+        return `<article class="trial-stamp ${count > 0 ? "stamped" : "unstamped"}">
+          <span>${count > 0 ? trial.icon : "?"}</span>
+          <div><small>${archetype.sign} · ${archetype.name}</small><h3>${trial.name}</h3><p>${trial.text}</p><b>${count > 0 ? `已完成 ${count} 次` : "尚未盖章"}</b></div>
+        </article>`;
+      }).join("")}
+    </div>
+    <div class="trial-collection-summary ${trialProgress.completedSigns === trialProgress.totalSigns ? "complete" : ""}">
+      <strong>${trialProgress.completedSigns}/${trialProgress.totalSigns} 枚星座印章</strong>
+      <span>${trialProgress.completedSigns === trialProgress.totalSigns ? "三星连珠已完成：三种学生的试炼均已通过。" : `再完成 ${trialProgress.totalSigns - trialProgress.completedSigns} 种星座试炼，即可解锁「三星连珠」。`}</span>
     </div>
     <div class="archive-heading"><div><small>目标记录</small><h2>成就</h2></div><p>成就只负责记录玩法目标，不提供永久数值，不让新玩家因入场晚而变弱。</p></div>
     <div class="achievement-grid">

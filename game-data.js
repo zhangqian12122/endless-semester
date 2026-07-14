@@ -389,6 +389,8 @@ export const ACHIEVEMENT_DEFS = {
   gooseCall: { id: "gooseCall", icon: "鹅", name: "鹅来！", text: "累计让暴躁鹅出手 5 次。", metric: "petUses", target: 5 },
   campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现任意 4 种普通敌人。", metric: "normalEnemies", target: 4 },
   challengeWon: { id: "challengeWon", icon: "难", name: "主动加练", text: "赢得一次可选挑战战。", metric: "challengeWins", target: 1 },
+  firstTrial: { id: "firstTrial", icon: "印", name: "试炼盖章", text: "完成任意一次星座试炼。", metric: "trialCompletions", target: 1 },
+  allTrials: { id: "allTrials", icon: "星", name: "三星连珠", text: "分别完成白羊、双子与巨蟹的星座试炼。", metric: "trialSigns", target: 3 },
   midtermPass: { id: "midtermPass", icon: "中", name: "期中不挂科", text: "击败一次精英敌人。", metric: "eliteWins", target: 1 },
   finalSubmitted: { id: "finalSubmitted", icon: "末", name: "期末交卷", text: "击败一次期末考试。", metric: "bossWins", target: 1 },
   cardRiver: { id: "cardRiver", icon: "∞", name: "出牌如流水", text: "生涯累计打出 100 张牌。", metric: "cardsPlayed", target: 100 }

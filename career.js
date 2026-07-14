@@ -1,5 +1,11 @@
 import { ACHIEVEMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS } from "./game-data.js";
 
+export const CAREER_TRIAL_IDS = Object.freeze(["aries", "gemini", "cancer"]);
+
+function createTrialCompletions() {
+  return Object.fromEntries(CAREER_TRIAL_IDS.map((id) => [id, 0]));
+}
+
 export function createCareerProfile() {
   return {
     version: 1,
@@ -13,7 +19,8 @@ export function createCareerProfile() {
     eliteWins: 0,
     bossWins: 0,
     petUses: 0,
-    cardsPlayed: 0
+    cardsPlayed: 0,
+    trialCompletions: createTrialCompletions()
   };
 }
 
@@ -33,7 +40,19 @@ export function normalizeCareerProfile(data) {
   for (const key of ["combatsCompleted", "combatsWon", "cleanWins", "quickWins", "challengeWins", "eliteWins", "bossWins", "petUses", "cardsPlayed"]) {
     profile[key] = safeCount(data[key]);
   }
+  for (const id of CAREER_TRIAL_IDS) {
+    profile.trialCompletions[id] = safeCount(data.trialCompletions?.[id]);
+  }
   return profile;
+}
+
+export function trialCollectionProgress(profile) {
+  const completions = CAREER_TRIAL_IDS.map((id) => safeCount(profile.trialCompletions?.[id]));
+  return {
+    completedSigns: completions.filter((count) => count > 0).length,
+    totalSigns: CAREER_TRIAL_IDS.length,
+    totalCompletions: completions.reduce((total, count) => total + count, 0)
+  };
 }
 
 export function achievementProgress(profile, id) {
@@ -42,6 +61,10 @@ export function achievementProgress(profile, id) {
   let current = 0;
   if (definition.metric === "normalEnemies") {
     current = profile.discoveredEnemies.filter((enemyId) => NORMAL_ENEMY_IDS.includes(enemyId)).length;
+  } else if (definition.metric === "trialCompletions") {
+    current = trialCollectionProgress(profile).totalCompletions;
+  } else if (definition.metric === "trialSigns") {
+    current = trialCollectionProgress(profile).completedSigns;
   } else {
     current = safeCount(profile[definition.metric]);
   }
@@ -82,6 +105,11 @@ export function recordCareerCombat(profile, summary) {
     if (summary.challenge) profile.challengeWins += 1;
     if (summary.enemyKind === "elite") profile.eliteWins += 1;
     if (summary.enemyKind === "boss") profile.bossWins += 1;
+    const trialId = summary.challengeTrial?.archetypeId;
+    if (summary.challengeTrial?.completed && CAREER_TRIAL_IDS.includes(trialId)) {
+      profile.trialCompletions ??= createTrialCompletions();
+      profile.trialCompletions[trialId] = safeCount(profile.trialCompletions[trialId]) + 1;
+    }
   }
   return unlockEligibleAchievements(profile);
 }

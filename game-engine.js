@@ -559,7 +559,7 @@ export class SemesterGame {
     if (combat.status === "won" && !achieved) failed = true;
     const completed = combat.status === "won" && achieved;
     const state = completed ? "completed" : achieved ? "achieved" : failed ? "failed" : "active";
-    return { ...definition, achieved, completed, failed, state, progress };
+    return { ...definition, archetypeId: this.archetypeId, achieved, completed, failed, state, progress };
   }
 
   eligibleSummaryCards() {

@@ -9,7 +9,8 @@ import {
   createCareerProfile,
   normalizeCareerProfile,
   recordCareerCombat,
-  recordEnemyEncounter
+  recordEnemyEncounter,
+  trialCollectionProgress
 } from "../career.js";
 
 function putCardInHand(game, id) {
@@ -354,6 +355,39 @@ test("生涯档案跨对局记录发现与成就进度", () => {
   assert.deepEqual(restored.unlockedAchievements, profile.unlockedAchievements);
 });
 
+test("星座试炼册分别记录三种印章并解锁三星连珠", () => {
+  const profile = createCareerProfile();
+  const completedTrial = (archetypeId) => ({
+    result: "won",
+    enemyKind: "normal",
+    turns: 3,
+    cardsPlayed: 4,
+    hpLost: 0,
+    challenge: true,
+    challengeTrial: { archetypeId, completed: true }
+  });
+
+  const firstUnlocks = recordCareerCombat(profile, completedTrial("aries"));
+  recordCareerCombat(profile, completedTrial("aries"));
+  recordCareerCombat(profile, completedTrial("gemini"));
+  const finalUnlocks = recordCareerCombat(profile, completedTrial("cancer"));
+
+  assert.equal(profile.trialCompletions.aries, 2);
+  assert.deepEqual(trialCollectionProgress(profile), { completedSigns: 3, totalSigns: 3, totalCompletions: 4 });
+  assert.ok(firstUnlocks.includes("firstTrial"));
+  assert.ok(finalUnlocks.includes("allTrials"));
+  assert.deepEqual(achievementProgress(profile, "allTrials"), { current: 3, target: 3, unlocked: true });
+
+  const restored = normalizeCareerProfile({
+    ...JSON.parse(JSON.stringify(profile)),
+    trialCompletions: { aries: -2, gemini: "3", cancer: 1, unknown: 99 }
+  });
+  assert.deepEqual(restored.trialCompletions, { aries: 0, gemini: 3, cancer: 1 });
+
+  const legacy = normalizeCareerProfile({ ...createCareerProfile(), trialCompletions: undefined });
+  assert.deepEqual(legacy.trialCompletions, { aries: 0, gemini: 0, cancer: 0 });
+});
+
 test("三种学生的初始卡组会识别为各自核心流派", () => {
   assert.equal(analyzeBuild(new SemesterGame(201, "aries")).primary.id, "offense");
   assert.equal(analyzeBuild(new SemesterGame(202, "gemini")).primary.id, "cycle");
@@ -582,6 +616,7 @@ test("白羊、双子与巨蟹拥有不同且公开的星座试炼", () => {
   assert.equal(aries.stats.trialsAttempted, 1);
   aries.combat.enemy.hp = 0;
   aries.checkCombatEnd();
+  assert.equal(aries.combatSummary().challengeTrial.archetypeId, "aries");
   assert.equal(aries.combatSummary().challengeTrial.completed, true);
   assert.equal(aries.combatSummary().challengeTrialBonus, 10);
   assert.equal(aries.gold, ariesGold + 10);
