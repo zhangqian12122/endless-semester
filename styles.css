@@ -191,6 +191,32 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .goose { position: absolute; right: 20px; bottom: 10px; display: grid; place-items: center; width: 210px; height: 170px; color: #222; border-radius: 50% 48% 30% 30%; background: var(--yellow); box-shadow: var(--shadow); font-size: 13px; font-weight: 900; transform: rotate(-3deg); }
 .goose b { font-size: 70px; line-height: .7; }
 
+.tarot-rule { display: flex; align-items: center; gap: 20px; max-width: 820px; margin: 0 auto 26px; padding: 22px 26px; border: 1px solid #665a82; border-left: 5px solid var(--purple); border-radius: 10px; background: linear-gradient(135deg, rgba(94,69,122,.3), var(--panel)); }
+.tarot-rule > span { display: grid; place-items: center; flex: 0 0 auto; width: 60px; height: 60px; color: #1b1722; border-radius: 50%; background: var(--purple); font-size: 27px; }
+.tarot-rule small, .tarot-rule strong { display: block; }
+.tarot-rule small { color: var(--purple); font-size: 9px; letter-spacing: .14em; }
+.tarot-rule strong { margin: 5px 0; font-size: 20px; }
+.tarot-rule p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.tarot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.tarot-card { position: relative; display: flex; align-items: center; flex-direction: column; min-height: 440px; padding: 28px 24px 24px; overflow: hidden; color: var(--ink); border: 1px solid #655979; border-top: 5px solid var(--purple); border-radius: 16px; background: radial-gradient(circle at 50% 24%, rgba(139,112,169,.2), transparent 33%), linear-gradient(160deg, #25212c, #181b21); box-shadow: 0 18px 40px rgba(0,0,0,.24); transition: transform .2s ease, border-color .2s ease; }
+.tarot-card::before { content: "✦"; position: absolute; top: 13px; right: 15px; color: #655979; font-size: 18px; }
+.tarot-card:hover { transform: translateY(-7px); border-color: #b292d0; }
+.tarot-card > small { color: var(--purple); font-size: 9px; letter-spacing: .13em; }
+.tarot-card > span { display: grid; place-items: center; width: 112px; height: 112px; margin: 28px 0 20px; color: #211b28; border: 5px double #211b28; border-radius: 50%; background: var(--purple); font-size: 38px; font-weight: 900; }
+.tarot-card h2 { margin: 0; font-size: 30px; }
+.tarot-card > em { margin-top: 6px; color: var(--muted); font-size: 11px; font-style: normal; }
+.tarot-card dl { align-self: stretch; display: grid; grid-template-columns: auto 1fr; gap: 10px 12px; margin: 28px 0 22px; padding-top: 20px; border-top: 1px solid #40394b; text-align: left; }
+.tarot-card dt { color: var(--yellow); font-size: 10px; font-weight: 900; }
+.tarot-card dt:nth-of-type(2) { color: var(--red); }
+.tarot-card dd { margin: 0; color: #d7d2dd; font-size: 11px; line-height: 1.5; }
+.tarot-card > b { margin-top: auto; color: var(--purple); font-size: 11px; }
+.tarot-strength { border-top-color: var(--red); }
+.tarot-strength > span { background: var(--red); }
+.tarot-strength > small, .tarot-strength > b { color: #ef8983; }
+.tarot-hermit { border-top-color: var(--blue); }
+.tarot-hermit > span { background: var(--blue); }
+.tarot-hermit > small, .tarot-hermit > b { color: #78acd1; }
+
 .semester-progress { display: flex; align-items: flex-start; width: 100%; margin: 45px 0; }
 .week-dot { position: relative; flex: 1; text-align: center; }
 .week-dot::before { content: ""; position: absolute; top: 7px; left: 0; width: 100%; height: 2px; background: var(--line); }
@@ -256,6 +282,14 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .constellation-banner p { flex: 1; margin: 0; font-size: 12px; }
 .constellation-banner p b { margin-right: 10px; color: var(--ink); }
 .constellation-banner small { color: var(--green); white-space: nowrap; }
+.tarot-banner { display: flex; align-items: center; gap: 14px; margin-top: 10px; padding: 12px 14px; border: 1px solid #655979; border-radius: 7px; background: rgba(76,57,96,.18); }
+.tarot-banner > span { display: grid; place-items: center; width: 48px; height: 48px; color: #211b28; border-radius: 50%; background: var(--purple); font-size: 13px; font-weight: 900; }
+.tarot-banner p { flex: 1; margin: 0; }
+.tarot-banner b, .tarot-banner em, .tarot-banner i { display: block; }
+.tarot-banner b { margin-bottom: 4px; }
+.tarot-banner em, .tarot-banner i { color: var(--muted); font-size: 10px; font-style: normal; line-height: 1.45; }
+.tarot-banner i { color: #d99590; }
+.tarot-banner small { color: var(--purple); white-space: nowrap; }
 .route-preview { margin-top: 18px; padding: 18px; border: 1px solid var(--line); border-radius: 10px; background: rgba(0,0,0,.14); }
 .route-preview-heading { display: flex; align-items: baseline; gap: 10px; margin-bottom: 13px; }
 .route-preview-heading small { color: var(--yellow); font-size: 9px; font-weight: 900; letter-spacing: .14em; }
@@ -288,6 +322,10 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-trial-progress.state-achieved { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(243,201,93,.08); }
 .challenge-trial-progress.state-failed { border-color: #636873; border-left-color: #777d88; opacity: .72; }
 .challenge-trial-progress.state-failed b, .challenge-trial-progress.state-failed i { color: var(--muted); }
+.tarot-combat-contract { display: flex; align-items: center; gap: 18px; max-width: 1200px; margin: 0 auto 12px; padding: 11px 15px; border: 1px solid #655979; border-left: 5px solid var(--purple); border-radius: 7px; background: rgba(76,57,96,.24); }
+.tarot-combat-contract b { color: var(--purple); }
+.tarot-combat-contract span, .tarot-combat-contract em { color: #d4cbdf; font-size: 11px; }
+.tarot-combat-contract em { margin-left: auto; color: #df9791; font-style: normal; }
 .combat-board { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(280px, .85fr) minmax(230px, 1fr); gap: 28px; align-items: center; max-width: 1200px; min-height: 390px; margin: 0 auto; }
 .fighter { min-width: 0; text-align: center; }
 .fighter-label { display: flex; justify-content: center; gap: 14px; margin-bottom: 12px; }
@@ -626,7 +664,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }
 
 @media (max-width: 980px) {
-  .pet-resource, .sign-resource { display: none; }
+  .pet-resource, .sign-resource, .tarot-resource { display: none; }
   .combat-board { grid-template-columns: 1fr 1fr; }
   .battle-center { grid-column: 1 / -1; grid-row: 1; min-height: 160px; }
   .fighter { grid-row: 2; }
@@ -634,6 +672,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .pile-counts { grid-column: 1 / -1; flex-wrap: wrap; }
   .intro-shell { grid-template-columns: 1fr; }
   .intro-card-stack { display: none; }
+  .tarot-grid { grid-template-columns: 1fr; }
+  .tarot-card { min-height: 380px; }
   .stats-grid { grid-template-columns: repeat(3, 1fr); }
   .trial-stamp-grid { grid-template-columns: 1fr; }
   .achievement-grid { grid-template-columns: repeat(2, 1fr); }
@@ -660,6 +700,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .route-preview-weeks { grid-template-columns: 1fr; }
   .challenge-contract { align-items: flex-start; flex-direction: column; gap: 6px; }
   .challenge-contract em { margin-left: 0; }
+  .tarot-combat-contract { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .tarot-combat-contract em { margin-left: 0; }
   .challenge-trial-progress { grid-template-columns: 1fr; gap: 5px; }
   .challenge-reward-summary { align-items: flex-start; flex-direction: column; }
   .challenge-reward-summary span { text-align: left; }
@@ -692,6 +734,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .stats-columns { grid-template-columns: 1fr; }
   .archive-summary { grid-template-columns: repeat(2, 1fr); }
   .archive-heading { align-items: flex-start; flex-direction: column; }
+  .tarot-banner { align-items: flex-start; }
+  .tarot-banner small { display: none; }
   .trial-collection-summary { align-items: flex-start; flex-direction: column; }
   .trial-collection-summary span { text-align: left; }
   .enemy-codex { grid-template-columns: 1fr; }

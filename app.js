@@ -14,7 +14,7 @@ import {
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS
 } from "./game-data.js";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
@@ -114,7 +114,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.6 试炼册</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.7 塔罗契约</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -124,6 +124,7 @@ function topBar() {
       <div class="resource">♢ ${game.items.length}/${game.backpackCapacity} 物品</div>
       <div class="resource pet-resource">鹅鹅羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
       <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
+      ${game.tarot ? `<div class="resource tarot-resource">${game.tarot.number} · ${game.tarot.name}</div>` : ""}
       ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
       ${screen !== "stats" ? '<button class="quiet-button" data-action="open-stats">战绩</button>' : ""}
       ${screen !== "archive" ? '<button class="quiet-button" data-action="open-archive">档案</button>' : ""}
@@ -209,9 +210,33 @@ function renderIntro() {
     </section>`;
 }
 
+function renderTarotChoice() {
+  const body = `
+    <div class="tarot-rule">
+      <span>✦</span><div><small>每学期一次</small><strong>选择一张命运牌</strong><p>收益和代价会同时生效，并在地图与每场战斗中持续公开。本学期选定后不能更换。</p></div>
+    </div>
+    <div class="tarot-grid">
+      ${Object.values(TAROT_DEFS).map((tarot) => `
+        <button class="tarot-card tarot-${tarot.id}" data-action="choose-tarot" data-id="${tarot.id}">
+          <small>${tarot.number} · MAJOR ARCANA</small>
+          <span>${tarot.icon}</span>
+          <h2>${tarot.name}</h2>
+          <em>${tarot.tagline}</em>
+          <dl><dt>收益</dt><dd>${tarot.boon}</dd><dt>代价</dt><dd>${tarot.cost}</dd></dl>
+          <b>签下本学期契约 →</b>
+        </button>`).join("")}
+    </div>
+    <div class="privacy-note">旧存档如果还没有命运牌，会在当前位置补选一次；不会重置周数、卡组或已有进度。</div>`;
+  return page("抽取本学期命运", `第 ${game.semester} 学期 · 塔罗契约`, body, {
+    description: "不是白送强化：每张牌都用明确代价换一种构筑节奏。",
+    className: "tarot-page"
+  });
+}
+
 function renderMap() {
   const nodes = game.semesterPlan[game.week] || [];
   const trial = ARCHETYPE_TRIAL_DEFS[game.archetypeId];
+  const tarot = game.tarot;
   const previewWeeks = Array.from(
     { length: Math.min(4, Math.max(0, 16 - game.week)) },
     (_, index) => game.week + index + 1
@@ -238,6 +263,7 @@ function renderMap() {
       <p>${game.week === 8 ? "期中精英战：拖得越久，伤害越高。" : game.week === 16 ? "一切意图都公开。用你的构筑交卷。" : "本学期路线已经确定；先看四周，再选择本周节点。"}</p>
     </div>
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
+    ${tarot ? `<div class="tarot-banner"><span>${tarot.number}</span><p><b>塔罗·${tarot.name}</b><em>收益：${tarot.boon}</em><i>代价：${tarot.cost}</i></p><small>本学期固定</small></div>` : ""}
     ${previewWeeks.length ? `
       <section class="route-preview" aria-label="未来四周路线">
         <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>${nextChallenge ? `下一场挑战：第 ${nextChallenge.week} 周 · ${CHALLENGE_AFFIX_DEFS[nextChallenge.node.affix].name} · ${trial.name}` : "本学期挑战已完成"}</span></div>
@@ -341,6 +367,7 @@ function renderCombatResult(combat) {
 
 function renderCombat() {
   const combat = game.combat;
+  const tarot = game.tarot;
   const challengeAffix = CHALLENGE_AFFIX_DEFS[combat.modifiers.affix];
   const challengeTrial = combat.modifiers.challenge ? game.challengeTrialStatus() : null;
   const intent = game.getIntent();
@@ -353,6 +380,7 @@ function renderCombat() {
     petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
   ].filter(Boolean).join(" · ");
   const body = `
+    ${tarot ? `<div class="tarot-combat-contract"><b>${tarot.number} · ${tarot.name}</b><span>收益：${tarot.boon}</span><em>代价：${tarot.cost}</em></div>` : ""}
     ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
     ${challengeTrial ? `<div class="challenge-trial-progress state-${challengeTrial.state}"><b>${challengeTrial.icon} 星座试炼 · ${challengeTrial.name}</b><span>${challengeTrial.text}</span><em>${challengeTrial.progress}</em><i>${challengeTrial.state === "achieved" ? "已达成，赢下战斗即可结算" : challengeTrial.state === "failed" ? "本场已经错过，不影响挑战胜负" : `完成额外 +${challengeTrial.bonusGold} 币`}</i></div>` : ""}
     <div class="combat-board">
@@ -624,6 +652,7 @@ function renderRules() {
       <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。挑战词缀与星座试炼提前公开；试炼失败不影响挑战胜负与基础奖励。</p></article>
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
+    ${game.tarot ? `<div class="rules-note tarot-note"><b>${game.tarot.number} 塔罗契约：${game.tarot.name}</b><span>收益：${game.tarot.boon} 代价：${game.tarot.cost}</span></div>` : ""}
     <button class="primary centered" data-action="close-rules">返回</button>`;
   return page("六条核心规则", "一分钟看懂", body, { description: "所有例外规则都写在卡牌、物品或敌人意图上。" });
 }
@@ -631,6 +660,7 @@ function renderRules() {
 function renderStats() {
   const stats = game.stats;
   const challengeRewards = stats.challengeRewardChoices || { cards: 0, pet: 0, item: 0 };
+  const tarotChoices = stats.tarotChoices || { chariot: 0, strength: 0, hermit: 0 };
   const build = analyzeBuild(game);
   const winRate = stats.combatsCompleted ? Math.round((stats.combatsWon / stats.combatsCompleted) * 100) : 0;
   const averageTurns = stats.combatsCompleted ? (stats.combatTurns / stats.combatsCompleted).toFixed(1) : "—";
@@ -657,6 +687,7 @@ function renderStats() {
           <li><span>主动跳过</span><b>${stats.rewardsSkipped}</b></li>
           <li><span>挑战战胜利</span><b>${stats.challengeWins || 0}</b></li>
           <li><span>星座试炼完成 / 尝试</span><b>${stats.trialsCompleted || 0} / ${stats.trialsAttempted || 0}</b></li>
+          <li><span>塔罗：战车 / 力量 / 隐者</span><b>${tarotChoices.chariot} / ${tarotChoices.strength} / ${tarotChoices.hermit}</b></li>
           <li><span>挑战奖励：牌 / 鹅 / 物</span><b>${challengeRewards.cards} / ${challengeRewards.pet} / ${challengeRewards.item}</b></li>
           <li><span>获得物品 / 刻印</span><b>${stats.itemsTaken} / ${stats.enchantments}</b></li>
         </ul>
@@ -837,6 +868,7 @@ function renderSemesterComplete() {
         <li><span>卡组规模</span><b>${game.deck.length}</b></li>
         <li><span>随身物品</span><b>${game.items.length}/${game.backpackCapacity}</b></li>
         <li><span>暴躁鹅羁绊</span><b>${game.pet.bond}</b></li>
+        <li><span>本学期塔罗</span><b>${game.tarot ? `${game.tarot.number} · ${game.tarot.name}` : "未选择"}</b></li>
         <li><span>累计战斗 / 掉血</span><b>${game.stats.combatsWon} / ${game.stats.combatHpLost}</b></li>
         <li><span>累计出牌</span><b>${game.stats.cardsPlayed}</b></li>
       </ul>
@@ -854,6 +886,7 @@ function renderSemesterComplete() {
 function render() {
   const renderers = {
     intro: renderIntro,
+    tarotChoice: renderTarotChoice,
     map: renderMap,
     combat: renderCombat,
     challengeReward: renderChallengeReward,
@@ -1173,7 +1206,7 @@ app.addEventListener("click", (event) => {
   if (action === "new-game") {
     game = new SemesterGame(Date.now(), selectedArchetype);
     lastEvent = null;
-    changeScreen("map");
+    changeScreen("tarotChoice");
   } else if (action === "select-archetype") {
     selectedArchetype = button.dataset.id;
     render();
@@ -1181,7 +1214,7 @@ app.addEventListener("click", (event) => {
     try {
       game = SemesterGame.fromJSON(readSave());
       selectedArchetype = game.archetypeId;
-      changeScreen("map");
+      changeScreen(game.tarot ? "map" : "tarotChoice");
     } catch {
       clearSave();
       setToast("存档无法读取，已清理旧存档");
@@ -1195,6 +1228,11 @@ app.addEventListener("click", (event) => {
     if (screen !== "map") setToast("请先完成当前节点");
   } else if (action === "choose-node") {
     startNode(game.semesterPlan[game.week][Number(button.dataset.index)]);
+  } else if (action === "choose-tarot") {
+    if (game.chooseTarot(button.dataset.id)) {
+      setToast(`塔罗·${game.tarot.name}已生效：收益与代价持续到本学期结束`);
+      changeScreen("map");
+    }
   } else if (action === "play-card") {
     const result = game.playCard(button.dataset.uid);
     if (!result.ok) setToast(result.reason);
@@ -1368,7 +1406,7 @@ app.addEventListener("click", (event) => {
     advanceWeek();
   } else if (action === "next-semester") {
     game.startNextSemester();
-    changeScreen("map");
+    changeScreen("tarotChoice");
   }
 });
 

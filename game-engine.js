@@ -75,6 +75,44 @@ export const ARCHETYPE_TRIAL_DEFS = Object.freeze({
   }
 });
 
+export const TAROT_DEFS = Object.freeze({
+  chariot: {
+    id: "chariot",
+    number: "VII",
+    icon: "车",
+    name: "战车",
+    tagline: "抢在点名前",
+    boon: "每场战斗第 1 回合 +1 能量。",
+    cost: "敌人生命 +15%。",
+    firstTurnEnergy: 1,
+    enemyHpMultiplier: 1.15
+  },
+  strength: {
+    id: "strength",
+    number: "XI",
+    icon: "力",
+    name: "力量",
+    tagline: "让鹅先上",
+    boon: "宠物开战时获得 1 点充能。",
+    cost: "敌人每段攻击伤害 +2。",
+    petCharge: 1,
+    enemyAttackBonus: 2
+  },
+  hermit: {
+    id: "hermit",
+    number: "IX",
+    icon: "灯",
+    name: "隐者",
+    tagline: "先把题看完",
+    boon: "每场战斗第 1 回合多抽 2 张牌。",
+    cost: "敌人开战时获得 8 点护甲。",
+    firstTurnDraw: 2,
+    enemyBlock: 8
+  }
+});
+
+const TAROT_IDS = Object.keys(TAROT_DEFS);
+
 export const CHALLENGE_AFFIX_DEFS = Object.freeze({
   deadline: {
     id: "deadline",
@@ -268,6 +306,7 @@ export class SemesterGame {
   resetCampaign(archetypeId = "cancer") {
     if (!ARCHETYPE_DEFS[archetypeId]) throw new Error(`未知星座学生：${archetypeId}`);
     this.archetypeId = archetypeId;
+    this.tarotId = null;
     this.semester = 1;
     this.week = 1;
     this.maxHp = 50;
@@ -292,6 +331,7 @@ export class SemesterGame {
       challengeWins: 0,
       trialsAttempted: 0,
       trialsCompleted: 0,
+      tarotChoices: { chariot: 0, strength: 0, hermit: 0 },
       challengeRewardChoices: { cards: 0, pet: 0, item: 0 },
       combatTurns: 0,
       combatHpLost: 0,
@@ -323,6 +363,17 @@ export class SemesterGame {
 
   get archetype() {
     return ARCHETYPE_DEFS[this.archetypeId];
+  }
+
+  get tarot() {
+    return TAROT_DEFS[this.tarotId] || null;
+  }
+
+  chooseTarot(id) {
+    if (this.tarotId || !TAROT_DEFS[id]) return false;
+    this.tarotId = id;
+    this.stats.tarotChoices[id] += 1;
+    return true;
   }
 
   createCard(id, upgraded = false) {
@@ -578,11 +629,19 @@ export class SemesterGame {
     }
     this.stats.combatsStarted += 1;
 
+    const tarot = this.tarot;
     const semesterHpScale = 1 + (this.semester - 1) * 0.15;
-    const enemyMaxHp = Math.round(definition.maxHp * semesterHpScale * (combatModifiers.hpMultiplier || 1));
+    const enemyMaxHp = Math.round(
+      definition.maxHp
+      * semesterHpScale
+      * (combatModifiers.hpMultiplier || 1)
+      * (tarot?.enemyHpMultiplier || 1)
+    );
     const initialCharge = Math.min(
       this.pet.maxCharge,
-      (this.hasItem("petSnack") ? 1 : 0) + (this.flags.petSnackCombats > 0 ? 1 : 0)
+      (this.hasItem("petSnack") ? 1 : 0)
+      + (this.flags.petSnackCombats > 0 ? 1 : 0)
+      + (tarot?.petCharge || 0)
     );
     this.pet.charge = initialCharge;
     if (this.flags.petSnackCombats > 0) this.flags.petSnackCombats -= 1;
@@ -617,7 +676,7 @@ export class SemesterGame {
         subtitle: definition.subtitle,
         maxHp: enemyMaxHp,
         hp: enemyMaxHp,
-        block: this.flags.nextEnemyBlock || 0,
+        block: (this.flags.nextEnemyBlock || 0) + (tarot?.enemyBlock || 0),
         intentTurn: 0
       },
       energy: 0,
@@ -644,6 +703,7 @@ export class SemesterGame {
       usedCardUids: new Set(),
       log: [
         `遭遇 ${definition.name}。它的行动会完全公开。`,
+        ...(tarot ? [`塔罗契约·${tarot.name}：${tarot.boon} 代价：${tarot.cost}`] : []),
         ...(combatModifiers.affix ? [`挑战词缀·${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].name}：${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].text}`] : [])
       ]
     };
@@ -661,9 +721,10 @@ export class SemesterGame {
     const damageScale = this.semester - 1;
     const damageMultiplier = combat.modifiers.damageMultiplier || 1;
     const affixDamage = combat.modifiers.affix === "deadline" && combat.turn >= 4 ? 4 : 0;
+    const tarotDamage = this.tarot?.enemyAttackBonus || 0;
     return {
       ...raw,
-      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) + affixDamage : undefined
+      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage : undefined
     };
   }
 
@@ -675,13 +736,17 @@ export class SemesterGame {
     combat.petChargedThisTurn = false;
     combat.pencilUsed = false;
     combat.notebookUsed = false;
-    combat.energy = 3 + (this.hasItem("allNighter") ? 1 : 0);
+    combat.energy = 3 + (this.hasItem("allNighter") ? 1 : 0) + (combat.turn === 1 ? this.tarot?.firstTurnEnergy || 0 : 0);
     if (combat.turn === 1 && this.hasItem("referenceBooks")) combat.energy -= 1;
     if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") combat.energy -= 1;
 
     const drawCount = Math.max(
       0,
-      5 + (this.hasItem("referenceBooks") ? 1 : 0) + combat.nextDrawBonus - combat.nextDrawPenalty
+      5
+      + (this.hasItem("referenceBooks") ? 1 : 0)
+      + (combat.turn === 1 ? this.tarot?.firstTurnDraw || 0 : 0)
+      + combat.nextDrawBonus
+      - combat.nextDrawPenalty
     );
     combat.nextDrawBonus = 0;
     combat.nextDrawPenalty = 0;
@@ -697,6 +762,9 @@ export class SemesterGame {
     }
     if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") {
       combat.log.push("第一节早课：本回合少 1 点能量。");
+    }
+    if (combat.turn === 1 && this.tarot) {
+      combat.log.push(`塔罗·${this.tarot.name}生效：${this.tarot.boon}`);
     }
     combat.log.push(`第 ${combat.turn} 回合：抽 ${drawCount} 张牌，获得 ${combat.energy} 点能量。`);
   }
@@ -1031,6 +1099,7 @@ export class SemesterGame {
 
   startNextSemester() {
     this.semester += 1;
+    this.tarotId = null;
     this.week = 1;
     this.completedNodes.clear();
     this.flags.eraserUsed = false;
@@ -1047,6 +1116,7 @@ export class SemesterGame {
       rngState: this.rng.state,
       cardSerial: this.cardSerial,
       archetypeId: this.archetypeId,
+      tarotId: this.tarotId,
       semester: this.semester,
       week: this.week,
       maxHp: this.maxHp,
@@ -1076,6 +1146,7 @@ export class SemesterGame {
     const game = new SemesterGame(1, data.archetypeId);
     game.rng.state = Number(data.rngState) >>> 0;
     game.cardSerial = Number(data.cardSerial) || 0;
+    game.tarotId = TAROT_DEFS[data.tarotId] ? data.tarotId : null;
     game.semester = Math.max(1, Number(data.semester) || 1);
     game.week = Math.min(16, Math.max(1, Number(data.week) || 1));
     game.maxHp = Math.max(1, Number(data.maxHp) || 50);
@@ -1110,16 +1181,41 @@ export class SemesterGame {
     game.rng.state = savedRngState;
     if (data.stats && typeof data.stats === "object") {
       const defaults = game.stats;
+      const numericStats = Object.fromEntries(
+        Object.entries(defaults)
+          .filter(([, value]) => typeof value === "number")
+          .map(([key]) => {
+            const value = Number(data.stats[key]);
+            return [key, Number.isFinite(value) ? Math.max(0, Math.floor(value)) : defaults[key]];
+          })
+      );
       game.stats = {
         ...defaults,
-        ...data.stats,
-        trialsAttempted: Math.max(0, Number(data.stats.trialsAttempted) || 0),
-        trialsCompleted: Math.max(0, Number(data.stats.trialsCompleted) || 0),
-        cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object" ? { ...data.stats.cardPlays } : {},
+        ...numericStats,
+        cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object"
+          ? Object.fromEntries(
+            Object.entries(data.stats.cardPlays)
+              .filter(([id]) => CARD_DEFS[id])
+              .map(([id, count]) => {
+                const value = Number(count);
+                return [id, Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0];
+              })
+          )
+          : {},
+        tarotChoices: Object.fromEntries(
+          TAROT_IDS.map((id) => [
+            id,
+            Number.isFinite(Number(data.stats.tarotChoices?.[id]))
+              ? Math.max(0, Math.floor(Number(data.stats.tarotChoices[id])))
+              : 0
+          ])
+        ),
         challengeRewardChoices: Object.fromEntries(
           Object.keys(CHALLENGE_REWARD_DEFS).map((id) => [
             id,
-            Math.max(0, Number(data.stats.challengeRewardChoices?.[id]) || 0)
+            Number.isFinite(Number(data.stats.challengeRewardChoices?.[id]))
+              ? Math.max(0, Math.floor(Number(data.stats.challengeRewardChoices[id])))
+              : 0
           ])
         )
       };

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 import { analyzeBuild, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
@@ -675,6 +675,71 @@ test("星座试炼统计写入存档，旧存档缺少字段时安全补零", ()
   assert.equal(migrated.stats.trialsCompleted, 0);
 });
 
+test("三张塔罗契约都有一句话收益与代价，并真实改变战斗开局", () => {
+  assert.deepEqual(Object.keys(TAROT_DEFS), ["chariot", "strength", "hermit"]);
+  assert.ok(Object.values(TAROT_DEFS).every((tarot) => tarot.boon && tarot.cost));
+
+  const chariot = new SemesterGame(501, "aries");
+  assert.equal(chariot.chooseTarot("chariot"), true);
+  assert.equal(chariot.chooseTarot("hermit"), false);
+  chariot.startCombat("sleepyBug");
+  assert.equal(chariot.combat.enemy.maxHp, 23);
+  assert.equal(chariot.combat.energy, 4);
+
+  const strength = new SemesterGame(502, "gemini");
+  strength.chooseTarot("strength");
+  strength.startCombat("sleepyBug");
+  assert.equal(strength.pet.charge, 1);
+  assert.equal(strength.getIntent().attack, 7);
+
+  const hermit = new SemesterGame(503, "cancer");
+  hermit.chooseTarot("hermit");
+  hermit.startCombat("sleepyBug");
+  assert.equal(hermit.combat.hand.length, 7);
+  assert.equal(hermit.combat.enemy.block, 8);
+});
+
+test("塔罗选择写入存档，每个新学期重新选择且旧存档安全补空", () => {
+  const game = new SemesterGame(504, "aries");
+  game.chooseTarot("hermit");
+  const restored = SemesterGame.fromJSON(game.toJSON());
+  assert.equal(restored.tarotId, "hermit");
+  assert.deepEqual(restored.stats.tarotChoices, { chariot: 0, strength: 0, hermit: 1 });
+
+  restored.startNextSemester();
+  assert.equal(restored.tarotId, null);
+  assert.equal(restored.chooseTarot("chariot"), true);
+  assert.deepEqual(restored.stats.tarotChoices, { chariot: 1, strength: 0, hermit: 1 });
+
+  const legacy = game.toJSON();
+  delete legacy.tarotId;
+  delete legacy.stats.tarotChoices;
+  const migrated = SemesterGame.fromJSON(legacy);
+  assert.equal(migrated.tarotId, null);
+  assert.deepEqual(migrated.stats.tarotChoices, { chariot: 0, strength: 0, hermit: 0 });
+});
+
+test("受污染存档的战绩计数会恢复为可安全累加的非负整数", () => {
+  const saved = new SemesterGame(407, "gemini").toJSON();
+  saved.stats.cardsPlayed = "7";
+  saved.stats.combatTurns = -3;
+  saved.stats.petUses = 2.8;
+  saved.stats.combatsWon = "not-a-number";
+  saved.stats.cardPlays = { cramming: "4", textbookStrike: -2, unknown: 99 };
+  saved.stats.tarotChoices = { chariot: "2", strength: -1, hermit: 1.8, unknown: 99 };
+  saved.stats.challengeRewardChoices = { cards: "3", pet: 1.9, item: -4 };
+
+  const restored = SemesterGame.fromJSON(saved);
+
+  assert.equal(restored.stats.cardsPlayed, 7);
+  assert.equal(restored.stats.combatTurns, 0);
+  assert.equal(restored.stats.petUses, 2);
+  assert.equal(restored.stats.combatsWon, 0);
+  assert.deepEqual(restored.stats.cardPlays, { cramming: 4, textbookStrike: 0 });
+  assert.deepEqual(restored.stats.tarotChoices, { chariot: 2, strength: 0, hermit: 1 });
+  assert.deepEqual(restored.stats.challengeRewardChoices, { cards: 3, pet: 1, item: 0 });
+});
+
 test("桌面爆满与第一节早课词缀分别污染牌堆和压缩首回合能量", () => {
   const backlog = new SemesterGame(304, "gemini");
   backlog.startCombat("sleepyBug", { challenge: true, affix: "backlog" });
@@ -702,4 +767,5 @@ test("无尽学期保留构筑并施加明确的成长代价", () => {
   assert.equal(game.maxHp, 52);
   assert.equal(game.hp, 52);
   assert.equal(game.backpackCapacity, 7);
+  assert.equal(game.tarotId, null);
 });
