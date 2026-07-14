@@ -35,6 +35,30 @@ export const ARCHETYPE_DEFS = {
   }
 };
 
+export const ENCHANTMENT_DEFS = {
+  ariesFlame: {
+    id: "ariesFlame",
+    archetype: "aries",
+    sign: "焰",
+    name: "赤焰刻印",
+    text: "此牌每段攻击伤害 +2。"
+  },
+  geminiQuick: {
+    id: "geminiQuick",
+    archetype: "gemini",
+    sign: "瞬",
+    name: "瞬思刻印",
+    text: "此牌费用 -1，最低为 0。"
+  },
+  cancerGuard: {
+    id: "cancerGuard",
+    archetype: "cancer",
+    sign: "守",
+    name: "守护刻印",
+    text: "此牌获得的基础护甲 +3。"
+  }
+};
+
 export const CARD_DEFS = {
   textbookStrike: {
     id: "textbookStrike", name: "课本拍击", type: "attack", rarity: "starter", cost: 1,

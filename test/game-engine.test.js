@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
-import { ARCHETYPE_CARD_IDS, CARD_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
+import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 
 function putCardInHand(game, id) {
   const combat = game.combat;
@@ -134,7 +134,8 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   game.week = 7;
   game.gold = 123;
   game.pet.bond = 9;
-  game.addCard("catCombo", true);
+  const savedCard = game.addCard("catCombo", true);
+  game.enchantCard(savedCard.uid);
   game.addItem("autoPencil");
   const restored = SemesterGame.fromJSON(game.toJSON());
 
@@ -144,6 +145,7 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   assert.equal(restored.pet.bond, 9);
   assert.equal(restored.deck.at(-1).id, "catCombo");
   assert.equal(restored.deck.at(-1).upgraded, true);
+  assert.equal(restored.deck.at(-1).enchantment, "geminiQuick");
   assert.deepEqual(restored.items, ["autoPencil"]);
   assert.equal(restored.rng.state, game.rng.state);
 });
@@ -178,6 +180,41 @@ test("指定稀有度奖励仍保持 1 专属 + 2 普池且全部同稀有度", 
   assert.equal(choices.filter((id) => ARCHETYPE_CARD_IDS.gemini.includes(id)).length, 1);
   assert.equal(choices.filter((id) => PUBLIC_REWARD_CARD_IDS.includes(id)).length, 2);
   assert.equal(choices.every((id) => CARD_DEFS[id].rarity === "uncommon"), true);
+});
+
+test("白羊赤焰刻印让攻击牌每段伤害加 2，并可与升级叠加", () => {
+  const game = new SemesterGame(101, "aries");
+  const strike = game.deck.find((card) => card.id === "textbookStrike");
+  assert.equal(game.enchantCard(strike.uid), true);
+  assert.equal(cardDefinition(strike).effect.damage, 7);
+  game.upgradeCard(strike.uid);
+  assert.equal(cardDefinition(strike).effect.damage, 9);
+  assert.equal(cardDefinition(strike).enchantment, ENCHANTMENT_DEFS.ariesFlame);
+  assert.equal(game.enchantCard(strike.uid), false);
+});
+
+test("双子瞬思刻印让非零费牌费用减 1，最低为 0", () => {
+  const game = new SemesterGame(102, "gemini");
+  const guard = game.deck.find((card) => card.id === "backpackGuard");
+  assert.equal(game.enchantCard(guard.uid), true);
+  assert.equal(cardDefinition(guard).cost, 0);
+  game.startCombat("sleepyBug");
+  const combatGuard = { ...guard };
+  game.combat.hand = [combatGuard];
+  game.combat.energy = 0;
+  assert.equal(game.playCard(combatGuard.uid).ok, true);
+  assert.equal(game.combat.energy, 0);
+});
+
+test("巨蟹守护刻印让卡牌基础护甲加 3，不能刻在纯攻击牌上", () => {
+  const game = new SemesterGame(103, "cancer");
+  const guard = game.deck.find((card) => card.id === "backpackGuard");
+  const strike = game.deck.find((card) => card.id === "textbookStrike");
+  assert.equal(game.enchantCard(strike.uid), false);
+  assert.equal(game.enchantCard(guard.uid), true);
+  assert.equal(cardDefinition(guard).effect.block, 8);
+  game.upgradeCard(guard.uid);
+  assert.equal(cardDefinition(guard).effect.block, 10);
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {

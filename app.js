@@ -5,6 +5,7 @@ import {
   BOSS_ITEM_IDS,
   CARD_DEFS,
   ENEMY_DEFS,
+  ENCHANTMENT_DEFS,
   EVENT_DEFS,
   ITEM_DEFS,
   RARITY_LABELS,
@@ -79,7 +80,7 @@ function topBar() {
   const bondStage = game.pet.bond >= 25 ? "生死之交" : game.pet.bond >= 10 ? "默契搭档" : game.pet.bond >= 3 ? "熟悉伙伴" : "刚认识";
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.3 专属卡池</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.4 星座刻印</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -119,6 +120,7 @@ function cardHtml(card, options = {}) {
     <button class="game-card type-${definition.type} rarity-${definition.rarity} ${owner ? `exclusive-card exclusive-${owner.id}` : ""} ${playable ? "" : "disabled"}"
       data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}" ${playable ? "" : "disabled"}>
       <span class="card-cost">${cost}</span>
+      ${definition.enchantment ? `<span class="card-enchantment" title="${definition.enchantment.text}">${definition.enchantment.sign}</span>` : ""}
       <span class="card-rarity">${owner ? `${owner.sign}专属 · ` : ""}${rarityName(definition.rarity)}</span>
       <strong>${definition.displayName}</strong>
       <span class="card-art">${definition.type === "attack" ? "✦" : definition.type === "status" ? "!" : "◆"}</span>
@@ -342,6 +344,7 @@ function renderDeck() {
       <span>攻击 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "attack").length}</span>
       <span>技能 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "skill").length}</span>
       <span>已升级 ${game.deck.filter((card) => card.upgraded).length}</span>
+      <span>已刻印 ${game.deck.filter((card) => card.enchantment).length}</span>
     </div>
     <div class="deck-grid">${game.deck.map((card) => cardHtml(card, { playable: false })).join("")}</div>
     <h2 class="subheading">书包物品</h2>
@@ -349,6 +352,23 @@ function renderDeck() {
     <button class="primary centered" data-action="close-deck">返回</button>`;
   return page("当前构筑", `${game.deck.length} 张牌 · ${game.items.length} 件物品`, body, {
     description: "卡组越薄，核心牌出现得越稳定；状态牌只在战斗中临时加入。"
+  });
+}
+
+function renderEnchantment() {
+  const enchantment = context.enchantment;
+  const body = `
+    <div class="enchantment-rule">
+      <span>${game.archetype.sign}</span>
+      <div><small>本学期命盘觉醒</small><strong>${enchantment.name}</strong><p>${enchantment.text}</p></div>
+    </div>
+    <p class="center-copy">从本场实际使用过的合格卡牌中选择一张。升级和刻印可以同时存在，但每张牌最多拥有一个刻印。</p>
+    <div class="enchantment-grid">
+      ${context.cards.map((card) => `<div class="enchantment-choice">${cardHtml(card, { action: "enchant-card" })}<small>刻印后：${enchantment.text}</small></div>`).join("")}
+    </div>
+    <button class="quiet-button centered" data-action="skip-enchantment">暂不刻印</button>`;
+  return page("选择一张牌刻印", "期中精英奖励", body, {
+    description: "刻印改变长期构筑方向，不会在每场战斗后频繁出现。"
   });
 }
 
@@ -494,6 +514,7 @@ function render() {
     itemReward: renderItemReward,
     replaceItem: renderReplaceItem,
     selection: renderSelection,
+    enchantment: renderEnchantment,
     deck: renderDeck,
     rest: renderRest,
     shop: renderShop,
@@ -588,6 +609,19 @@ function showCardSelection(options) {
   changeScreen("selection", options);
 }
 
+function showEnchantmentReward(onDone = advanceWeek) {
+  const usedUids = game.combat?.usedCardUids ? [...game.combat.usedCardUids] : [];
+  const usedEligible = game.enchantableCards(usedUids);
+  const cards = usedEligible.length ? usedEligible : game.enchantableCards();
+  if (!cards.length) {
+    onDone();
+    setToast("当前没有符合本星座刻印条件的卡牌");
+    return;
+  }
+  const enchantment = Object.values(ENCHANTMENT_DEFS).find((entry) => entry.archetype === game.archetypeId);
+  changeScreen("enchantment", { cards, enchantment, onDone });
+}
+
 function resolveCombatResult() {
   if (game.combat.status === "lost") {
     clearSave();
@@ -605,7 +639,7 @@ function resolveCombatResult() {
       title: "精英战奖励",
       onDone: () => showItemReward(
         game.rng.shuffle(Object.keys(ITEM_DEFS).filter((id) => ITEM_DEFS[id].rarity !== "boss" && !game.hasItem(id))).slice(0, 2),
-        advanceWeek,
+        () => showEnchantmentReward(advanceWeek),
         "精英物品奖励"
       )
     });
@@ -804,6 +838,14 @@ app.addEventListener("click", (event) => {
   } else if (action === "select-deck-card") {
     const card = game.deck.find((candidate) => candidate.uid === button.dataset.uid);
     if (card && context.onSelect) context.onSelect(card);
+  } else if (action === "enchant-card") {
+    if (game.enchantCard(button.dataset.uid)) {
+      const done = context.onDone;
+      setToast("星座刻印已写入卡牌");
+      done();
+    }
+  } else if (action === "skip-enchantment") {
+    context.onDone();
   } else if (action === "cancel-selection") {
     context.onCancel?.();
   } else if (action === "rest-heal") {

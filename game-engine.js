@@ -1,6 +1,7 @@
 import {
   ARCHETYPE_DEFS,
   CARD_DEFS,
+  ENCHANTMENT_DEFS,
   ENEMY_DEFS,
   ITEM_DEFS,
   NORMAL_ENEMY_IDS,
@@ -53,18 +54,27 @@ export class SeededRandom {
   }
 }
 
-export function makeCard(id, uid, upgraded = false) {
+export function makeCard(id, uid, upgraded = false, enchantment = null) {
   if (!CARD_DEFS[id]) throw new Error(`未知卡牌：${id}`);
-  return { id, uid, upgraded };
+  return { id, uid, upgraded, enchantment };
 }
 
 export function cardDefinition(card) {
   const definition = CARD_DEFS[card.id];
+  const enchantment = card.enchantment ? ENCHANTMENT_DEFS[card.enchantment] : null;
+  const effect = { ...(card.upgraded ? definition.upgradedEffect : definition.effect) };
+  let cost = definition.cost;
+  if (enchantment?.id === "ariesFlame" && definition.type === "attack" && effect.damage) effect.damage += 2;
+  if (enchantment?.id === "geminiQuick" && typeof cost === "number") cost = Math.max(0, cost - 1);
+  if (enchantment?.id === "cancerGuard" && effect.block) effect.block += 3;
+  const baseText = card.upgraded ? definition.upgradedText : definition.text;
   return {
     ...definition,
+    cost,
     displayName: `${definition.name}${card.upgraded ? "+" : ""}`,
-    displayText: card.upgraded ? definition.upgradedText : definition.text,
-    effect: card.upgraded ? definition.upgradedEffect : definition.effect
+    displayText: `${baseText}${enchantment ? `【${enchantment.name}】${enchantment.text}` : ""}`,
+    effect,
+    enchantment
   };
 }
 
@@ -138,6 +148,33 @@ export class SemesterGame {
     const card = this.deck.find((candidate) => candidate.uid === uid);
     if (!card || card.upgraded || card.id === "nervous" || card.id === "todo") return false;
     card.upgraded = true;
+    return true;
+  }
+
+  canEnchant(card) {
+    if (!card || card.enchantment) return false;
+    const definition = CARD_DEFS[card.id];
+    if (!definition || definition.type === "status") return false;
+    const effect = card.upgraded ? definition.upgradedEffect : definition.effect;
+    if (this.archetypeId === "aries") return definition.type === "attack" && Boolean(effect.damage);
+    if (this.archetypeId === "gemini") return typeof definition.cost === "number" && definition.cost > 0;
+    if (this.archetypeId === "cancer") return Boolean(effect.block);
+    return false;
+  }
+
+  enchantableCards(uids = null) {
+    const allowed = uids ? new Set(uids) : null;
+    return this.deck.filter((card) => (!allowed || allowed.has(card.uid)) && this.canEnchant(card));
+  }
+
+  enchantCard(uid) {
+    const card = this.deck.find((candidate) => candidate.uid === uid);
+    if (!this.canEnchant(card)) return false;
+    card.enchantment = {
+      aries: "ariesFlame",
+      gemini: "geminiQuick",
+      cancer: "cancerGuard"
+    }[this.archetypeId];
     return true;
   }
 
@@ -617,7 +654,12 @@ export class SemesterGame {
     game.hp = Math.min(game.maxHp, Math.max(1, Number(data.hp) || 1));
     game.gold = Math.max(0, Number(data.gold) || 0);
     game.deck = Array.isArray(data.deck)
-      ? data.deck.filter((card) => CARD_DEFS[card.id]).map((card) => ({ id: card.id, uid: String(card.uid), upgraded: Boolean(card.upgraded) }))
+      ? data.deck.filter((card) => CARD_DEFS[card.id]).map((card) => ({
+        id: card.id,
+        uid: String(card.uid),
+        upgraded: Boolean(card.upgraded),
+        enchantment: ENCHANTMENT_DEFS[card.enchantment]?.archetype === data.archetypeId ? card.enchantment : null
+      }))
       : startingDeckFor(data.archetypeId).map((id) => game.createCard(id));
     game.items = Array.isArray(data.items) ? data.items.filter((id) => ITEM_DEFS[id]) : [];
     game.backpackCapacity = Math.min(12, Math.max(6, Number(data.backpackCapacity) || 6));
