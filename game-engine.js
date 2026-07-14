@@ -26,10 +26,34 @@ export const CHALLENGE_RULES = Object.freeze({
   rarity: "uncommon"
 });
 
+export const CHALLENGE_AFFIX_DEFS = Object.freeze({
+  deadline: {
+    id: "deadline",
+    name: "限时下课",
+    icon: "时",
+    text: "第 4 回合起，敌人每次攻击额外 +4。"
+  },
+  backlog: {
+    id: "backlog",
+    name: "桌面爆满",
+    icon: "叠",
+    text: "开战时将 2 张待办洗入抽牌堆。"
+  },
+  earlyClass: {
+    id: "earlyClass",
+    name: "第一节早课",
+    icon: "早",
+    text: "第 1 回合少 1 点能量。"
+  }
+});
+
+const CHALLENGE_AFFIX_IDS = Object.keys(CHALLENGE_AFFIX_DEFS);
+
 function makeRouteNode(type, week, options = {}) {
   if (type === "combat") {
     const enemy = options.enemy;
     const challenge = options.challenge === true;
+    const affix = challenge && CHALLENGE_AFFIX_DEFS[options.affix] ? options.affix : null;
     const fixedLabels = {
       1: "教学战：瞌睡虫",
       2: "宠物教学：作业团",
@@ -40,7 +64,7 @@ function makeRouteNode(type, week, options = {}) {
       type,
       enemy,
       label: fixedLabels[week] || `${challenge ? "挑战战" : "普通战斗"}：${ENEMY_DEFS[enemy].name}`,
-      ...(challenge ? { challenge: true } : {})
+      ...(challenge ? { challenge: true, ...(affix ? { affix } : {}) } : {})
     };
   }
   if (type === "event") {
@@ -56,20 +80,32 @@ function ensureChallengeNodes(plan) {
     { weeks: [3, 4, 5, 6, 7], priority: [5, 7, 4, 6, 3] },
     { weeks: [9, 10, 11, 12, 13, 14, 15], priority: [10, 12, 13, 11, 14, 15, 9] }
   ];
+  const usedAffixes = new Set();
   for (const phase of phases) {
-    const existing = phase.weeks.flatMap((week) => plan[week]).filter((node) => node.challenge);
+    const existing = phase.weeks.flatMap((week) => plan[week].map((node, index) => ({ week, index, node })))
+      .filter((entry) => entry.node.challenge);
     if (existing.length > 1) return null;
-    if (existing.length === 1) continue;
-    const week = phase.priority.find((candidate) => (
-      plan[candidate].some((node) => node.type === "combat")
-      && plan[candidate].some((node) => node.type !== "combat")
-    ));
-    if (!week) return null;
-    const index = plan[week].findIndex((node) => node.type === "combat");
-    plan[week][index] = makeRouteNode("combat", week, {
-      enemy: plan[week][index].enemy,
-      challenge: true
+    let entry = existing[0];
+    if (!entry) {
+      const week = phase.priority.find((candidate) => (
+        plan[candidate].some((node) => node.type === "combat")
+        && plan[candidate].some((node) => node.type !== "combat")
+      ));
+      if (!week) return null;
+      const index = plan[week].findIndex((node) => node.type === "combat");
+      entry = { week, index, node: plan[week][index] };
+    }
+    const savedAffix = CHALLENGE_AFFIX_DEFS[entry.node.affix] && !usedAffixes.has(entry.node.affix)
+      ? entry.node.affix
+      : null;
+    const affix = savedAffix || CHALLENGE_AFFIX_IDS.find((id) => !usedAffixes.has(id));
+    if (!affix) return null;
+    plan[entry.week][entry.index] = makeRouteNode("combat", entry.week, {
+      enemy: entry.node.enemy,
+      challenge: true,
+      affix
     });
+    usedAffixes.add(affix);
   }
   return plan;
 }
@@ -91,7 +127,11 @@ function normalizeSemesterPlan(data) {
         if (!ENEMY_DEFS[raw.enemy]) return null;
         if (!FIXED_ROUTE_WEEKS.has(week) && ENEMY_DEFS[raw.enemy].kind !== "normal") return null;
         if (raw.challenge === true && FIXED_ROUTE_WEEKS.has(week)) return null;
-        plan[week].push(makeRouteNode("combat", week, { enemy: raw.enemy, challenge: raw.challenge === true }));
+        plan[week].push(makeRouteNode("combat", week, {
+          enemy: raw.enemy,
+          challenge: raw.challenge === true,
+          affix: raw.affix
+        }));
       } else if (raw.type === "event") {
         plan[week].push(makeRouteNode("event", week, { pool: raw.pool }));
       } else {
@@ -329,10 +369,9 @@ export class SemesterGame {
     };
     let restOptions = 2;
     let shopOptions = 2;
-    const challengeWeeks = new Set([
-      this.rng.pick([5, 7]),
-      this.rng.pick([10, 12, 13])
-    ]);
+    const challengeWeeks = [this.rng.pick([5, 7]), this.rng.pick([10, 12, 13])];
+    const challengeAffixes = this.rng.shuffle(CHALLENGE_AFFIX_IDS).slice(0, challengeWeeks.length);
+    const challengeAffixByWeek = new Map(challengeWeeks.map((week, index) => [week, challengeAffixes[index]]));
     for (const week of Object.keys(anchors).map(Number)) {
       const anchor = anchors[week];
       const anchorNode = makeRouteNode(anchor.type, week, {
@@ -344,13 +383,14 @@ export class SemesterGame {
         .filter((type) => type !== "rest" || restOptions < 4)
         .filter((type) => type !== "shop" || shopOptions < 3);
       if (!candidates.length) candidates = ["combat", "event"].filter((type) => type !== anchor.type);
-      const alternateType = challengeWeeks.has(week) ? "combat" : this.rng.pick(candidates);
+      const alternateType = challengeAffixByWeek.has(week) ? "combat" : this.rng.pick(candidates);
       if (alternateType === "rest") restOptions += 1;
       if (alternateType === "shop") shopOptions += 1;
       const alternateNode = makeRouteNode(alternateType, week, {
         enemy: alternateType === "combat" ? this.randomEnemy() : undefined,
         pool: week <= 3 ? "safe" : "all",
-        challenge: challengeWeeks.has(week)
+        challenge: challengeAffixByWeek.has(week),
+        affix: challengeAffixByWeek.get(week)
       });
       plan[week] = this.rng.shuffle([anchorNode, alternateNode]);
     }
@@ -442,10 +482,16 @@ export class SemesterGame {
     if (enemyId === "random") enemyId = this.randomEnemy();
     const definition = ENEMY_DEFS[enemyId];
     if (!definition) throw new Error(`未知敌人：${enemyId}`);
+    const combatModifiers = { ...modifiers };
+    if (combatModifiers.challenge && !CHALLENGE_AFFIX_DEFS[combatModifiers.affix]) {
+      combatModifiers.affix = CHALLENGE_AFFIX_IDS[0];
+    } else if (!CHALLENGE_AFFIX_DEFS[combatModifiers.affix]) {
+      delete combatModifiers.affix;
+    }
     this.stats.combatsStarted += 1;
 
     const semesterHpScale = 1 + (this.semester - 1) * 0.15;
-    const enemyMaxHp = Math.round(definition.maxHp * semesterHpScale * (modifiers.hpMultiplier || 1));
+    const enemyMaxHp = Math.round(definition.maxHp * semesterHpScale * (combatModifiers.hpMultiplier || 1));
     const initialCharge = Math.min(
       this.pet.maxCharge,
       (this.hasItem("petSnack") ? 1 : 0) + (this.flags.petSnackCombats > 0 ? 1 : 0)
@@ -454,6 +500,10 @@ export class SemesterGame {
     if (this.flags.petSnackCombats > 0) this.flags.petSnackCombats -= 1;
 
     let drawPile = this.rng.shuffle(this.deck.map((card) => ({ ...card })));
+    if (combatModifiers.affix === "backlog") {
+      drawPile.push(this.createCard("todo"), this.createCard("todo"));
+      drawPile = this.rng.shuffle(drawPile);
+    }
     const tension = this.flags.nextCombatTension + (this.hasItem("allNighter") ? 2 : 0);
     for (let index = 0; index < tension; index += 1) {
       drawPile.push(this.createCard("nervous"));
@@ -464,7 +514,7 @@ export class SemesterGame {
     this.combat = {
       status: "active",
       result: null,
-      modifiers,
+      modifiers: combatModifiers,
       turn: 0,
       startingHp: this.hp,
       cardsPlayed: 0,
@@ -500,7 +550,10 @@ export class SemesterGame {
       archetypeAttackUsed: false,
       archetypeZeroUsed: false,
       usedCardUids: new Set(),
-      log: [`遭遇 ${definition.name}。它的行动会完全公开。`]
+      log: [
+        `遭遇 ${definition.name}。它的行动会完全公开。`,
+        ...(combatModifiers.affix ? [`挑战词缀·${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].name}：${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].text}`] : [])
+      ]
     };
     this.flags.nextEnemyBlock = 0;
     this.startPlayerTurn();
@@ -515,9 +568,10 @@ export class SemesterGame {
       : definition.intents[combat.enemy.intentTurn % definition.intents.length];
     const damageScale = this.semester - 1;
     const damageMultiplier = combat.modifiers.damageMultiplier || 1;
+    const affixDamage = combat.modifiers.affix === "deadline" && combat.turn >= 4 ? 4 : 0;
     return {
       ...raw,
-      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) : undefined
+      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) + affixDamage : undefined
     };
   }
 
@@ -530,6 +584,7 @@ export class SemesterGame {
     combat.notebookUsed = false;
     combat.energy = 3 + (this.hasItem("allNighter") ? 1 : 0);
     if (combat.turn === 1 && this.hasItem("referenceBooks")) combat.energy -= 1;
+    if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") combat.energy -= 1;
 
     const drawCount = Math.max(
       0,
@@ -546,6 +601,9 @@ export class SemesterGame {
     if (combat.turn === 1 && this.archetypeId === "cancer") {
       combat.playerBlock += 4;
       combat.log.push("巨蟹座命盘：获得 4 点护甲。");
+    }
+    if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") {
+      combat.log.push("第一节早课：本回合少 1 点能量。");
     }
     combat.log.push(`第 ${combat.turn} 回合：抽 ${drawCount} 张牌，获得 ${combat.energy} 点能量。`);
   }
@@ -857,6 +915,7 @@ export class SemesterGame {
       enemyName: combat.enemy.name,
       enemyKind: enemy.kind,
       challenge: Boolean(combat.modifiers.challenge),
+      challengeAffix: combat.modifiers.affix || null,
       result: combat.result,
       turns: combat.turn,
       cardsPlayed: combat.cardsPlayed,
