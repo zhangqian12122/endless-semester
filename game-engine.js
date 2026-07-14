@@ -323,6 +323,9 @@ export class SemesterGame {
       result: null,
       modifiers,
       turn: 0,
+      startingHp: this.hp,
+      cardsPlayed: 0,
+      damageDealt: 0,
       enemy: {
         id: enemyId,
         name: definition.name,
@@ -438,6 +441,7 @@ export class SemesterGame {
     combat.hand.splice(index, 1);
     combat.energy -= definition.cost;
     combat.usedCardUids.add(card.uid);
+    combat.cardsPlayed += 1;
     this.stats.cardsPlayed += 1;
     this.stats.cardPlays[card.id] = (this.stats.cardPlays[card.id] || 0) + 1;
     const effect = definition.effect;
@@ -586,12 +590,13 @@ export class SemesterGame {
     for (let index = 0; index < hits; index += 1) {
       const absorbed = Math.min(combat.enemy.block, perHit);
       combat.enemy.block -= absorbed;
-      const healthDamage = perHit - absorbed;
+      const healthDamage = Math.min(perHit - absorbed, combat.enemy.hp);
       combat.enemy.hp -= healthDamage;
       dealt += healthDamage;
       if (combat.enemy.hp <= 0) break;
     }
     combat.enemy.hp = Math.max(0, combat.enemy.hp);
+    combat.damageDealt += dealt;
     return dealt;
   }
 
@@ -697,6 +702,22 @@ export class SemesterGame {
       combat.log.push("体力耗尽，本次挑战结束。");
     }
     return combat.status;
+  }
+
+  combatSummary() {
+    const combat = this.requireCombat();
+    const enemy = ENEMY_DEFS[combat.enemy.id];
+    return {
+      enemyId: combat.enemy.id,
+      enemyName: combat.enemy.name,
+      enemyKind: enemy.kind,
+      result: combat.result,
+      turns: combat.turn,
+      cardsPlayed: combat.cardsPlayed,
+      damageDealt: combat.damageDealt,
+      hpLost: Math.max(0, combat.startingHp - this.hp),
+      petUsed: combat.petUsed
+    };
   }
 
   startNextSemester() {

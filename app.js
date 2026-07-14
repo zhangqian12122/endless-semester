@@ -1,4 +1,5 @@
 import {
+  ACHIEVEMENT_DEFS,
   ALL_EVENT_IDS,
   ARCHETYPE_DEFS,
   ARCHETYPE_CARD_IDS,
@@ -15,9 +16,19 @@ import {
   WEEK_PLAN
 } from "./game-data.js";
 import { SemesterGame, cardDefinition } from "./game-engine.js";
+import {
+  achievementProgress,
+  createCareerProfile,
+  normalizeCareerProfile,
+  recordCareerCombat,
+  recordEnemyEncounter
+} from "./career.js";
 
 const app = document.querySelector("#app");
+const SAVE_KEY = "endless-semester-v2";
+const CAREER_KEY = "endless-semester-career-v1";
 let game = new SemesterGame();
+let career = readCareer();
 let screen = "intro";
 let context = {};
 let toast = "";
@@ -25,7 +36,6 @@ let lastEvent = null;
 let selectedArchetype = "cancer";
 let tutorialStep = -1;
 let pileView = null;
-const SAVE_KEY = "endless-semester-v2";
 
 const ICONS = {
   combat: "⚔",
@@ -64,11 +74,27 @@ function readSave() {
   }
 }
 
+function readCareer() {
+  try {
+    return normalizeCareerProfile(JSON.parse(localStorage.getItem(CAREER_KEY)));
+  } catch {
+    return createCareerProfile();
+  }
+}
+
 function saveGame() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(game.toJSON()));
   } catch {
     setToast("浏览器未允许本地存档，本次仍可继续游玩");
+  }
+}
+
+function saveCareer() {
+  try {
+    localStorage.setItem(CAREER_KEY, JSON.stringify(career));
+  } catch {
+    // 生涯档案不可用不影响当前对局。
   }
 }
 
@@ -87,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.6 战绩与牌堆</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.7 复盘与成就</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -99,6 +125,7 @@ function topBar() {
       <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
       ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
       ${screen !== "stats" ? '<button class="quiet-button" data-action="open-stats">战绩</button>' : ""}
+      ${screen !== "archive" ? '<button class="quiet-button" data-action="open-archive">档案</button>' : ""}
       ${screen !== "deck" ? '<button class="quiet-button" data-action="open-deck">查看构筑</button>' : ""}
     </header>`;
 }
@@ -168,6 +195,7 @@ function renderIntro() {
         </div>
         <button class="primary big" data-action="new-game">开始第一学期</button>
         ${saved ? `<button class="continue-button" data-action="continue-game">继续第 ${saved.semester} 学期 · 第 ${saved.week} 周<br><small>${ARCHETYPE_DEFS[saved.archetypeId].name} · ${saved.deck.length} 张牌</small></button>` : ""}
+        <button class="continue-button" data-action="open-archive">生涯档案 · ${career.unlockedAchievements.length}/${Object.keys(ACHIEVEMENT_DEFS).length} 成就</button>
         <p class="prototype-note">本版是完整规则灰盒：无付费、无体力墙、无概率付费抽卡。</p>
       </div>
       <aside class="intro-card-stack">
@@ -216,6 +244,62 @@ function intentDescription(intent) {
   if (intent.debuff === "distracted") parts.push("施加走神");
   if (intent.addStatus) parts.push(`加入 ${intent.addStatus.count} 张${CARD_DEFS[intent.addStatus.id].name}`);
   return parts.join(" · ") || "不会造成伤害";
+}
+
+function registerEnemyEncounter() {
+  const combat = game.combat;
+  const result = recordEnemyEncounter(career, combat.enemy.id);
+  combat.newEnemy = result.discovered;
+  combat.newAchievements = result.newAchievements;
+  if (result.discovered || result.newAchievements.length) saveCareer();
+}
+
+function recordCurrentCombat() {
+  const combat = game.combat;
+  if (!combat || combat.status === "active" || combat.careerRecorded) return;
+  const summary = game.combatSummary();
+  const newAchievements = recordCareerCombat(career, summary);
+  combat.summary = summary;
+  combat.careerRecorded = true;
+  combat.newAchievements = Array.from(new Set([...(combat.newAchievements || []), ...newAchievements]));
+  saveCareer();
+}
+
+function combatRecapAdvice(summary) {
+  if (summary.result === "lost" && summary.cardsPlayed < summary.turns * 2) {
+    return `本场平均每回合只打出 ${(summary.cardsPlayed / summary.turns).toFixed(1)} 张牌。优先花完能量，再考虑保留手牌。`;
+  }
+  if (summary.result === "lost" && summary.hpLost >= 12) {
+    return "生命损失较高。先按公开意图准备等量护甲，再用剩余能量输出。";
+  }
+  if (summary.result === "won" && summary.hpLost === 0) {
+    return "无伤胜利：当前防御节奏有效，可以继续围绕主力牌精简构筑。";
+  }
+  if (summary.turns >= 6) return "战斗拖得较久。增加稳定抽牌或移除低贡献牌，会比单纯拿高费牌更有效。";
+  return `本场用 ${summary.turns} 回合结束战斗，损失 ${summary.hpLost} 生命。下一次保持输出，同时按公开意图补足护甲。`;
+}
+
+function renderCombatResult(combat) {
+  const summary = combat.summary || game.combatSummary();
+  const enemy = ENEMY_DEFS[summary.enemyId];
+  const unlocked = (combat.newAchievements || []).map((id) => ACHIEVEMENT_DEFS[id]).filter(Boolean);
+  return `<div class="result-overlay">
+    <div class="result-card recap-card ${combat.status}">
+      <small>${combat.status === "won" ? "战斗复盘" : "挑战复盘"}</small>
+      <h2>${combat.status === "won" ? "胜利" : "体力耗尽"}</h2>
+      <p class="recap-enemy">对阵 ${enemy.name} · ${enemy.pattern}</p>
+      <div class="recap-stats">
+        <span><b>${summary.turns}</b>回合</span>
+        <span><b>${summary.cardsPlayed}</b>出牌</span>
+        <span><b>${summary.damageDealt}</b>伤害</span>
+        <span><b>${summary.hpLost}</b>掉血</span>
+      </div>
+      <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
+      ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
+      ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
+      <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
+    </div>
+  </div>`;
 }
 
 function renderCombat() {
@@ -280,15 +364,7 @@ function renderCombat() {
     </div>
     ${pileView ? renderPileOverlay(combat) : ""}
     ${tutorialStep >= 0 && combat.status === "active" ? renderTutorial() : ""}
-    ${combat.status !== "active" ? `
-      <div class="result-overlay">
-        <div class="result-card ${combat.status}">
-          <small>${combat.status === "won" ? "战斗结束" : "挑战结束"}</small>
-          <h2>${combat.status === "won" ? "胜利" : "体力耗尽"}</h2>
-          <p>${combat.status === "won" ? `暴躁鹅羁绊提升至 ${game.pet.bond}。` : "本次构筑已经记录，下次从更清晰的防御节奏开始。"}</p>
-          <button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button>
-        </div>
-      </div>` : ""}
+    ${combat.status !== "active" ? renderCombatResult(combat) : ""}
   `;
   return `${topBar()}<main class="combat-page">${body}</main>${toast ? `<div class="toast">${escapeHtml(toast)}</div>` : ""}`;
 }
@@ -485,6 +561,46 @@ function renderStats() {
   });
 }
 
+function renderArchive() {
+  const achievementTotal = Object.keys(ACHIEVEMENT_DEFS).length;
+  const kindLabels = { normal: "普通", elite: "精英", boss: "期末" };
+  const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", rivalShadow: "卷", finalExam: "末" };
+  const body = `
+    <div class="archive-summary">
+      <article><small>已解锁成就</small><strong>${career.unlockedAchievements.length}/${achievementTotal}</strong></article>
+      <article><small>发现敌人</small><strong>${career.discoveredEnemies.length}/${Object.keys(ENEMY_DEFS).length}</strong></article>
+      <article><small>生涯胜场</small><strong>${career.combatsWon}</strong></article>
+      <article><small>生涯出牌</small><strong>${career.cardsPlayed}</strong></article>
+    </div>
+    <div class="archive-heading"><div><small>目标记录</small><h2>成就</h2></div><p>成就只负责记录玩法目标，不提供永久数值，不让新玩家因入场晚而变弱。</p></div>
+    <div class="achievement-grid">
+      ${Object.values(ACHIEVEMENT_DEFS).map((achievement) => {
+        const progress = achievementProgress(career, achievement.id);
+        const percent = Math.min(100, (progress.current / progress.target) * 100);
+        return `<article class="achievement-card ${progress.unlocked ? "unlocked" : "locked"}">
+          <span>${progress.unlocked ? achievement.icon : "?"}</span>
+          <div><small>${progress.unlocked ? "已解锁" : `${progress.current}/${progress.target}`}</small><h3>${achievement.name}</h3><p>${achievement.text}</p><i><b style="width:${percent}%"></b></i></div>
+        </article>`;
+      }).join("")}
+    </div>
+    <div class="archive-heading"><div><small>遭遇记录</small><h2>敌人图鉴</h2></div><p>第一次遭遇后公开行动规律和一句应对建议。</p></div>
+    <div class="enemy-codex">
+      ${Object.values(ENEMY_DEFS).map((enemy) => {
+        const discovered = career.discoveredEnemies.includes(enemy.id);
+        return `<article class="enemy-entry ${discovered ? "discovered" : "locked"} ${context.focusEnemy === enemy.id ? "focused" : ""}">
+          <span>${discovered ? enemyIcons[enemy.id] : "?"}</span>
+          <div><small>${discovered ? `${kindLabels[enemy.kind]}敌人 · ${enemy.maxHp} 基础生命` : "尚未遭遇"}</small><h3>${discovered ? enemy.name : "未知记录"}</h3><p>${discovered ? enemy.subtitle : "在学期路线中遇见它，档案才会公开。"}</p></div>
+          ${discovered ? `<dl><dt>行动规律</dt><dd>${enemy.pattern}</dd><dt>应对建议</dt><dd>${enemy.tip}</dd></dl>` : ""}
+        </article>`;
+      }).join("")}
+    </div>
+    <div class="privacy-note">生涯档案与成就只保存在当前浏览器，不上传，不跨设备追踪。</div>
+    <button class="primary centered" data-action="close-archive">返回</button>`;
+  return page("校园档案", "复盘 · 图鉴 · 成就", body, {
+    description: "先看见自己的真实进步，再决定下一局要练什么。"
+  });
+}
+
 function renderRest() {
   const missing = game.maxHp - game.hp;
   const canUpgrade = game.deck.some((card) => !card.upgraded);
@@ -622,7 +738,8 @@ function render() {
     event: renderEvent,
     semesterComplete: renderSemesterComplete,
     rules: renderRules,
-    stats: renderStats
+    stats: renderStats,
+    archive: renderArchive
   };
   app.innerHTML = (renderers[screen] || renderIntro)();
 }
@@ -652,6 +769,7 @@ function selectEvent(pool) {
 function startNode(node) {
   if (node.type === "combat") {
     game.startCombat(node.enemy);
+    registerEnemyEncounter();
     tutorialStep = !game.tutorialSeen && game.semester === 1 && game.week === 1 ? 0 : -1;
     changeScreen("combat", { outcome: ENEMY_DEFS[game.combat.enemy.id].kind });
   } else if (node.type === "event") {
@@ -852,6 +970,7 @@ function resolveEventChoice(choice) {
     finishEvent("接下来 3 场战斗，暴躁鹅初始充能 +1");
   } else if (choice === "rumor-fight") {
     game.startCombat(game.randomEnemy(), { hpMultiplier: 1.3 });
+    registerEnemyEncounter();
     changeScreen("combat", { outcome: "event" });
   } else if (choice === "rumor-gold") {
     game.gold += 40;
@@ -910,6 +1029,7 @@ app.addEventListener("click", (event) => {
   } else if (action === "play-card") {
     const result = game.playCard(button.dataset.uid);
     if (!result.ok) setToast(result.reason);
+    recordCurrentCombat();
     render();
   } else if (action === "discard-card") {
     const result = game.discardCard(button.dataset.uid);
@@ -918,10 +1038,12 @@ app.addEventListener("click", (event) => {
   } else if (action === "end-turn") {
     const result = game.endTurn();
     if (!result.ok) setToast(result.reason);
+    recordCurrentCombat();
     render();
   } else if (action === "pet-skill") {
     const result = game.usePetSkill();
     if (!result.ok) setToast(result.reason);
+    recordCurrentCombat();
     render();
   } else if (action === "open-pile") {
     if (["drawPile", "discardPile", "exhaustPile"].includes(button.dataset.zone)) {
@@ -971,6 +1093,13 @@ app.addEventListener("click", (event) => {
     changeScreen("stats", { returnState });
   } else if (action === "close-stats") {
     const target = context.returnState || { screen: "map", context: {} };
+    changeScreen(target.screen, target.context);
+  } else if (action === "open-archive") {
+    const returnState = { screen, context };
+    const focusEnemy = game.combat?.enemy?.id || null;
+    changeScreen("archive", { returnState, focusEnemy });
+  } else if (action === "close-archive") {
+    const target = context.returnState || { screen: "intro", context: {} };
     changeScreen(target.screen, target.context);
   } else if (action === "tutorial-next") {
     if (tutorialStep >= 2) {

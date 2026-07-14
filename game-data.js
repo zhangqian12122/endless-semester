@@ -292,6 +292,8 @@ export const ENEMY_DEFS = {
   sleepyBug: {
     id: "sleepyBug", name: "瞌睡虫", maxHp: 20, kind: "normal",
     subtitle: "一边犯困，一边缓慢挥爪。",
+    pattern: "攻击 5 → 护甲 5 → 攻击 7",
+    tip: "它蜷起来时不会攻击，适合补状态；惊醒前至少准备 7 点护甲。",
     intents: [
       { name: "迷糊拍击", attack: 5 },
       { name: "蜷成一团", block: 5 },
@@ -301,6 +303,8 @@ export const ENEMY_DEFS = {
   homeworkBlob: {
     id: "homeworkBlob", name: "作业团", maxHp: 24, kind: "normal",
     subtitle: "越拖越多，但完成一点也有回报。",
+    pattern: "攻击 3 并塞待办 → 攻击 7 → 护甲 6",
+    tip: "待办会污染后续抽牌。尽快结束战斗，或用能消耗状态牌的卡清理。",
     intents: [
       { name: "追加待办", attack: 3, addStatus: { id: "todo", count: 1, zone: "discard" } },
       { name: "催交", attack: 7 },
@@ -310,6 +314,8 @@ export const ENEMY_DEFS = {
   alarmClock: {
     id: "alarmClock", name: "闹钟怪", maxHp: 28, kind: "normal",
     subtitle: "你清楚知道它什么时候会响。",
+    pattern: "护甲 5 → 攻击 7 → 攻击 14",
+    tip: "前两步是明确倒计时。不要把所有防御牌花在蓄响回合。",
     intents: [
       { name: "蓄响", block: 5 },
       { name: "铃声", attack: 7 },
@@ -319,6 +325,8 @@ export const ENEMY_DEFS = {
   phoneSpirit: {
     id: "phoneSpirit", name: "手机精", maxHp: 22, kind: "normal",
     subtitle: "只看一眼，注意力就被吸走。",
+    pattern: "施加走神 → 攻击 8 → 攻击 5 并走神",
+    tip: "走神让攻击每段 -2，多段攻击损失最大；可先防御，等状态消失再爆发。",
     intents: [
       { name: "推送轰炸", debuff: "distracted" },
       { name: "震动撞击", attack: 8 },
@@ -328,6 +336,8 @@ export const ENEMY_DEFS = {
   rivalShadow: {
     id: "rivalShadow", name: "卷王幻影", maxHp: 48, kind: "elite",
     subtitle: "每拖一个回合，它都比刚才更强。",
+    pattern: "每回合攻击，伤害从 6 开始持续 +2",
+    tip: "它没有休息回合。精简卡组、持续输出比等待完美手牌更重要。",
     intentAt(turn) {
       return { name: "加速内卷", attack: 6 + turn * 2 };
     }
@@ -335,6 +345,8 @@ export const ENEMY_DEFS = {
   finalExam: {
     id: "finalExam", name: "期末考试", maxHp: 90, kind: "boss",
     subtitle: "题目完全公开，但时间不会等你。",
+    pattern: "塞入紧张 → 攻击 8 → 攻击 10 并护甲 8 → 递增大题",
+    tip: "四回合为一轮。发卷回合整理手牌，大题前保存高额防御。",
     intentAt(turn) {
       const step = turn % 4;
       const cycle = Math.floor(turn / 4);
@@ -347,6 +359,17 @@ export const ENEMY_DEFS = {
 };
 
 export const NORMAL_ENEMY_IDS = ["sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit"];
+
+export const ACHIEVEMENT_DEFS = {
+  firstWin: { id: "firstWin", icon: "✓", name: "顺利下课", text: "赢得第一场战斗。", metric: "combatsWon", target: 1 },
+  cleanWin: { id: "cleanWin", icon: "♥", name: "一滴没掉", text: "无伤赢得一场战斗。", metric: "cleanWins", target: 1 },
+  quickWin: { id: "quickWin", icon: "3", name: "三回合下课", text: "在 3 回合内赢得一场战斗。", metric: "quickWins", target: 1 },
+  gooseCall: { id: "gooseCall", icon: "鹅", name: "鹅来！", text: "累计让暴躁鹅出手 5 次。", metric: "petUses", target: 5 },
+  campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现全部 4 种普通敌人。", metric: "normalEnemies", target: 4 },
+  midtermPass: { id: "midtermPass", icon: "中", name: "期中不挂科", text: "击败一次精英敌人。", metric: "eliteWins", target: 1 },
+  finalSubmitted: { id: "finalSubmitted", icon: "末", name: "期末交卷", text: "击败一次期末考试。", metric: "bossWins", target: 1 },
+  cardRiver: { id: "cardRiver", icon: "∞", name: "出牌如流水", text: "生涯累计打出 100 张牌。", metric: "cardsPlayed", target: 100 }
+};
 
 export const WEEK_PLAN = {
   1: [{ type: "combat", enemy: "sleepyBug", label: "教学战：瞌睡虫" }],

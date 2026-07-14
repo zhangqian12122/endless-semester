@@ -3,6 +3,13 @@ import assert from "node:assert/strict";
 
 import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
+import {
+  achievementProgress,
+  createCareerProfile,
+  normalizeCareerProfile,
+  recordCareerCombat,
+  recordEnemyEncounter
+} from "../career.js";
 
 function putCardInHand(game, id) {
   const combat = game.combat;
@@ -306,6 +313,44 @@ test("试玩统计只累计真正穿过护甲的战斗生命损失", () => {
   game.endTurn();
   assert.equal(game.hp, 48);
   assert.equal(game.stats.combatHpLost, 2);
+});
+
+test("战斗复盘记录回合、出牌、实际伤害和掉血", () => {
+  const game = new SemesterGame(110, "aries");
+  game.startCombat("sleepyBug");
+  game.combat.enemy.hp = 5;
+  const strike = putCardInHand(game, "textbookStrike");
+  game.combat.energy = 3;
+  game.playCard(strike.uid);
+  const summary = game.combatSummary();
+
+  assert.equal(summary.result, "won");
+  assert.equal(summary.enemyId, "sleepyBug");
+  assert.equal(summary.turns, 1);
+  assert.equal(summary.cardsPlayed, 1);
+  assert.equal(summary.damageDealt, 5);
+  assert.equal(summary.hpLost, 0);
+});
+
+test("生涯档案跨对局记录发现与成就进度", () => {
+  const profile = createCareerProfile();
+  for (const enemyId of ["sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit"]) {
+    recordEnemyEncounter(profile, enemyId);
+  }
+  const unlocked = recordCareerCombat(profile, {
+    result: "won", enemyKind: "normal", turns: 3, cardsPlayed: 6, hpLost: 0, petUsed: true
+  });
+
+  assert.equal(profile.discoveredEnemies.length, 4);
+  assert.ok(profile.unlockedAchievements.includes("campusArchive"));
+  assert.ok(unlocked.includes("firstWin"));
+  assert.ok(unlocked.includes("cleanWin"));
+  assert.ok(unlocked.includes("quickWin"));
+  assert.deepEqual(achievementProgress(profile, "gooseCall"), { current: 1, target: 5, unlocked: false });
+
+  const restored = normalizeCareerProfile(JSON.parse(JSON.stringify(profile)));
+  assert.equal(restored.cardsPlayed, 6);
+  assert.deepEqual(restored.unlockedAchievements, profile.unlockedAchievements);
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {
