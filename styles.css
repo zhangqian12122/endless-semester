@@ -320,6 +320,16 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .type-skill .card-art { background: #63829b; }
 .type-status .card-art { background: #686372; }
 .card-text { flex: 1; font-size: 11px; line-height: 1.5; }
+.card-fit { display: block; width: 100%; margin-top: 9px; padding: 7px 8px; text-align: left; border: 1px solid rgba(0,0,0,.16); border-radius: 5px; background: rgba(255,255,255,.3); }
+.card-fit b, .card-fit em { display: block; }
+.card-fit b { color: #2d6547; font-size: 9px; }
+.card-fit em { margin-top: 2px; color: #6d675e; font-size: 7px; line-height: 1.35; font-style: normal; }
+.card-fit.fit-repair { border-color: #5e9472; background: rgba(114,196,147,.2); }
+.card-fit.fit-core { border-color: #9d7926; background: rgba(243,201,93,.22); }
+.card-fit.fit-core b { color: #795912; }
+.card-fit.fit-pivot { border-color: #7b64a1; background: rgba(184,148,232,.2); }
+.card-fit.fit-pivot b { color: #65458b; }
+.card-fit.fit-neutral { opacity: .72; }
 .game-card > small { width: 100%; margin-top: 9px; padding-top: 7px; border-top: 1px solid rgba(0,0,0,.16); color: #6b665e; font-size: 8px; }
 .hand .game-card { margin-right: -30px; transform-origin: 50% 100%; }
 .hand .game-card:last-child { margin-right: 0; }
@@ -371,6 +381,10 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .pool-composition b { margin-right: auto; font-size: 12px; }
 .pool-composition span { padding: 5px 8px; color: #d7d2c8; border: 1px solid #4b5260; border-radius: 99px; font-size: 10px; }
 .pool-composition em { color: var(--muted); font-size: 10px; font-style: normal; }
+.choice-advice { display: grid; grid-template-columns: auto 1fr; gap: 4px 15px; margin: -14px 0 24px; padding: 14px 17px; border: 1px solid var(--line); border-left: 4px solid var(--green); border-radius: 6px; background: var(--panel); }
+.choice-advice b { grid-row: span 2; align-self: center; color: var(--green); white-space: nowrap; }
+.choice-advice span { color: #ded9ce; font-size: 11px; }
+.choice-advice em { color: var(--muted); font-size: 8px; font-style: normal; }
 .card-choice-row { gap: 24px; }
 .card-choice-row .game-card { flex-basis: 210px; width: 210px; min-height: 292px; padding: 20px 15px; }
 .card-choice-row .card-art { height: 112px; }
@@ -568,6 +582,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .game-card:not(:disabled):hover { transform: translateY(-4px); }
   .choice-actions, .collection-summary { flex-wrap: wrap; }
   .pool-composition { align-items: flex-start; flex-direction: column; }
+  .choice-advice { grid-template-columns: 1fr; }
+  .choice-advice b { grid-row: auto; }
   .event-options button { align-items: flex-start; flex-direction: column; }
   .report-card { grid-template-columns: 1fr; }
   .report-card > div { min-height: 190px; border-right: 0; border-bottom: 1px solid #a89f8d; }

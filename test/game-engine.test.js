@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
-import { analyzeBuild } from "../build-analysis.js";
+import { analyzeBuild, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -368,6 +368,26 @@ test("宠物牌与羁绊路线足够集中时识别为鹅鹅协同", () => {
   const analysis = analyzeBuild(game);
   assert.equal(analysis.primary.id, "pet");
   assert.equal(analysis.risk, "防御密度偏低");
+});
+
+test("候选牌会区分核心契合、转型组件和补足短板", () => {
+  const offense = new SemesterGame(207, "aries");
+  assert.equal(evaluateCardFit(offense, "stubborn").id, "core");
+  assert.equal(evaluateCardFit(offense, "borrowNotes").id, "pivot");
+  assert.match(choiceGuidance(offense, ["stubborn", "borrowNotes"]), /1 张核心契合牌/);
+
+  const fragile = new SemesterGame(208, "aries");
+  fragile.deck = Array.from({ length: 8 }, () => fragile.createCard("textbookStrike"));
+  assert.equal(evaluateCardFit(fragile, "holdOn").id, "repair");
+  assert.match(choiceGuidance(fragile, ["holdOn", "borrowNotes"]), /防御密度偏低/);
+});
+
+test("选牌契合评估不会修改卡组或随机数状态", () => {
+  const game = new SemesterGame(209, "gemini");
+  const before = JSON.stringify(game.toJSON());
+  evaluateCardFit(game, "feedPet");
+  choiceGuidance(game, ["feedPet", "catCombo", "holdOn"]);
+  assert.equal(JSON.stringify(game.toJSON()), before);
 });
 
 test("随机池新增群聊99+与卡纸打印机，且机制按公开意图执行", () => {

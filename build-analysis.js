@@ -7,6 +7,43 @@ export const BUILD_STYLE_DEFS = {
   pet: { id: "pet", label: "鹅鹅协同", sign: "鹅", text: "稳定充能，让宠物成为每场战斗的固定节奏点。" }
 };
 
+function emptyScores() {
+  return { offense: 0, defense: 0, cycle: 0, pet: 0 };
+}
+
+function emptyCounts() {
+  return { attacks: 0, guards: 0, cycleCards: 0, petCards: 0, highCost: 0 };
+}
+
+export function cardStyleContribution(card) {
+  const instance = typeof card === "string" ? { id: card, upgraded: false, enchantment: null } : card;
+  const definition = cardDefinition(instance);
+  const effect = definition.effect;
+  const scores = emptyScores();
+  const counts = emptyCounts();
+  if (definition.type === "attack") {
+    counts.attacks += 1;
+    scores.pet += 0.55;
+  }
+  if (typeof definition.cost === "number" && definition.cost >= 2) counts.highCost += 1;
+  if (effect.damage) scores.offense += 2 + Math.min(4, (effect.damage * (effect.hits || 1)) / 5);
+  if (effect.attackBonus || effect.doubleNextAttack) scores.offense += 4;
+  if (effect.block) {
+    counts.guards += 1;
+    scores.defense += 2 + Math.min(4, effect.block / 5);
+  }
+  if (effect.clearDistracted || effect.exhaustStatuses) scores.defense += 2;
+  if (effect.draw || effect.nextDrawBonus || definition.cost === 0 || effect.discard) {
+    counts.cycleCards += 1;
+    scores.cycle += (effect.draw || 0) * 2 + (effect.nextDrawBonus || 0) * 1.5 + (definition.cost === 0 ? 1.5 : 0) + (effect.discard ? 1 : 0);
+  }
+  if (effect.petCharge) {
+    counts.petCards += 1;
+    scores.pet += 7 * effect.petCharge;
+  }
+  return { scores, counts };
+}
+
 function addArchetypeBias(scores, archetypeId) {
   if (archetypeId === "aries") scores.offense += 5;
   if (archetypeId === "gemini") scores.cycle += 7;
@@ -25,32 +62,13 @@ function addItemBias(scores, game) {
 }
 
 export function analyzeBuild(game) {
-  const scores = { offense: 0, defense: 0, cycle: 0, pet: 0 };
-  const counts = { attacks: 0, guards: 0, cycleCards: 0, petCards: 0, highCost: 0 };
+  const scores = emptyScores();
+  const counts = emptyCounts();
 
   for (const card of game.deck) {
-    const definition = cardDefinition(card);
-    const effect = definition.effect;
-    if (definition.type === "attack") {
-      counts.attacks += 1;
-      scores.pet += 0.55;
-    }
-    if (typeof definition.cost === "number" && definition.cost >= 2) counts.highCost += 1;
-    if (effect.damage) scores.offense += 2 + Math.min(4, (effect.damage * (effect.hits || 1)) / 5);
-    if (effect.attackBonus || effect.doubleNextAttack) scores.offense += 4;
-    if (effect.block) {
-      counts.guards += 1;
-      scores.defense += 2 + Math.min(4, effect.block / 5);
-    }
-    if (effect.clearDistracted || effect.exhaustStatuses) scores.defense += 2;
-    if (effect.draw || effect.nextDrawBonus || definition.cost === 0 || effect.discard) {
-      counts.cycleCards += 1;
-      scores.cycle += (effect.draw || 0) * 2 + (effect.nextDrawBonus || 0) * 1.5 + (definition.cost === 0 ? 1.5 : 0) + (effect.discard ? 1 : 0);
-    }
-    if (effect.petCharge) {
-      counts.petCards += 1;
-      scores.pet += 7 * effect.petCharge;
-    }
+    const contribution = cardStyleContribution(card);
+    for (const id of Object.keys(scores)) scores[id] += contribution.scores[id];
+    for (const id of Object.keys(counts)) counts[id] += contribution.counts[id];
   }
 
   addArchetypeBias(scores, game.archetypeId);
@@ -88,4 +106,64 @@ export function analyzeBuild(game) {
     risk,
     suggestion
   };
+}
+
+export function evaluateCardFit(game, card) {
+  const analysis = analyzeBuild(game);
+  const contribution = cardStyleContribution(card);
+  const ranking = Object.entries(contribution.scores).sort((left, right) => right[1] - left[1]);
+  const [cardStyleId, cardStyleScore] = ranking[0];
+  const repairStyles = {
+    "防御密度偏低": "defense",
+    "收尾手段偏少": "offense",
+    "找牌速度偏慢": "cycle",
+    "高费牌拥挤": "cycle"
+  };
+  const repairStyle = repairStyles[analysis.risk];
+
+  if (repairStyle && contribution.scores[repairStyle] >= 3) {
+    return {
+      id: "repair",
+      label: "补足短板",
+      grade: 4,
+      style: BUILD_STYLE_DEFS[repairStyle],
+      reason: `直接改善“${analysis.risk}”`
+    };
+  }
+  if (contribution.scores[analysis.primary.id] >= 3) {
+    return {
+      id: "core",
+      label: "核心契合",
+      grade: 3,
+      style: analysis.primary,
+      reason: `继续强化${analysis.primary.label}`
+    };
+  }
+  if (cardStyleScore >= 3) {
+    return {
+      id: "pivot",
+      label: "转型组件",
+      grade: 2,
+      style: BUILD_STYLE_DEFS[cardStyleId],
+      reason: `更偏向${BUILD_STYLE_DEFS[cardStyleId].label}`
+    };
+  }
+  return {
+    id: "neutral",
+    label: "中性选择",
+    grade: 1,
+    style: BUILD_STYLE_DEFS[cardStyleId],
+    reason: "与当前主流派联系较弱"
+  };
+}
+
+export function choiceGuidance(game, cards) {
+  const analysis = analyzeBuild(game);
+  const fits = cards.map((card) => evaluateCardFit(game, card));
+  const repairs = fits.filter((fit) => fit.id === "repair").length;
+  const cores = fits.filter((fit) => fit.id === "core").length;
+  if (repairs) return `当前短板是“${analysis.risk}”，本组有 ${repairs} 张牌能直接补足。`;
+  if (cores) return `当前主流派是“${analysis.primary.label}”，本组有 ${cores} 张核心契合牌。`;
+  if (game.deck.length >= 14) return `当前 ${game.deck.length} 张牌，候选牌都不直接补强主流派；跳过能保持抽牌稳定。`;
+  return "本组没有直接补强项；可选择转型，也可以跳过等待更合适的牌。";
 }

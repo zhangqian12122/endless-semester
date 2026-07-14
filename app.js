@@ -16,7 +16,7 @@ import {
   WEEK_PLAN
 } from "./game-data.js";
 import { SemesterGame, cardDefinition } from "./game-engine.js";
-import { analyzeBuild, BUILD_STYLE_DEFS } from "./build-analysis.js";
+import { analyzeBuild, BUILD_STYLE_DEFS, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -114,7 +114,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.8 构筑诊断</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.9 选牌建议</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -152,6 +152,7 @@ function cardHtml(card, options = {}) {
   const playable = options.playable !== false;
   const action = options.action || "play-card";
   const cost = definition.cost === null ? "—" : definition.cost;
+  const fit = options.fit;
   return `
     <button class="game-card type-${definition.type} rarity-${definition.rarity} ${owner ? `exclusive-card exclusive-${owner.id}` : ""} ${playable ? "" : "disabled"}"
       data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}" ${playable ? "" : "disabled"}>
@@ -161,6 +162,7 @@ function cardHtml(card, options = {}) {
       <strong>${definition.displayName}</strong>
       <span class="card-art">${definition.type === "attack" ? "✦" : definition.type === "status" ? "!" : "◆"}</span>
       <span class="card-text">${definition.displayText}</span>
+      ${fit ? `<span class="card-fit fit-${fit.id}"><b>${fit.label}</b><em>${fit.reason}</em></span>` : ""}
       <small>${definition.type === "attack" ? "攻击" : definition.type === "status" ? "状态" : "技能"}</small>
     </button>`;
 }
@@ -410,7 +412,8 @@ function renderCardReward() {
   const body = `
     <div class="choice-copy"><p>${context.message || "选一张加入构筑，也可以跳过。"}</p></div>
     <div class="pool-composition"><b>${game.archetype.sign} 当前奖励构成</b><span>${exclusiveCount} 张本星座专属</span><span>${publicCount} 张普池</span><em>不会出现其他星座专属牌</em></div>
-    <div class="card-choice-row">${context.choices.map((id) => cardHtml(id, { action: "take-reward-card" })).join("")}</div>
+    ${choiceAdviceHtml(context.choices)}
+    <div class="card-choice-row">${context.choices.map((id) => cardHtml(id, { action: "take-reward-card", fit: evaluateCardFit(game, id) })).join("")}</div>
     <div class="choice-actions">
       ${game.hasItem("eraser") && !game.flags.eraserUsed && context.allowReroll !== false ? '<button class="secondary" data-action="reroll-reward">橡皮擦：本学期重抽一次</button>' : ""}
       <button class="quiet-button" data-action="skip-reward">跳过，不让卡组变厚</button>
@@ -419,6 +422,15 @@ function renderCardReward() {
     description: "强牌不一定适合当前构筑；能稳定抽到核心牌同样重要。",
     className: "reward-page"
   });
+}
+
+function choiceAdviceHtml(cardIds) {
+  const build = analyzeBuild(game);
+  return `<div class="choice-advice">
+    <b>${build.primary.sign} ${build.primary.label}</b>
+    <span>${choiceGuidance(game, cardIds)}</span>
+    <em>标签只比较当前构筑，不改变卡牌效果、奖励概率或商店价格。</em>
+  </div>`;
 }
 
 function renderItemReward() {
@@ -639,14 +651,16 @@ function discountedPrice(base, isItem = false) {
 }
 
 function renderShop() {
+  const availableCardIds = context.cards.filter((stock) => !stock.sold).map((stock) => stock.id);
   const body = `
     <div class="shopkeeper"><span>店</span><p>“别问进货渠道。学生证确实能打折。”</p></div>
     <h2 class="subheading">卡牌</h2>
+    ${availableCardIds.length ? choiceAdviceHtml(availableCardIds) : ""}
     <div class="shop-grid">
       ${context.cards.map((stock, index) => {
         const base = { common: 40, uncommon: 65, rare: 100 }[CARD_DEFS[stock.id].rarity];
         const price = discountedPrice(base);
-        return `<div class="shop-stock ${stock.sold ? "sold" : ""}">${cardHtml(stock.id, { action: "noop", playable: !stock.sold })}<button data-action="buy-card" data-index="${index}" ${stock.sold || game.gold < price ? "disabled" : ""}>${stock.sold ? "已售" : `${price} 币`}</button></div>`;
+        return `<div class="shop-stock ${stock.sold ? "sold" : ""}">${cardHtml(stock.id, { action: "noop", playable: !stock.sold, fit: evaluateCardFit(game, stock.id) })}<button data-action="buy-card" data-index="${index}" ${stock.sold || game.gold < price ? "disabled" : ""}>${stock.sold ? "已售" : `${price} 币`}</button></div>`;
       }).join("")}
     </div>
     <h2 class="subheading">物品</h2>
