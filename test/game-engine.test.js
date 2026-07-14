@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
+import { CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 import { analyzeBuild, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
@@ -432,6 +432,15 @@ test("同一种子生成相同路线，且固定周、节点差异与补给保�
   const allNodes = first.semesterPlan.flat();
   assert.ok(allNodes.filter((node) => node.type === "rest").length >= 2);
   assert.ok(allNodes.filter((node) => node.type === "shop").length >= 2);
+  const challenges = allNodes.filter((node) => node.challenge);
+  assert.equal(challenges.length, 2);
+  assert.equal(first.semesterPlan.slice(3, 8).flat().filter((node) => node.challenge).length, 1);
+  assert.equal(first.semesterPlan.slice(9, 16).flat().filter((node) => node.challenge).length, 1);
+  for (let week = 3; week <= 15; week += 1) {
+    if (first.semesterPlan[week].some((node) => node.challenge)) {
+      assert.ok(first.semesterPlan[week].some((node) => node.type !== "combat"));
+    }
+  }
 });
 
 test("路线随存档恢复，旧存档迁移也不会消耗后续随机数", () => {
@@ -442,6 +451,18 @@ test("路线随存档恢复，旧存档迁移也不会消耗后续随机数", ()
   assert.deepEqual(restored.semesterPlan, game.semesterPlan);
   assert.equal(restored.rng.state, saved.rngState);
 
+  const versionOneRoute = game.toJSON();
+  for (const nodes of versionOneRoute.semesterPlan) {
+    for (const node of nodes) delete node.challenge;
+  }
+  const migratedRoute = SemesterGame.fromJSON(versionOneRoute);
+  assert.equal(migratedRoute.rng.state, versionOneRoute.rngState);
+  assert.equal(migratedRoute.semesterPlan.flat().filter((node) => node.challenge).length, 2);
+  assert.deepEqual(
+    migratedRoute.semesterPlan.flat().map(({ type, enemy }) => ({ type, enemy })),
+    versionOneRoute.semesterPlan.flat().map(({ type, enemy }) => ({ type, enemy }))
+  );
+
   const legacy = game.toJSON();
   delete legacy.semesterPlan;
   const migrated = SemesterGame.fromJSON(legacy);
@@ -449,6 +470,30 @@ test("路线随存档恢复，旧存档迁移也不会消耗后续随机数", ()
   assert.equal(migrated.rng.state, legacy.rngState);
   assert.equal(migrated.semesterPlan.length, 17);
   assert.ok(migrated.semesterPlan[7].length > 0);
+});
+
+test("挑战战公开强化数值，并记录挑战胜利与成就", () => {
+  const game = new SemesterGame(303, "cancer");
+  game.startCombat("alarmClock", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier
+  });
+  assert.equal(game.combat.enemy.maxHp, 38);
+  game.combat.enemy.intentTurn = 1;
+  assert.equal(game.getIntent().attack, 9);
+
+  game.combat.enemy.hp = 0;
+  game.checkCombatEnd();
+  const summary = game.combatSummary();
+  assert.equal(summary.challenge, true);
+  assert.equal(game.stats.challengeWins, 1);
+  assert.ok(game.rewardCards(3, CHALLENGE_RULES.rarity).every((id) => CARD_DEFS[id].rarity === "uncommon"));
+
+  const profile = createCareerProfile();
+  const unlocked = recordCareerCombat(profile, summary);
+  assert.equal(profile.challengeWins, 1);
+  assert.ok(unlocked.includes("challengeWon"));
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {

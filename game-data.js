@@ -388,37 +388,10 @@ export const ACHIEVEMENT_DEFS = {
   quickWin: { id: "quickWin", icon: "3", name: "三回合下课", text: "在 3 回合内赢得一场战斗。", metric: "quickWins", target: 1 },
   gooseCall: { id: "gooseCall", icon: "鹅", name: "鹅来！", text: "累计让暴躁鹅出手 5 次。", metric: "petUses", target: 5 },
   campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现任意 4 种普通敌人。", metric: "normalEnemies", target: 4 },
+  challengeWon: { id: "challengeWon", icon: "难", name: "主动加练", text: "赢得一次可选挑战战。", metric: "challengeWins", target: 1 },
   midtermPass: { id: "midtermPass", icon: "中", name: "期中不挂科", text: "击败一次精英敌人。", metric: "eliteWins", target: 1 },
   finalSubmitted: { id: "finalSubmitted", icon: "末", name: "期末交卷", text: "击败一次期末考试。", metric: "bossWins", target: 1 },
   cardRiver: { id: "cardRiver", icon: "∞", name: "出牌如流水", text: "生涯累计打出 100 张牌。", metric: "cardsPlayed", target: 100 }
-};
-
-export const WEEK_PLAN = {
-  1: [{ type: "combat", enemy: "sleepyBug", label: "教学战：瞌睡虫" }],
-  2: [{ type: "combat", enemy: "homeworkBlob", label: "宠物教学：作业团" }],
-  3: [{ type: "event", pool: "safe", label: "？ 低风险校园事件" }],
-  4: [{ type: "combat", enemy: "phoneSpirit", label: "普通战斗：手机精" }],
-  5: [{ type: "rest", label: "休息节点" }],
-  6: [
-    { type: "combat", enemy: "alarmClock", label: "普通战斗：闹钟怪" },
-    { type: "event", pool: "all", label: "？ 未知事件" }
-  ],
-  7: [
-    { type: "shop", label: "校园商店" },
-    { type: "combat", enemy: "sleepyBug", label: "普通战斗：瞌睡虫" }
-  ],
-  8: [{ type: "combat", enemy: "rivalShadow", label: "期中精英：卷王幻影" }],
-  9: [{ type: "rest", label: "休息节点" }],
-  10: [{ type: "event", pool: "all", label: "？ 未知事件" }],
-  11: [{ type: "combat", enemy: "random", label: "普通战斗" }],
-  12: [
-    { type: "combat", enemy: "random", label: "普通战斗" },
-    { type: "shop", label: "校园商店" }
-  ],
-  13: [{ type: "event", pool: "all", label: "？ 未知事件" }],
-  14: [{ type: "combat", enemy: "random", label: "普通战斗" }],
-  15: [{ type: "combat", enemy: "random", label: "期末前最后一战" }],
-  16: [{ type: "combat", enemy: "finalExam", label: "期末Boss：期末考试" }]
 };
 
 export const EVENT_DEFS = {

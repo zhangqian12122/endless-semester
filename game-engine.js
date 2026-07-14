@@ -19,16 +19,29 @@ const STARTING_DECK_CORE = [
 
 const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
 
+export const CHALLENGE_RULES = Object.freeze({
+  hpMultiplier: 1.35,
+  damageMultiplier: 1.25,
+  gold: 35,
+  rarity: "uncommon"
+});
+
 function makeRouteNode(type, week, options = {}) {
   if (type === "combat") {
     const enemy = options.enemy;
+    const challenge = options.challenge === true;
     const fixedLabels = {
       1: "教学战：瞌睡虫",
       2: "宠物教学：作业团",
       8: "期中精英：卷王幻影",
       16: "期末Boss：期末考试"
     };
-    return { type, enemy, label: fixedLabels[week] || `普通战斗：${ENEMY_DEFS[enemy].name}` };
+    return {
+      type,
+      enemy,
+      label: fixedLabels[week] || `${challenge ? "挑战战" : "普通战斗"}：${ENEMY_DEFS[enemy].name}`,
+      ...(challenge ? { challenge: true } : {})
+    };
   }
   if (type === "event") {
     const pool = options.pool === "safe" ? "safe" : "all";
@@ -36,6 +49,29 @@ function makeRouteNode(type, week, options = {}) {
   }
   if (type === "rest") return { type, label: "休息节点" };
   return { type: "shop", label: "校园商店" };
+}
+
+function ensureChallengeNodes(plan) {
+  const phases = [
+    { weeks: [3, 4, 5, 6, 7], priority: [5, 7, 4, 6, 3] },
+    { weeks: [9, 10, 11, 12, 13, 14, 15], priority: [10, 12, 13, 11, 14, 15, 9] }
+  ];
+  for (const phase of phases) {
+    const existing = phase.weeks.flatMap((week) => plan[week]).filter((node) => node.challenge);
+    if (existing.length > 1) return null;
+    if (existing.length === 1) continue;
+    const week = phase.priority.find((candidate) => (
+      plan[candidate].some((node) => node.type === "combat")
+      && plan[candidate].some((node) => node.type !== "combat")
+    ));
+    if (!week) return null;
+    const index = plan[week].findIndex((node) => node.type === "combat");
+    plan[week][index] = makeRouteNode("combat", week, {
+      enemy: plan[week][index].enemy,
+      challenge: true
+    });
+  }
+  return plan;
 }
 
 function normalizeSemesterPlan(data) {
@@ -54,7 +90,8 @@ function normalizeSemesterPlan(data) {
       if (raw.type === "combat") {
         if (!ENEMY_DEFS[raw.enemy]) return null;
         if (!FIXED_ROUTE_WEEKS.has(week) && ENEMY_DEFS[raw.enemy].kind !== "normal") return null;
-        plan[week].push(makeRouteNode("combat", week, { enemy: raw.enemy }));
+        if (raw.challenge === true && FIXED_ROUTE_WEEKS.has(week)) return null;
+        plan[week].push(makeRouteNode("combat", week, { enemy: raw.enemy, challenge: raw.challenge === true }));
       } else if (raw.type === "event") {
         plan[week].push(makeRouteNode("event", week, { pool: raw.pool }));
       } else {
@@ -67,7 +104,7 @@ function normalizeSemesterPlan(data) {
   if (plan[1][0]?.enemy !== "sleepyBug" || plan[2][0]?.enemy !== "homeworkBlob"
     || plan[8][0]?.enemy !== "rivalShadow" || plan[16][0]?.enemy !== "finalExam") return null;
   if (restOptions < 2 || shopOptions < 2) return null;
-  return plan;
+  return ensureChallengeNodes(plan);
 }
 
 function startingDeckFor(archetypeId) {
@@ -163,6 +200,7 @@ export class SemesterGame {
       combatsStarted: 0,
       combatsCompleted: 0,
       combatsWon: 0,
+      challengeWins: 0,
       combatTurns: 0,
       combatHpLost: 0,
       cardsPlayed: 0,
@@ -291,6 +329,10 @@ export class SemesterGame {
     };
     let restOptions = 2;
     let shopOptions = 2;
+    const challengeWeeks = new Set([
+      this.rng.pick([5, 7]),
+      this.rng.pick([10, 12, 13])
+    ]);
     for (const week of Object.keys(anchors).map(Number)) {
       const anchor = anchors[week];
       const anchorNode = makeRouteNode(anchor.type, week, {
@@ -302,12 +344,13 @@ export class SemesterGame {
         .filter((type) => type !== "rest" || restOptions < 4)
         .filter((type) => type !== "shop" || shopOptions < 3);
       if (!candidates.length) candidates = ["combat", "event"].filter((type) => type !== anchor.type);
-      const alternateType = this.rng.pick(candidates);
+      const alternateType = challengeWeeks.has(week) ? "combat" : this.rng.pick(candidates);
       if (alternateType === "rest") restOptions += 1;
       if (alternateType === "shop") shopOptions += 1;
       const alternateNode = makeRouteNode(alternateType, week, {
         enemy: alternateType === "combat" ? this.randomEnemy() : undefined,
-        pool: week <= 3 ? "safe" : "all"
+        pool: week <= 3 ? "safe" : "all",
+        challenge: challengeWeeks.has(week)
       });
       plan[week] = this.rng.shuffle([anchorNode, alternateNode]);
     }
@@ -471,9 +514,10 @@ export class SemesterGame {
       ? definition.intentAt(combat.enemy.intentTurn)
       : definition.intents[combat.enemy.intentTurn % definition.intents.length];
     const damageScale = this.semester - 1;
+    const damageMultiplier = combat.modifiers.damageMultiplier || 1;
     return {
       ...raw,
-      attack: raw.attack ? raw.attack + damageScale : undefined
+      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) : undefined
     };
   }
 
@@ -784,6 +828,7 @@ export class SemesterGame {
       combat.result = "won";
       this.stats.combatsCompleted += 1;
       this.stats.combatsWon += 1;
+      if (combat.modifiers.challenge) this.stats.challengeWins += 1;
       this.stats.combatTurns += combat.turn;
       this.pet.bond += 1;
       this.updatePetMilestone();
@@ -811,6 +856,7 @@ export class SemesterGame {
       enemyId: combat.enemy.id,
       enemyName: combat.enemy.name,
       enemyKind: enemy.kind,
+      challenge: Boolean(combat.modifiers.challenge),
       result: combat.result,
       turns: combat.turn,
       cardsPlayed: combat.cardsPlayed,

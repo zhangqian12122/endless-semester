@@ -14,7 +14,7 @@ import {
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS
 } from "./game-data.js";
-import { SemesterGame, cardDefinition } from "./game-engine.js";
+import { CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
@@ -113,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.0 随机路线</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.1 挑战路线</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -214,7 +214,13 @@ function renderMap() {
     { length: Math.min(4, Math.max(0, 16 - game.week)) },
     (_, index) => game.week + index + 1
   );
-  const nodeTypeName = (type) => ({ combat: "战斗", event: "未知", rest: "休息", shop: "商店" }[type]);
+  const nextChallengeWeek = Array.from(
+    { length: 17 - game.week },
+    (_, index) => game.week + index
+  ).find((week) => game.semesterPlan[week].some((node) => node.challenge));
+  const challengeHpPercent = Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100);
+  const challengeDamagePercent = Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100);
+  const nodeTypeName = (node) => node.challenge ? "挑战" : ({ combat: "战斗", event: "未知", rest: "休息", shop: "商店" }[node.type]);
   const body = `
     <div class="semester-progress">
       ${Array.from({ length: 16 }, (_, index) => {
@@ -231,15 +237,15 @@ function renderMap() {
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
     ${previewWeeks.length ? `
       <section class="route-preview" aria-label="未来四周路线">
-        <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>同一学期不会重随</span></div>
+        <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>${nextChallengeWeek ? `下一场挑战：第 ${nextChallengeWeek} 周 · 生命 +${challengeHpPercent}% / 伤害 +${challengeDamagePercent}%` : "本学期挑战已完成"}</span></div>
         <div class="route-preview-weeks">
           ${previewWeeks.map((week) => `
             <article class="preview-week">
               <small>第 ${week} 周</small>
               <div class="preview-options">
                 ${game.semesterPlan[week].map((node) => `
-                  <span class="preview-option preview-${node.type}" title="${escapeHtml(node.label)}">
-                    <b>${ICONS[node.type]}</b><em>${nodeTypeName(node.type)}</em>
+                  <span class="preview-option preview-${node.type} ${node.challenge ? "preview-challenge" : ""}" title="${escapeHtml(node.label)}">
+                    <b>${ICONS[node.type]}</b><em>${nodeTypeName(node)}</em>
                   </span>`).join("")}
               </div>
             </article>`).join("")}
@@ -247,13 +253,13 @@ function renderMap() {
       </section>` : ""}
     <div class="node-grid">
       ${nodes.map((node, index) => `
-        <button class="route-node node-${node.type}" data-action="choose-node" data-index="${index}">
+        <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${nodeTypeName(node.type)}</small><strong>${node.label}</strong></span>
+          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em>敌人生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br>胜利：${CHALLENGE_RULES.gold} 币 + 进阶牌</em>` : ""}</span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
-    <div class="map-tip"><b>路线规则：</b>第 1、2、8、16 周为固定考验，其余周提供两个不同类型的节点；每学期至少出现两次休息和两次商店机会。</div>`;
+    <div class="map-tip"><b>路线规则：</b>每学期期中前后各有一次可绕开的挑战战；风险和奖励会在进入前完整显示，不会伪装成普通战斗。</div>`;
   return page(`第 ${game.week} 周`, `第 ${game.semester} 学期 · 16 周路线`, body, {
     description: game.week < 8 ? "路线在学期开始时生成并保存，可以提前规划构筑与补给。" : "越接近期末，卡组的缺点越难隐藏。",
     className: "map-page"
@@ -320,6 +326,7 @@ function renderCombatResult(combat) {
       </div>
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
+      ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成</b><span>${CHALLENGE_RULES.gold} 校园币 · 进阶卡牌三选一</span></div>` : ""}
       ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
       ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
       <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
@@ -339,6 +346,7 @@ function renderCombat() {
     petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
   ].filter(Boolean).join(" · ");
   const body = `
+    ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>自习室挑战</b><span>敌人生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</span><em>胜利奖励：${CHALLENGE_RULES.gold} 校园币 + 进阶卡牌三选一</em></div>` : ""}
     <div class="combat-board">
       <section class="fighter player-fighter">
         <div class="fighter-label"><span>学生</span><b>护甲 ${combat.playerBlock}</b></div>
@@ -562,7 +570,7 @@ function renderRules() {
       <article><b>03</b><h2>护甲</h2><p>护甲先抵挡伤害，并在下一个玩家回合开始时清空。</p></article>
       <article><b>04</b><h2>构筑</h2><p>战后可三选一或跳过。卡组越薄，关键牌越容易再次抽到。</p></article>
       <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；满 2 点后可主动攻击，每场一次。羁绊 3、10、25 解锁路线成长。</p></article>
-      <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。第 16 周通过期末后，可保留构筑进入更难的新学期。</p></article>
+      <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。挑战战会提前公开强化和奖励，并且总有另一条路线可选。</p></article>
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
     <button class="primary centered" data-action="close-rules">返回</button>`;
@@ -595,6 +603,7 @@ function renderStats() {
           <li><span>${game.archetype.sign} 专属牌</span><b>${stats.exclusiveTaken}</b></li>
           <li><span>普池牌</span><b>${stats.publicTaken}</b></li>
           <li><span>主动跳过</span><b>${stats.rewardsSkipped}</b></li>
+          <li><span>挑战战胜利</span><b>${stats.challengeWins || 0}</b></li>
           <li><span>获得物品 / 刻印</span><b>${stats.itemsTaken} / ${stats.enchantments}</b></li>
         </ul>
       </section>
@@ -819,10 +828,14 @@ function selectEvent(pool) {
 
 function startNode(node) {
   if (node.type === "combat") {
-    game.startCombat(node.enemy);
+    game.startCombat(node.enemy, node.challenge ? {
+      challenge: true,
+      hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+      damageMultiplier: CHALLENGE_RULES.damageMultiplier
+    } : {});
     registerEnemyEncounter();
     tutorialStep = !game.tutorialSeen && game.semester === 1 && game.week === 1 ? 0 : -1;
-    changeScreen("combat", { outcome: ENEMY_DEFS[game.combat.enemy.id].kind });
+    changeScreen("combat", { outcome: node.challenge ? "challenge" : ENEMY_DEFS[game.combat.enemy.id].kind });
   } else if (node.type === "event") {
     selectEvent(node.pool);
   } else if (node.type === "rest") {
@@ -945,6 +958,14 @@ function grantCombatRewards(outcome) {
         () => showEnchantmentReward(advanceWeek),
         "精英物品奖励"
       )
+    });
+  } else if (outcome === "challenge") {
+    game.gold += CHALLENGE_RULES.gold;
+    showCardReward({
+      title: "挑战战奖励",
+      eyebrow: "自习室荣誉",
+      rarity: CHALLENGE_RULES.rarity,
+      message: `${CHALLENGE_RULES.gold} 校园币已到账。再选择一张进阶牌加入构筑，也可以跳过。`
     });
   } else if (outcome === "event") {
     const rares = Object.keys(ITEM_DEFS).filter((id) => ITEM_DEFS[id].rarity === "rare" && !game.hasItem(id));

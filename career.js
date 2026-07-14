@@ -9,6 +9,7 @@ export function createCareerProfile() {
     combatsWon: 0,
     cleanWins: 0,
     quickWins: 0,
+    challengeWins: 0,
     eliteWins: 0,
     bossWins: 0,
     petUses: 0,
@@ -29,7 +30,7 @@ export function normalizeCareerProfile(data) {
   profile.unlockedAchievements = Array.from(new Set(
     (Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : []).filter((id) => ACHIEVEMENT_DEFS[id])
   ));
-  for (const key of ["combatsCompleted", "combatsWon", "cleanWins", "quickWins", "eliteWins", "bossWins", "petUses", "cardsPlayed"]) {
+  for (const key of ["combatsCompleted", "combatsWon", "cleanWins", "quickWins", "challengeWins", "eliteWins", "bossWins", "petUses", "cardsPlayed"]) {
     profile[key] = safeCount(data[key]);
   }
   return profile;
@@ -78,6 +79,7 @@ export function recordCareerCombat(profile, summary) {
     profile.combatsWon += 1;
     if (summary.hpLost === 0) profile.cleanWins += 1;
     if (summary.turns <= 3) profile.quickWins += 1;
+    if (summary.challenge) profile.challengeWins += 1;
     if (summary.enemyKind === "elite") profile.eliteWins += 1;
     if (summary.enemyKind === "boss") profile.bossWins += 1;
   }
