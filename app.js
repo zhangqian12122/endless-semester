@@ -24,6 +24,7 @@ let toast = "";
 let lastEvent = null;
 let selectedArchetype = "cancer";
 let tutorialStep = -1;
+let pileView = null;
 const SAVE_KEY = "endless-semester-v2";
 
 const ICONS = {
@@ -72,7 +73,11 @@ function saveGame() {
 }
 
 function clearSave() {
-  localStorage.removeItem(SAVE_KEY);
+  try {
+    localStorage.removeItem(SAVE_KEY);
+  } catch {
+    // 存储不可用时仍允许当前局继续运行。
+  }
 }
 
 function topBar() {
@@ -82,7 +87,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.5 宠物路线</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V0.6 战绩与牌堆</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -93,6 +98,7 @@ function topBar() {
       <div class="resource pet-resource">鹅鹅羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
       <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
       ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
+      ${screen !== "stats" ? '<button class="quiet-button" data-action="open-stats">战绩</button>' : ""}
       ${screen !== "deck" ? '<button class="quiet-button" data-action="open-deck">查看构筑</button>' : ""}
     </header>`;
 }
@@ -257,7 +263,11 @@ function renderCombat() {
         <span class="pet-face">鹅</span>
         <span><strong>追着啄${petPreview.talent ? ` · ${petPreview.talent.name}` : ""}</strong><small>1 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 每场一次</small><i>${"●".repeat(game.pet.charge)}${"○".repeat(game.pet.maxCharge - game.pet.charge)}</i></span>
       </button>
-      <div class="pile-counts"><span>抽牌堆 <b>${combat.drawPile.length}</b></span><span>弃牌堆 <b>${combat.discardPile.length}</b></span><span>消耗 <b>${combat.exhaustPile.length}</b></span></div>
+      <div class="pile-counts">
+        <button data-action="open-pile" data-zone="drawPile">抽牌堆 <b>${combat.drawPile.length}</b></button>
+        <button data-action="open-pile" data-zone="discardPile">弃牌堆 <b>${combat.discardPile.length}</b></button>
+        <button data-action="open-pile" data-zone="exhaustPile">消耗 <b>${combat.exhaustPile.length}</b></button>
+      </div>
       <button class="end-turn" data-action="end-turn" ${combat.status !== "active" || combat.pendingDiscard ? "disabled" : ""}>结束回合</button>
     </div>
 
@@ -268,6 +278,7 @@ function renderCombat() {
         return cardHtml(card, { action: combat.pendingDiscard ? "discard-card" : "play-card", playable });
       }).join("")}
     </div>
+    ${pileView ? renderPileOverlay(combat) : ""}
     ${tutorialStep >= 0 && combat.status === "active" ? renderTutorial() : ""}
     ${combat.status !== "active" ? `
       <div class="result-overlay">
@@ -280,6 +291,23 @@ function renderCombat() {
       </div>` : ""}
   `;
   return `${topBar()}<main class="combat-page">${body}</main>${toast ? `<div class="toast">${escapeHtml(toast)}</div>` : ""}`;
+}
+
+function renderPileOverlay(combat) {
+  const labels = {
+    drawPile: ["抽牌堆", "牌序未知；用来判断接下来还可能抽到什么。"],
+    discardPile: ["弃牌堆", "抽牌堆耗尽后，这些牌会重新洗回去。"],
+    exhaustPile: ["消耗堆", "这些牌本场战斗不会再次进入抽牌堆。"]
+  };
+  const [title, description] = labels[pileView];
+  const cards = combat[pileView] || [];
+  return `<div class="pile-overlay">
+    <div class="pile-dialog">
+      <div><small>战斗信息</small><h2>${title} · ${cards.length}</h2><p>${description}</p></div>
+      <div class="pile-card-grid">${cards.length ? cards.map((card) => cardHtml(card, { playable: false })).join("") : '<p class="empty-state">这里暂时没有牌。</p>'}</div>
+      <button class="primary centered" data-action="close-pile">返回战斗</button>
+    </div>
+  </div>`;
 }
 
 function renderTutorial() {
@@ -418,6 +446,45 @@ function renderRules() {
   return page("六条核心规则", "一分钟看懂", body, { description: "所有例外规则都写在卡牌、物品或敌人意图上。" });
 }
 
+function renderStats() {
+  const stats = game.stats;
+  const winRate = stats.combatsCompleted ? Math.round((stats.combatsWon / stats.combatsCompleted) * 100) : 0;
+  const averageTurns = stats.combatsCompleted ? (stats.combatTurns / stats.combatsCompleted).toFixed(1) : "—";
+  const averageHpLost = stats.combatsStarted ? (stats.combatHpLost / stats.combatsStarted).toFixed(1) : "—";
+  const topCards = Object.entries(stats.cardPlays).sort((left, right) => right[1] - left[1]).slice(0, 6);
+  const body = `
+    <div class="stats-grid">
+      <article><small>开始战斗</small><strong>${stats.combatsStarted}</strong><span>场</span></article>
+      <article><small>战斗胜率</small><strong>${winRate}</strong><span>%</span></article>
+      <article><small>平均回合</small><strong>${averageTurns}</strong><span>回合</span></article>
+      <article><small>平均战斗掉血</small><strong>${averageHpLost}</strong><span>生命</span></article>
+      <article><small>累计出牌</small><strong>${stats.cardsPlayed}</strong><span>张</span></article>
+      <article><small>宠物出手</small><strong>${stats.petUses}</strong><span>次</span></article>
+    </div>
+    <div class="stats-columns">
+      <section class="stats-panel">
+        <small>构筑选择</small><h2>你怎么拿牌</h2>
+        <ul>
+          <li><span>奖励出现</span><b>${stats.rewardsSeen}</b></li>
+          <li><span>拿取卡牌</span><b>${stats.cardsTaken}</b></li>
+          <li><span>${game.archetype.sign} 专属牌</span><b>${stats.exclusiveTaken}</b></li>
+          <li><span>普池牌</span><b>${stats.publicTaken}</b></li>
+          <li><span>主动跳过</span><b>${stats.rewardsSkipped}</b></li>
+          <li><span>获得物品 / 刻印</span><b>${stats.itemsTaken} / ${stats.enchantments}</b></li>
+        </ul>
+      </section>
+      <section class="stats-panel">
+        <small>真实出牌次数</small><h2>最常用的牌</h2>
+        ${topCards.length ? `<ol>${topCards.map(([id, count]) => `<li><span>${CARD_DEFS[id]?.name || id}</span><b>${count} 次</b></li>`).join("")}</ol>` : '<p class="empty-state">完成几场战斗后，这里会显示你的主力牌。</p>'}
+      </section>
+    </div>
+    <div class="privacy-note">这些数据只保存在当前浏览器的游戏存档中，不会上传到服务器或第三方分析平台。</div>
+    <button class="primary centered" data-action="close-stats">返回</button>`;
+  return page("本局战绩", `第 ${game.semester} 学期 · 第 ${game.week} 周`, body, {
+    description: "用真实出牌和选择记录判断构筑，而不是只看卡牌稀有度。"
+  });
+}
+
 function renderRest() {
   const missing = game.maxHp - game.hp;
   const canUpgrade = game.deck.some((card) => !card.upgraded);
@@ -524,6 +591,8 @@ function renderSemesterComplete() {
         <li><span>卡组规模</span><b>${game.deck.length}</b></li>
         <li><span>随身物品</span><b>${game.items.length}/${game.backpackCapacity}</b></li>
         <li><span>暴躁鹅羁绊</span><b>${game.pet.bond}</b></li>
+        <li><span>累计战斗 / 掉血</span><b>${game.stats.combatsWon} / ${game.stats.combatHpLost}</b></li>
+        <li><span>累计出牌</span><b>${game.stats.cardsPlayed}</b></li>
       </ul>
     </div>
     <div class="semester-actions">
@@ -552,7 +621,8 @@ function render() {
     shop: renderShop,
     event: renderEvent,
     semesterComplete: renderSemesterComplete,
-    rules: renderRules
+    rules: renderRules,
+    stats: renderStats
   };
   app.innerHTML = (renderers[screen] || renderIntro)();
 }
@@ -560,6 +630,7 @@ function render() {
 function changeScreen(next, nextContext = {}) {
   screen = next;
   context = nextContext;
+  if (next !== "combat") pileView = null;
   if (next === "map") saveGame();
   window.scrollTo({ top: 0, behavior: "smooth" });
   render();
@@ -621,13 +692,22 @@ function showItemReward(choices, onDone = advanceWeek, title) {
 }
 
 function finishCardReward(id) {
-  if (id) game.addCard(id);
+  game.stats.rewardsSeen += 1;
+  if (id) {
+    game.addCard(id);
+    game.stats.cardsTaken += 1;
+    if (CARD_DEFS[id].archetype === game.archetypeId) game.stats.exclusiveTaken += 1;
+    else game.stats.publicTaken += 1;
+  } else {
+    game.stats.rewardsSkipped += 1;
+  }
   const next = context.onDone;
   if (typeof next === "function") next();
 }
 
 function grantItem(id) {
   if (game.addItem(id)) {
+    game.stats.itemsTaken += 1;
     const next = context.onDone;
     if (typeof next === "function") next();
   } else if (game.items.length >= game.backpackCapacity) {
@@ -843,6 +923,14 @@ app.addEventListener("click", (event) => {
     const result = game.usePetSkill();
     if (!result.ok) setToast(result.reason);
     render();
+  } else if (action === "open-pile") {
+    if (["drawPile", "discardPile", "exhaustPile"].includes(button.dataset.zone)) {
+      pileView = button.dataset.zone;
+      render();
+    }
+  } else if (action === "close-pile") {
+    pileView = null;
+    render();
   } else if (action === "combat-result") {
     resolveCombatResult();
   } else if (action === "take-reward-card") {
@@ -859,7 +947,10 @@ app.addEventListener("click", (event) => {
     context.onDone();
   } else if (action === "replace-item") {
     const oldIndex = game.items.indexOf(button.dataset.id);
-    if (oldIndex >= 0) game.items.splice(oldIndex, 1, context.incoming);
+    if (oldIndex >= 0) {
+      game.items.splice(oldIndex, 1, context.incoming);
+      game.stats.itemsTaken += 1;
+    }
     context.onDone();
   } else if (action === "cancel-replace") {
     changeScreen(context.cancelTo.screen, context.cancelTo.context);
@@ -873,6 +964,12 @@ app.addEventListener("click", (event) => {
     const returnState = { screen, context };
     changeScreen("rules", { returnState });
   } else if (action === "close-rules") {
+    const target = context.returnState || { screen: "map", context: {} };
+    changeScreen(target.screen, target.context);
+  } else if (action === "open-stats") {
+    const returnState = { screen, context };
+    changeScreen("stats", { returnState });
+  } else if (action === "close-stats") {
     const target = context.returnState || { screen: "map", context: {} };
     changeScreen(target.screen, target.context);
   } else if (action === "tutorial-next") {
@@ -892,6 +989,7 @@ app.addEventListener("click", (event) => {
     if (card && context.onSelect) context.onSelect(card);
   } else if (action === "enchant-card") {
     if (game.enchantCard(button.dataset.uid)) {
+      game.stats.enchantments += 1;
       const done = context.onDone;
       setToast("星座刻印已写入卡牌");
       done();
@@ -929,6 +1027,9 @@ app.addEventListener("click", (event) => {
     if (!stock.sold && game.gold >= price) {
       game.gold -= price;
       game.addCard(stock.id);
+      game.stats.cardsTaken += 1;
+      if (CARD_DEFS[stock.id].archetype === game.archetypeId) game.stats.exclusiveTaken += 1;
+      else game.stats.publicTaken += 1;
       stock.sold = true;
       render();
     }
@@ -941,6 +1042,7 @@ app.addEventListener("click", (event) => {
       } else {
         game.gold -= price;
         game.addItem(stock.id);
+        game.stats.itemsTaken += 1;
         stock.sold = true;
         game.flags.nextShopHalf = false;
         render();

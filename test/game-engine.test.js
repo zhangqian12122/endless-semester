@@ -139,6 +139,8 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   const savedCard = game.addCard("catCombo", true);
   game.enchantCard(savedCard.uid);
   game.addItem("autoPencil");
+  game.stats.cardsPlayed = 12;
+  game.stats.cardPlays.textbookStrike = 8;
   const restored = SemesterGame.fromJSON(game.toJSON());
 
   assert.equal(restored.archetypeId, "gemini");
@@ -152,6 +154,8 @@ test("存档恢复保留星座、构筑、羁绊和随机数状态", () => {
   assert.equal(restored.deck.at(-1).enchantment, "geminiQuick");
   assert.deepEqual(restored.items, ["autoPencil"]);
   assert.equal(restored.rng.state, game.rng.state);
+  assert.equal(restored.stats.cardsPlayed, 12);
+  assert.equal(restored.stats.cardPlays.textbookStrike, 8);
 });
 
 test("每个星座首批都有 4 张专属牌，且归属数据完整", () => {
@@ -277,6 +281,31 @@ test("战斗胜利跨过羁绊 3 时生成路线选择，不直接偷偷加数�
   assert.equal(game.pet.bond, 3);
   assert.equal(game.pet.pendingMilestone, "choose");
   assert.equal(game.petSkillPreview().damage, 7);
+});
+
+test("试玩统计记录战斗、回合、出牌与常用卡", () => {
+  const game = new SemesterGame(108, "aries");
+  game.startCombat("sleepyBug");
+  game.combat.enemy.hp = 5;
+  const strike = putCardInHand(game, "textbookStrike");
+  game.combat.energy = 3;
+  game.playCard(strike.uid);
+
+  assert.equal(game.stats.combatsStarted, 1);
+  assert.equal(game.stats.combatsCompleted, 1);
+  assert.equal(game.stats.combatsWon, 1);
+  assert.equal(game.stats.combatTurns, 1);
+  assert.equal(game.stats.cardsPlayed, 1);
+  assert.equal(game.stats.cardPlays.textbookStrike, 1);
+});
+
+test("试玩统计只累计真正穿过护甲的战斗生命损失", () => {
+  const game = new SemesterGame(109, "aries");
+  game.startCombat("sleepyBug");
+  game.combat.playerBlock = 3;
+  game.endTurn();
+  assert.equal(game.hp, 48);
+  assert.equal(game.stats.combatHpLost, 2);
 });
 
 test("无尽学期保留构筑并施加明确的成长代价", () => {

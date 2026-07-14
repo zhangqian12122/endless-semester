@@ -106,6 +106,23 @@ export class SemesterGame {
       talentLevel: 0,
       pendingMilestone: null
     };
+    this.stats = {
+      combatsStarted: 0,
+      combatsCompleted: 0,
+      combatsWon: 0,
+      combatTurns: 0,
+      combatHpLost: 0,
+      cardsPlayed: 0,
+      petUses: 0,
+      rewardsSeen: 0,
+      cardsTaken: 0,
+      exclusiveTaken: 0,
+      publicTaken: 0,
+      rewardsSkipped: 0,
+      itemsTaken: 0,
+      enchantments: 0,
+      cardPlays: {}
+    };
     this.cardCombatUses = {};
     this.flags = {
       nextCombatTension: 0,
@@ -282,6 +299,7 @@ export class SemesterGame {
     if (enemyId === "random") enemyId = this.randomEnemy();
     const definition = ENEMY_DEFS[enemyId];
     if (!definition) throw new Error(`未知敌人：${enemyId}`);
+    this.stats.combatsStarted += 1;
 
     const semesterHpScale = 1 + (this.semester - 1) * 0.15;
     const enemyMaxHp = Math.round(definition.maxHp * semesterHpScale * (modifiers.hpMultiplier || 1));
@@ -420,6 +438,8 @@ export class SemesterGame {
     combat.hand.splice(index, 1);
     combat.energy -= definition.cost;
     combat.usedCardUids.add(card.uid);
+    this.stats.cardsPlayed += 1;
+    this.stats.cardPlays[card.id] = (this.stats.cardPlays[card.id] || 0) + 1;
     const effect = definition.effect;
     const notes = [];
 
@@ -485,6 +505,7 @@ export class SemesterGame {
     }
     if (effect.selfDamage) {
       this.hp -= effect.selfDamage;
+      this.stats.combatHpLost += effect.selfDamage;
       notes.push(`自己失去 ${effect.selfDamage} 生命`);
     }
     if (effect.draw) this.drawCards(effect.draw);
@@ -537,6 +558,7 @@ export class SemesterGame {
 
     combat.energy -= 1;
     combat.petUsed = true;
+    this.stats.petUses += 1;
     this.pet.charge = 0;
     const preview = this.petSkillPreview();
     const dealt = this.damageEnemy(preview.damage, 1);
@@ -586,6 +608,7 @@ export class SemesterGame {
     combat.hand = [];
     if (combat.endTurnHpLoss) {
       this.hp -= combat.endTurnHpLoss;
+      this.stats.combatHpLost += combat.endTurnHpLoss;
       combat.log.push(`情绪内耗：失去 ${combat.endTurnHpLoss} 点生命。`);
       combat.endTurnHpLoss = 0;
     }
@@ -616,6 +639,7 @@ export class SemesterGame {
         totalHealthDamage += healthDamage;
       }
       notes.push(`攻击造成 ${totalHealthDamage} 点生命伤害`);
+      this.stats.combatHpLost += totalHealthDamage;
       if (totalHealthDamage > 0 && this.hasItem("mistakeBook") && !combat.mistakeBookUsed) {
         combat.mistakeBookUsed = true;
         combat.nextDrawBonus += 1;
@@ -653,6 +677,9 @@ export class SemesterGame {
     if (combat.enemy.hp <= 0 && combat.status === "active") {
       combat.status = "won";
       combat.result = "won";
+      this.stats.combatsCompleted += 1;
+      this.stats.combatsWon += 1;
+      this.stats.combatTurns += combat.turn;
       this.pet.bond += 1;
       this.updatePetMilestone();
       for (const uid of combat.usedCardUids) {
@@ -665,6 +692,8 @@ export class SemesterGame {
       this.hp = 0;
       combat.status = "lost";
       combat.result = "lost";
+      this.stats.combatsCompleted += 1;
+      this.stats.combatTurns += combat.turn;
       combat.log.push("体力耗尽，本次挑战结束。");
     }
     return combat.status;
@@ -699,7 +728,11 @@ export class SemesterGame {
       cardCombatUses: { ...this.cardCombatUses },
       flags: { ...this.flags },
       rewardIndex: this.rewardIndex,
-      tutorialSeen: this.tutorialSeen
+      tutorialSeen: this.tutorialSeen,
+      stats: {
+        ...this.stats,
+        cardPlays: { ...this.stats.cardPlays }
+      }
     };
   }
 
@@ -739,6 +772,14 @@ export class SemesterGame {
     game.flags = { ...game.flags, ...(data.flags || {}) };
     game.rewardIndex = Math.max(0, Number(data.rewardIndex) || 0);
     game.tutorialSeen = Boolean(data.tutorialSeen);
+    if (data.stats && typeof data.stats === "object") {
+      const defaults = game.stats;
+      game.stats = {
+        ...defaults,
+        ...data.stats,
+        cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object" ? { ...data.stats.cardPlays } : {}
+      };
+    }
     game.completedNodes = new Set();
     game.combat = null;
     return game;
