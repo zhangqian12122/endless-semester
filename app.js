@@ -14,7 +14,7 @@ import {
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS
 } from "./game-data.js";
-import { CHALLENGE_AFFIX_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
+import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
@@ -113,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.2 挑战词缀</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.3 奖励路线</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -256,7 +256,7 @@ function renderMap() {
       ${nodes.map((node, index) => `
         <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br>胜利：${CHALLENGE_RULES.gold} 币 + 进阶牌</em>` : ""}</span>
+          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br>胜利：专属牌 / 宠物 / 物品三选一</em>` : ""}</span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
@@ -327,7 +327,7 @@ function renderCombatResult(combat) {
       </div>
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
-      ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>${CHALLENGE_RULES.gold} 校园币 · 进阶卡牌三选一</span></div>` : ""}
+      ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>专属牌 / 宠物 / 物品，选择一种奖励方向</span></div>` : ""}
       ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
       ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
       <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
@@ -348,7 +348,7 @@ function renderCombat() {
     petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
   ].filter(Boolean).join(" · ");
   const body = `
-    ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：${CHALLENGE_RULES.gold} 币 + 进阶牌</em></div>` : ""}
+    ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
     <div class="combat-board">
       <section class="fighter player-fighter">
         <div class="fighter-label"><span>学生</span><b>护甲 ${combat.playerBlock}</b></div>
@@ -434,6 +434,32 @@ function renderTutorial() {
       <div><button class="quiet-button" data-action="skip-tutorial">跳过教学</button><button class="primary" data-action="tutorial-next">${tutorialStep === steps.length - 1 ? "明白，开始战斗" : "下一条"}</button></div>
     </div>
   </div>`;
+}
+
+function availableChallengeItems() {
+  return Object.keys(ITEM_DEFS)
+    .filter((id) => ITEM_DEFS[id].rarity !== "boss" && !game.hasItem(id));
+}
+
+function renderChallengeReward() {
+  const affix = CHALLENGE_AFFIX_DEFS[context.affix];
+  const hasNewItems = availableChallengeItems().length > 0;
+  const body = `
+    <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>奖励只改变本局构筑，不提供跨对局永久数值。</span></div>
+    <div class="challenge-reward-grid">
+      ${Object.values(CHALLENGE_REWARD_DEFS).map((reward) => {
+        const text = reward.id === "item" && !hasNewItems
+          ? `随身物品已全部收集，选择后改为获得 ${reward.fallbackGold} 校园币。`
+          : reward.text;
+        return `<button class="challenge-reward-option reward-${reward.id}" data-action="choose-challenge-reward" data-id="${reward.id}">
+          <span>${reward.icon}</span><small>奖励路线</small><strong>${reward.name}</strong><p>${text}</p><b>选择 →</b>
+        </button>`;
+      }).join("")}
+    </div>`;
+  return page("选择挑战奖励", "自习室荣誉", body, {
+    description: "没有绝对最强的奖励；选择最能补足当前构筑目标的一条。",
+    className: "challenge-reward-page"
+  });
 }
 
 function renderCardReward() {
@@ -581,6 +607,7 @@ function renderRules() {
 
 function renderStats() {
   const stats = game.stats;
+  const challengeRewards = stats.challengeRewardChoices || { cards: 0, pet: 0, item: 0 };
   const build = analyzeBuild(game);
   const winRate = stats.combatsCompleted ? Math.round((stats.combatsWon / stats.combatsCompleted) * 100) : 0;
   const averageTurns = stats.combatsCompleted ? (stats.combatTurns / stats.combatsCompleted).toFixed(1) : "—";
@@ -606,6 +633,7 @@ function renderStats() {
           <li><span>普池牌</span><b>${stats.publicTaken}</b></li>
           <li><span>主动跳过</span><b>${stats.rewardsSkipped}</b></li>
           <li><span>挑战战胜利</span><b>${stats.challengeWins || 0}</b></li>
+          <li><span>挑战奖励：牌 / 鹅 / 物</span><b>${challengeRewards.cards} / ${challengeRewards.pet} / ${challengeRewards.item}</b></li>
           <li><span>获得物品 / 刻印</span><b>${stats.itemsTaken} / ${stats.enchantments}</b></li>
         </ul>
       </section>
@@ -788,6 +816,7 @@ function render() {
     intro: renderIntro,
     map: renderMap,
     combat: renderCombat,
+    challengeReward: renderChallengeReward,
     cardReward: renderCardReward,
     itemReward: renderItemReward,
     replaceItem: renderReplaceItem,
@@ -933,6 +962,32 @@ function gainPetBond(amount, onDone, message) {
   }
 }
 
+function resolveChallengeReward(id) {
+  const reward = game.claimChallengeReward(id);
+  if (!reward) return;
+  if (id === "cards") {
+    showCardReward({
+      choices: game.rng.shuffle(ARCHETYPE_CARD_IDS[game.archetypeId]).slice(0, 3),
+      title: "命盘补课",
+      eyebrow: "挑战奖励 · 本星座专属池",
+      message: `${reward.gold} 校园币已到账。从三张本星座专属牌中选一张，也可以跳过。`,
+      allowReroll: false,
+      onDone: advanceWeek
+    });
+  } else if (id === "pet") {
+    gainPetBond(reward.bond, advanceWeek, `${reward.gold} 校园币已到账，暴躁鹅羁绊 +${reward.bond}`);
+  } else if (id === "item") {
+    const choices = game.rng.shuffle(availableChallengeItems()).slice(0, reward.itemChoices);
+    if (!choices.length) {
+      game.gold += reward.fallbackGold - reward.gold;
+      setToast(`随身物品已全部收集，改为获得 ${reward.fallbackGold} 校园币`);
+      advanceWeek();
+    } else {
+      showItemReward(choices, advanceWeek, `失物招领 · ${reward.gold} 校园币已到账`);
+    }
+  }
+}
+
 function resolveCombatResult() {
   if (game.combat.status === "lost") {
     clearSave();
@@ -963,13 +1018,7 @@ function grantCombatRewards(outcome) {
       )
     });
   } else if (outcome === "challenge") {
-    game.gold += CHALLENGE_RULES.gold;
-    showCardReward({
-      title: "挑战战奖励",
-      eyebrow: "自习室荣誉",
-      rarity: CHALLENGE_RULES.rarity,
-      message: `${CHALLENGE_RULES.gold} 校园币已到账。再选择一张进阶牌加入构筑，也可以跳过。`
-    });
+    changeScreen("challengeReward", { affix: game.combat.modifiers.affix });
   } else if (outcome === "event") {
     const rares = Object.keys(ITEM_DEFS).filter((id) => ITEM_DEFS[id].rarity === "rare" && !game.hasItem(id));
     showItemReward(rares.length ? game.rng.shuffle(rares).slice(0, 2) : [game.randomItem()].filter(Boolean), advanceWeek, "怪谈调查奖励");
@@ -1130,6 +1179,8 @@ app.addEventListener("click", (event) => {
     render();
   } else if (action === "combat-result") {
     resolveCombatResult();
+  } else if (action === "choose-challenge-reward") {
+    resolveChallengeReward(button.dataset.id);
   } else if (action === "take-reward-card") {
     finishCardReward(button.dataset.id);
   } else if (action === "skip-reward") {

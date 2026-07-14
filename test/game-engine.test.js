@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { CHALLENGE_AFFIX_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
+import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 import { analyzeBuild, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
@@ -509,12 +509,34 @@ test("挑战战公开强化数值，并记录挑战胜利与成就", () => {
   const summary = game.combatSummary();
   assert.equal(summary.challenge, true);
   assert.equal(game.stats.challengeWins, 1);
-  assert.ok(game.rewardCards(3, CHALLENGE_RULES.rarity).every((id) => CARD_DEFS[id].rarity === "uncommon"));
 
   const profile = createCareerProfile();
   const unlocked = recordCareerCombat(profile, summary);
   assert.equal(profile.challengeWins, 1);
   assert.ok(unlocked.includes("challengeWon"));
+});
+
+test("挑战胜利的三条奖励路线数值公开、互斥选择并写入存档", () => {
+  for (const [id, reward] of Object.entries(CHALLENGE_REWARD_DEFS)) {
+    const game = new SemesterGame(330 + reward.gold, "aries");
+    const beforeGold = game.gold;
+    assert.equal(game.claimChallengeReward(id), reward);
+    assert.equal(game.gold, beforeGold + reward.gold);
+    assert.equal(game.stats.challengeRewardChoices[id], 1);
+    assert.equal(
+      Object.values(game.stats.challengeRewardChoices).reduce((sum, count) => sum + count, 0),
+      1
+    );
+
+    const restored = SemesterGame.fromJSON(game.toJSON());
+    assert.deepEqual(restored.stats.challengeRewardChoices, game.stats.challengeRewardChoices);
+  }
+
+  const invalid = new SemesterGame(399, "cancer");
+  const beforeGold = invalid.gold;
+  assert.equal(invalid.claimChallengeReward("unknown"), null);
+  assert.equal(invalid.gold, beforeGold);
+  assert.deepEqual(invalid.stats.challengeRewardChoices, { cards: 0, pet: 0, item: 0 });
 });
 
 test("桌面爆满与第一节早课词缀分别污染牌堆和压缩首回合能量", () => {

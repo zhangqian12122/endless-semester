@@ -387,6 +387,21 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-payout { display: flex; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 12px 14px; border: 1px solid #8a4b4e; border-radius: 7px; background: rgba(88,38,41,.35); }
 .challenge-payout b { color: #ff9b94; }
 .challenge-payout span { color: var(--yellow); font-size: 12px; }
+.challenge-reward-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: -12px 0 24px; padding: 16px 18px; border: 1px solid #8a4b4e; border-left: 4px solid #ff827a; border-radius: 8px; background: rgba(88,38,41,.3); }
+.challenge-reward-summary b { color: #ff9b94; }
+.challenge-reward-summary span { color: var(--muted); text-align: right; font-size: 11px; }
+.challenge-reward-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.challenge-reward-option { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-content: start; min-height: 210px; padding: 22px; text-align: left; color: var(--ink); border: 1px solid var(--line); border-top: 5px solid var(--yellow); border-radius: 10px; background: var(--panel); transition: transform .18s ease, border-color .18s ease; }
+.challenge-reward-option:hover:not(:disabled) { transform: translateY(-4px); border-color: var(--yellow); }
+.challenge-reward-option > span { display: grid; grid-row: span 2; place-items: center; width: 48px; height: 48px; color: #1a1710; border-radius: 50%; background: var(--yellow); font-size: 15px; font-weight: 900; }
+.challenge-reward-option small { color: var(--muted); font-size: 9px; letter-spacing: .14em; }
+.challenge-reward-option strong { font-size: 20px; }
+.challenge-reward-option p { grid-column: 1 / -1; margin: 14px 0 0; color: #d8d3c8; font-size: 12px; line-height: 1.65; }
+.challenge-reward-option > b { grid-column: 1 / -1; align-self: end; margin-top: auto; padding-top: 18px; color: var(--yellow); font-size: 11px; }
+.challenge-reward-option.reward-pet { border-top-color: var(--green); }
+.challenge-reward-option.reward-pet > span { background: var(--green); }
+.challenge-reward-option.reward-item { border-top-color: var(--blue); }
+.challenge-reward-option.reward-item > span { background: var(--blue); }
 .discovery-note { margin-top: 12px; padding: 10px; text-align: center; color: var(--yellow); border: 1px dashed #7e6a38; font-size: 11px; }
 .unlocked-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .unlocked-row > small { color: var(--yellow); }
@@ -605,6 +620,10 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .route-preview-weeks { grid-template-columns: 1fr; }
   .challenge-contract { align-items: flex-start; flex-direction: column; gap: 6px; }
   .challenge-contract em { margin-left: 0; }
+  .challenge-reward-summary { align-items: flex-start; flex-direction: column; }
+  .challenge-reward-summary span { text-align: left; }
+  .challenge-reward-grid { grid-template-columns: 1fr; }
+  .challenge-reward-option { min-height: 180px; }
   .combat-page { padding: 14px 7px; }
   .combat-board { gap: 8px; min-height: 320px; }
   .student-avatar, .enemy-avatar { width: 110px; height: 135px; }

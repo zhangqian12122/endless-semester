@@ -21,9 +21,34 @@ const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
 
 export const CHALLENGE_RULES = Object.freeze({
   hpMultiplier: 1.35,
-  damageMultiplier: 1.25,
-  gold: 35,
-  rarity: "uncommon"
+  damageMultiplier: 1.25
+});
+
+export const CHALLENGE_REWARD_DEFS = Object.freeze({
+  cards: {
+    id: "cards",
+    icon: "牌",
+    name: "命盘补课",
+    gold: 20,
+    text: "获得 20 校园币，从 3 张本星座专属牌中选 1 张。"
+  },
+  pet: {
+    id: "pet",
+    icon: "鹅",
+    name: "鹅鹅特训",
+    gold: 25,
+    bond: 2,
+    text: "获得 25 校园币，暴躁鹅羁绊 +2。"
+  },
+  item: {
+    id: "item",
+    icon: "物",
+    name: "失物招领",
+    gold: 10,
+    itemChoices: 2,
+    fallbackGold: 45,
+    text: "获得 10 校园币，从 2 件未拥有的随身物品中选 1 件。"
+  }
 });
 
 export const CHALLENGE_AFFIX_DEFS = Object.freeze({
@@ -241,6 +266,7 @@ export class SemesterGame {
       combatsCompleted: 0,
       combatsWon: 0,
       challengeWins: 0,
+      challengeRewardChoices: { cards: 0, pet: 0, item: 0 },
       combatTurns: 0,
       combatHpLost: 0,
       cardsPlayed: 0,
@@ -472,6 +498,14 @@ export class SemesterGame {
       choices.push(publicCard);
     }
     return this.rng.shuffle(choices);
+  }
+
+  claimChallengeReward(id) {
+    const reward = CHALLENGE_REWARD_DEFS[id];
+    if (!reward) return null;
+    this.gold += reward.gold;
+    this.stats.challengeRewardChoices[id] += 1;
+    return reward;
   }
 
   eligibleSummaryCards() {
@@ -959,7 +993,8 @@ export class SemesterGame {
       semesterPlan: this.semesterPlan.map((nodes) => nodes.map((node) => ({ ...node }))),
       stats: {
         ...this.stats,
-        cardPlays: { ...this.stats.cardPlays }
+        cardPlays: { ...this.stats.cardPlays },
+        challengeRewardChoices: { ...this.stats.challengeRewardChoices }
       }
     };
   }
@@ -1008,7 +1043,13 @@ export class SemesterGame {
       game.stats = {
         ...defaults,
         ...data.stats,
-        cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object" ? { ...data.stats.cardPlays } : {}
+        cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object" ? { ...data.stats.cardPlays } : {},
+        challengeRewardChoices: Object.fromEntries(
+          Object.keys(CHALLENGE_REWARD_DEFS).map((id) => [
+            id,
+            Math.max(0, Number(data.stats.challengeRewardChoices?.[id]) || 0)
+          ])
+        )
       };
     }
     game.completedNodes = new Set();
