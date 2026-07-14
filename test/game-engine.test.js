@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, STARTING_DECK, cardDefinition, startingDeckFor } from "../game-engine.js";
 import { ARCHETYPE_CARD_IDS, CARD_DEFS, ENCHANTMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS } from "../game-data.js";
 import { analyzeBuild, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
 import {
@@ -569,6 +569,75 @@ test("挑战胜利的三条奖励路线数值公开、互斥选择并写入存�
   assert.equal(invalid.claimChallengeReward("unknown"), null);
   assert.equal(invalid.gold, beforeGold);
   assert.deepEqual(invalid.stats.challengeRewardChoices, { cards: 0, pet: 0, item: 0 });
+});
+
+test("白羊、双子与巨蟹拥有不同且公开的星座试炼", () => {
+  assert.deepEqual(Object.keys(ARCHETYPE_TRIAL_DEFS), ["aries", "gemini", "cancer"]);
+  assert.equal(new Set(Object.values(ARCHETYPE_TRIAL_DEFS).map((trial) => trial.id)).size, 3);
+  assert.ok(Object.values(ARCHETYPE_TRIAL_DEFS).every((trial) => trial.bonusGold === 10));
+
+  const aries = new SemesterGame(401, "aries");
+  const ariesGold = aries.gold;
+  aries.startCombat("sleepyBug", { challenge: true, affix: "deadline" });
+  assert.equal(aries.stats.trialsAttempted, 1);
+  aries.combat.enemy.hp = 0;
+  aries.checkCombatEnd();
+  assert.equal(aries.combatSummary().challengeTrial.completed, true);
+  assert.equal(aries.combatSummary().challengeTrialBonus, 10);
+  assert.equal(aries.gold, ariesGold + 10);
+  assert.equal(aries.stats.trialsCompleted, 1);
+  aries.checkCombatEnd();
+  assert.equal(aries.gold, ariesGold + 10);
+
+  const lateAries = new SemesterGame(402, "aries");
+  lateAries.startCombat("sleepyBug", { challenge: true, affix: "deadline" });
+  lateAries.combat.turn = 4;
+  lateAries.combat.enemy.hp = 0;
+  lateAries.checkCombatEnd();
+  assert.equal(lateAries.combatSummary().challengeTrial.state, "failed");
+  assert.equal(lateAries.combatSummary().challengeTrialBonus, 0);
+
+  const gemini = new SemesterGame(403, "gemini");
+  gemini.startCombat("sleepyBug", { challenge: true, affix: "earlyClass" });
+  gemini.combat.hand = Array.from({ length: 4 }, () => gemini.createCard("cramming"));
+  gemini.combat.drawPile = [];
+  gemini.combat.discardPile = [];
+  for (const card of [...gemini.combat.hand]) assert.equal(gemini.playCard(card.uid).ok, true);
+  assert.equal(gemini.challengeTrialStatus().state, "achieved");
+  gemini.combat.enemy.hp = 0;
+  gemini.checkCombatEnd();
+  assert.equal(gemini.combatSummary().challengeTrial.completed, true);
+
+  const cancer = new SemesterGame(404, "cancer");
+  cancer.startCombat("sleepyBug", { challenge: true, affix: "backlog" });
+  cancer.hp -= 5;
+  cancer.combat.enemy.hp = 0;
+  cancer.checkCombatEnd();
+  assert.equal(cancer.combatSummary().challengeTrial.completed, true);
+
+  const hurtCancer = new SemesterGame(405, "cancer");
+  hurtCancer.startCombat("sleepyBug", { challenge: true, affix: "backlog" });
+  hurtCancer.hp -= 6;
+  hurtCancer.combat.enemy.hp = 0;
+  hurtCancer.checkCombatEnd();
+  assert.equal(hurtCancer.combatSummary().challengeTrial.state, "failed");
+});
+
+test("星座试炼统计写入存档，旧存档缺少字段时安全补零", () => {
+  const game = new SemesterGame(406, "aries");
+  game.startCombat("sleepyBug", { challenge: true, affix: "deadline" });
+  game.combat.enemy.hp = 0;
+  game.checkCombatEnd();
+  const restored = SemesterGame.fromJSON(game.toJSON());
+  assert.equal(restored.stats.trialsAttempted, 1);
+  assert.equal(restored.stats.trialsCompleted, 1);
+
+  const legacy = game.toJSON();
+  delete legacy.stats.trialsAttempted;
+  delete legacy.stats.trialsCompleted;
+  const migrated = SemesterGame.fromJSON(legacy);
+  assert.equal(migrated.stats.trialsAttempted, 0);
+  assert.equal(migrated.stats.trialsCompleted, 0);
 });
 
 test("桌面爆满与第一节早课词缀分别污染牌堆和压缩首回合能量", () => {

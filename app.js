@@ -14,7 +14,7 @@ import {
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS
 } from "./game-data.js";
-import { CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import {
   achievementProgress,
@@ -113,7 +113,7 @@ function topBar() {
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   return `
     <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.4 构筑参谋</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.5 星座试炼</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -210,6 +210,7 @@ function renderIntro() {
 
 function renderMap() {
   const nodes = game.semesterPlan[game.week] || [];
+  const trial = ARCHETYPE_TRIAL_DEFS[game.archetypeId];
   const previewWeeks = Array.from(
     { length: Math.min(4, Math.max(0, 16 - game.week)) },
     (_, index) => game.week + index + 1
@@ -238,7 +239,7 @@ function renderMap() {
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
     ${previewWeeks.length ? `
       <section class="route-preview" aria-label="未来四周路线">
-        <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>${nextChallenge ? `下一场挑战：第 ${nextChallenge.week} 周 · ${CHALLENGE_AFFIX_DEFS[nextChallenge.node.affix].name}` : "本学期挑战已完成"}</span></div>
+        <div class="route-preview-heading"><small>路线预告</small><strong>未来四周</strong><span>${nextChallenge ? `下一场挑战：第 ${nextChallenge.week} 周 · ${CHALLENGE_AFFIX_DEFS[nextChallenge.node.affix].name} · ${trial.name}` : "本学期挑战已完成"}</span></div>
         <div class="route-preview-weeks">
           ${previewWeeks.map((week) => `
             <article class="preview-week">
@@ -256,11 +257,11 @@ function renderMap() {
       ${nodes.map((node, index) => `
         <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br>胜利：专属牌 / 宠物 / 物品三选一</em>` : ""}</span>
+          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br><i class="challenge-trial-chip">${trial.icon} ${trial.name}</i>${trial.text} 完成额外 +${trial.bonusGold} 币。<br>胜利：专属牌 / 宠物 / 物品三选一</em>` : ""}</span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
-    <div class="map-tip"><b>路线规则：</b>每学期期中前后各有一次可绕开的挑战战；风险和奖励会在进入前完整显示，不会伪装成普通战斗。</div>`;
+    <div class="map-tip"><b>路线规则：</b>每学期期中前后各有一次可绕开的挑战战；星座试炼只是额外目标，失败不会影响挑战胜利和基础奖励。</div>`;
   return page(`第 ${game.week} 周`, `第 ${game.semester} 学期 · 16 周路线`, body, {
     description: game.week < 8 ? "路线在学期开始时生成并保存，可以提前规划构筑与补给。" : "越接近期末，卡组的缺点越难隐藏。",
     className: "map-page"
@@ -311,6 +312,7 @@ function combatRecapAdvice(summary) {
 
 function renderCombatResult(combat) {
   const summary = combat.summary || game.combatSummary();
+  const trial = summary.challengeTrial;
   const enemy = ENEMY_DEFS[summary.enemyId];
   const build = analyzeBuild(game);
   const unlocked = (combat.newAchievements || []).map((id) => ACHIEVEMENT_DEFS[id]).filter(Boolean);
@@ -328,6 +330,7 @@ function renderCombatResult(combat) {
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
       ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>专属牌 / 宠物 / 物品，选择一种奖励方向</span></div>` : ""}
+      ${trial ? `<div class="challenge-trial-result ${trial.completed ? "success" : "missed"}"><b>${trial.icon} ${trial.name} · ${trial.completed ? "完成" : "未完成"}</b><span>${trial.completed ? `额外 ${summary.challengeTrialBonus} 校园币已到账` : `${trial.progress}；不影响挑战基础奖励`}</span></div>` : ""}
       ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
       ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
       <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
@@ -338,6 +341,7 @@ function renderCombatResult(combat) {
 function renderCombat() {
   const combat = game.combat;
   const challengeAffix = CHALLENGE_AFFIX_DEFS[combat.modifiers.affix];
+  const challengeTrial = combat.modifiers.challenge ? game.challengeTrialStatus() : null;
   const intent = game.getIntent();
   const enemyHp = (combat.enemy.hp / combat.enemy.maxHp) * 100;
   const playerHp = (game.hp / game.maxHp) * 100;
@@ -349,6 +353,7 @@ function renderCombat() {
   ].filter(Boolean).join(" · ");
   const body = `
     ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
+    ${challengeTrial ? `<div class="challenge-trial-progress state-${challengeTrial.state}"><b>${challengeTrial.icon} 星座试炼 · ${challengeTrial.name}</b><span>${challengeTrial.text}</span><em>${challengeTrial.progress}</em><i>${challengeTrial.state === "achieved" ? "已达成，赢下战斗即可结算" : challengeTrial.state === "failed" ? "本场已经错过，不影响挑战胜负" : `完成额外 +${challengeTrial.bonusGold} 币`}</i></div>` : ""}
     <div class="combat-board">
       <section class="fighter player-fighter">
         <div class="fighter-label"><span>学生</span><b>护甲 ${combat.playerBlock}</b></div>
@@ -448,7 +453,7 @@ function renderChallengeReward() {
   const advice = challengeRewardGuidance(game, availableItems.length);
   const recommendedReward = CHALLENGE_REWARD_DEFS[advice.recommendedId];
   const body = `
-    <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>奖励只改变本局构筑，不提供跨对局永久数值。</span></div>
+    <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>${context.trialCompleted ? `星座试炼额外 ${context.trialBonus} 校园币已到账。` : "奖励只改变本局构筑，不提供跨对局永久数值。"}</span></div>
     <div class="challenge-reward-advisor">
       <span>${advice.build.sign}</span>
       <div><small>本局构筑参谋</small><b>优先考虑：${recommendedReward.name}</b><p>${advice.options[advice.recommendedId].reason}</p></div>
@@ -615,7 +620,7 @@ function renderRules() {
       <article><b>03</b><h2>护甲</h2><p>护甲先抵挡伤害，并在下一个玩家回合开始时清空。</p></article>
       <article><b>04</b><h2>构筑</h2><p>战后可三选一或跳过。卡组越薄，关键牌越容易再次抽到。</p></article>
       <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；满 2 点后可主动攻击，每场一次。羁绊 3、10、25 解锁路线成长。</p></article>
-      <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。挑战词缀会提前公开，每学期两种词缀不重复，并且总有另一条路线可选。</p></article>
+      <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。挑战词缀与星座试炼提前公开；试炼失败不影响挑战胜负与基础奖励。</p></article>
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
     <button class="primary centered" data-action="close-rules">返回</button>`;
@@ -650,6 +655,7 @@ function renderStats() {
           <li><span>普池牌</span><b>${stats.publicTaken}</b></li>
           <li><span>主动跳过</span><b>${stats.rewardsSkipped}</b></li>
           <li><span>挑战战胜利</span><b>${stats.challengeWins || 0}</b></li>
+          <li><span>星座试炼完成 / 尝试</span><b>${stats.trialsCompleted || 0} / ${stats.trialsAttempted || 0}</b></li>
           <li><span>挑战奖励：牌 / 鹅 / 物</span><b>${challengeRewards.cards} / ${challengeRewards.pet} / ${challengeRewards.item}</b></li>
           <li><span>获得物品 / 刻印</span><b>${stats.itemsTaken} / ${stats.enchantments}</b></li>
         </ul>
@@ -1035,7 +1041,12 @@ function grantCombatRewards(outcome) {
       )
     });
   } else if (outcome === "challenge") {
-    changeScreen("challengeReward", { affix: game.combat.modifiers.affix });
+    const trial = game.challengeTrialStatus();
+    changeScreen("challengeReward", {
+      affix: game.combat.modifiers.affix,
+      trialCompleted: trial?.completed,
+      trialBonus: game.combat.trialBonusGold
+    });
   } else if (outcome === "event") {
     const rares = Object.keys(ITEM_DEFS).filter((id) => ITEM_DEFS[id].rarity === "rare" && !game.hasItem(id));
     showItemReward(rares.length ? game.rng.shuffle(rares).slice(0, 2) : [game.randomItem()].filter(Boolean), advanceWeek, "怪谈调查奖励");

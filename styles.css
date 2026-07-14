@@ -248,6 +248,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .node-challenge small, .node-challenge > b { color: #ff9991; }
 .node-challenge em { color: #e8b1ad; line-height: 1.55; }
 .challenge-affix-chip { display: block; width: max-content; margin: 6px 0; padding: 3px 7px; color: #2b1112; border-radius: 4px; background: #ff9189; font-size: 10px; font-style: normal; font-weight: 900; }
+.challenge-trial-chip { display: inline-block; margin: 7px 5px 3px 0; padding: 3px 7px; color: #142019; border-radius: 4px; background: var(--green); font-size: 10px; font-style: normal; font-weight: 900; }
 .map-tip { display: block; border-left-color: var(--blue); color: var(--muted); font-size: 13px; }
 .map-tip b { color: var(--blue); }
 .constellation-banner { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 10px 14px; border: 1px dashed #4c5360; border-radius: 7px; color: var(--muted); background: rgba(0,0,0,.1); }
@@ -279,6 +280,14 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-contract span { color: #e8c2bd; font-size: 12px; }
 .challenge-contract small { color: var(--muted); font-size: 10px; }
 .challenge-contract em { margin-left: auto; color: var(--yellow); font-size: 11px; font-style: normal; }
+.challenge-trial-progress { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 16px; max-width: 1200px; margin: -8px auto 18px; padding: 11px 15px; border: 1px solid #54715e; border-left: 5px solid var(--green); border-radius: 7px; background: rgba(56,91,68,.3); }
+.challenge-trial-progress b { color: var(--green); }
+.challenge-trial-progress span { color: #cbd8cf; font-size: 11px; }
+.challenge-trial-progress em { color: var(--ink); font-size: 11px; font-style: normal; font-weight: 900; }
+.challenge-trial-progress i { color: var(--yellow); font-size: 10px; font-style: normal; }
+.challenge-trial-progress.state-achieved { border-color: var(--yellow); box-shadow: 0 0 0 2px rgba(243,201,93,.08); }
+.challenge-trial-progress.state-failed { border-color: #636873; border-left-color: #777d88; opacity: .72; }
+.challenge-trial-progress.state-failed b, .challenge-trial-progress.state-failed i { color: var(--muted); }
 .combat-board { display: grid; grid-template-columns: minmax(230px, 1fr) minmax(280px, .85fr) minmax(230px, 1fr); gap: 28px; align-items: center; max-width: 1200px; min-height: 390px; margin: 0 auto; }
 .fighter { min-width: 0; text-align: center; }
 .fighter-label { display: flex; justify-content: center; gap: 14px; margin-bottom: 12px; }
@@ -387,6 +396,11 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-payout { display: flex; justify-content: space-between; gap: 18px; margin-top: 12px; padding: 12px 14px; border: 1px solid #8a4b4e; border-radius: 7px; background: rgba(88,38,41,.35); }
 .challenge-payout b { color: #ff9b94; }
 .challenge-payout span { color: var(--yellow); font-size: 12px; }
+.challenge-trial-result { display: flex; justify-content: space-between; gap: 18px; margin-top: 9px; padding: 11px 14px; border: 1px solid #54715e; border-radius: 7px; background: rgba(56,91,68,.24); }
+.challenge-trial-result b { color: var(--green); }
+.challenge-trial-result span { color: #d5e4da; font-size: 11px; }
+.challenge-trial-result.missed { border-color: var(--line); background: rgba(0,0,0,.12); }
+.challenge-trial-result.missed b, .challenge-trial-result.missed span { color: var(--muted); }
 .challenge-reward-summary { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: -12px 0 24px; padding: 16px 18px; border: 1px solid #8a4b4e; border-left: 4px solid #ff827a; border-radius: 8px; background: rgba(88,38,41,.3); }
 .challenge-reward-summary b { color: #ff9b94; }
 .challenge-reward-summary span { color: var(--muted); text-align: right; font-size: 11px; }
@@ -631,6 +645,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .route-preview-weeks { grid-template-columns: 1fr; }
   .challenge-contract { align-items: flex-start; flex-direction: column; gap: 6px; }
   .challenge-contract em { margin-left: 0; }
+  .challenge-trial-progress { grid-template-columns: 1fr; gap: 5px; }
   .challenge-reward-summary { align-items: flex-start; flex-direction: column; }
   .challenge-reward-summary span { text-align: left; }
   .challenge-reward-advisor { grid-template-columns: auto 1fr; }
@@ -668,6 +683,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .recap-actions { flex-wrap: wrap; }
   .recap-build { align-items: flex-start; flex-direction: column; }
   .recap-build span { text-align: left; }
+  .challenge-trial-result { align-items: flex-start; flex-direction: column; gap: 5px; }
   .build-profile { grid-template-columns: 1fr; }
   .build-risk { grid-column: auto; }
   .pet-path-grid { grid-template-columns: 1fr; }

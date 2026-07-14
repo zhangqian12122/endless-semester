@@ -51,6 +51,30 @@ export const CHALLENGE_REWARD_DEFS = Object.freeze({
   }
 });
 
+export const ARCHETYPE_TRIAL_DEFS = Object.freeze({
+  aries: {
+    id: "bellRush",
+    icon: "速",
+    name: "赶在铃响前",
+    text: "在第 3 回合内获胜。",
+    bonusGold: 10
+  },
+  gemini: {
+    id: "fourTasks",
+    icon: "连",
+    name: "一心四用",
+    text: "任意一回合打出 4 张牌。",
+    bonusGold: 10
+  },
+  cancer: {
+    id: "steadyCatch",
+    icon: "稳",
+    name: "稳稳接住",
+    text: "胜利时本场生命损失不超过 5。",
+    bonusGold: 10
+  }
+});
+
 export const CHALLENGE_AFFIX_DEFS = Object.freeze({
   deadline: {
     id: "deadline",
@@ -266,6 +290,8 @@ export class SemesterGame {
       combatsCompleted: 0,
       combatsWon: 0,
       challengeWins: 0,
+      trialsAttempted: 0,
+      trialsCompleted: 0,
       challengeRewardChoices: { cards: 0, pet: 0, item: 0 },
       combatTurns: 0,
       combatHpLost: 0,
@@ -508,6 +534,34 @@ export class SemesterGame {
     return reward;
   }
 
+  challengeTrialStatus() {
+    const combat = this.combat;
+    if (!combat?.modifiers.challenge) return null;
+    const definition = ARCHETYPE_TRIAL_DEFS[this.archetypeId];
+    const hpLost = Math.max(0, combat.startingHp - this.hp);
+    let achieved = false;
+    let failed = combat.status === "lost";
+    let progress;
+
+    if (this.archetypeId === "aries") {
+      achieved = combat.status === "won" && combat.turn <= 3;
+      failed ||= combat.turn > 3;
+      progress = failed ? `已进入第 ${combat.turn} 回合` : `当前第 ${combat.turn} 回合`;
+    } else if (this.archetypeId === "gemini") {
+      achieved = combat.maxCardsPlayedInTurn >= 4;
+      progress = `本回合 ${combat.cardsPlayedThisTurn}/4 · 本场最高 ${combat.maxCardsPlayedInTurn}/4`;
+    } else {
+      achieved = combat.status === "won" && hpLost <= 5;
+      failed ||= hpLost > 5;
+      progress = `本场掉血 ${hpLost}/5`;
+    }
+
+    if (combat.status === "won" && !achieved) failed = true;
+    const completed = combat.status === "won" && achieved;
+    const state = completed ? "completed" : achieved ? "achieved" : failed ? "failed" : "active";
+    return { ...definition, achieved, completed, failed, state, progress };
+  }
+
   eligibleSummaryCards() {
     return this.deck.filter((card) => !card.upgraded && (this.cardCombatUses[card.uid] || 0) >= 3);
   }
@@ -544,6 +598,7 @@ export class SemesterGame {
     }
     if (tension) drawPile = this.rng.shuffle(drawPile);
     this.flags.nextCombatTension = 0;
+    if (combatModifiers.challenge) this.stats.trialsAttempted += 1;
 
     this.combat = {
       status: "active",
@@ -552,7 +607,10 @@ export class SemesterGame {
       turn: 0,
       startingHp: this.hp,
       cardsPlayed: 0,
+      cardsPlayedThisTurn: 0,
+      maxCardsPlayedInTurn: 0,
       damageDealt: 0,
+      trialBonusGold: 0,
       enemy: {
         id: enemyId,
         name: definition.name,
@@ -612,6 +670,7 @@ export class SemesterGame {
   startPlayerTurn() {
     const combat = this.requireCombat();
     combat.turn += 1;
+    combat.cardsPlayedThisTurn = 0;
     combat.playerBlock = 0;
     combat.petChargedThisTurn = false;
     combat.pencilUsed = false;
@@ -678,6 +737,8 @@ export class SemesterGame {
     combat.energy -= definition.cost;
     combat.usedCardUids.add(card.uid);
     combat.cardsPlayed += 1;
+    combat.cardsPlayedThisTurn += 1;
+    combat.maxCardsPlayedInTurn = Math.max(combat.maxCardsPlayedInTurn, combat.cardsPlayedThisTurn);
     this.stats.cardsPlayed += 1;
     this.stats.cardPlays[card.id] = (this.stats.cardPlays[card.id] || 0) + 1;
     const effect = definition.effect;
@@ -921,6 +982,13 @@ export class SemesterGame {
       this.stats.combatsCompleted += 1;
       this.stats.combatsWon += 1;
       if (combat.modifiers.challenge) this.stats.challengeWins += 1;
+      const trial = this.challengeTrialStatus();
+      if (trial?.completed && !combat.trialBonusGold) {
+        combat.trialBonusGold = trial.bonusGold;
+        this.gold += trial.bonusGold;
+        this.stats.trialsCompleted += 1;
+        combat.log.push(`星座试炼·${trial.name}完成：校园币 +${trial.bonusGold}。`);
+      }
       this.stats.combatTurns += combat.turn;
       this.pet.bond += 1;
       this.updatePetMilestone();
@@ -950,6 +1018,8 @@ export class SemesterGame {
       enemyKind: enemy.kind,
       challenge: Boolean(combat.modifiers.challenge),
       challengeAffix: combat.modifiers.affix || null,
+      challengeTrial: this.challengeTrialStatus(),
+      challengeTrialBonus: combat.trialBonusGold,
       result: combat.result,
       turns: combat.turn,
       cardsPlayed: combat.cardsPlayed,
@@ -1043,6 +1113,8 @@ export class SemesterGame {
       game.stats = {
         ...defaults,
         ...data.stats,
+        trialsAttempted: Math.max(0, Number(data.stats.trialsAttempted) || 0),
+        trialsCompleted: Math.max(0, Number(data.stats.trialsCompleted) || 0),
         cardPlays: data.stats.cardPlays && typeof data.stats.cardPlays === "object" ? { ...data.stats.cardPlays } : {},
         challengeRewardChoices: Object.fromEntries(
           Object.keys(CHALLENGE_REWARD_DEFS).map((id) => [
