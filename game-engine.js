@@ -1482,6 +1482,7 @@ export class SemesterGame {
         intentTurn: 0
       },
       energy: 0,
+      maxEnergy: 0,
       playerBlock: 0,
       drawPile,
       discardPile: [],
@@ -1567,6 +1568,7 @@ export class SemesterGame {
     combat.energy = 3 + (this.hasItem("allNighter") ? 1 : 0) + (combat.turn === 1 ? this.tarot?.firstTurnEnergy || 0 : 0);
     if (combat.turn === 1 && this.hasItem("referenceBooks")) combat.energy -= 1;
     if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") combat.energy -= 1;
+    combat.maxEnergy = Math.max(0, combat.energy);
 
     const drawCount = Math.max(
       0,

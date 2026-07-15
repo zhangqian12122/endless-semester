@@ -18,7 +18,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -94,7 +94,8 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
   enemies: Object.freeze({
     sleepyBug: "assets/characters/enemy-sleepyBug-v1.webp",
     homeworkBlob: "assets/characters/enemy-homeworkBlob-v1.webp",
-    alarmClock: "assets/characters/enemy-alarmClock-v1.webp"
+    alarmClock: "assets/characters/enemy-alarmClock-v1.webp",
+    phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp"
   })
 });
 
@@ -510,15 +511,6 @@ function renderMap() {
   });
 }
 
-function intentDescription(intent) {
-  const parts = [];
-  if (intent.attack) parts.push(`攻击 ${intent.attack}${intent.hits ? `×${intent.hits}` : ""}`);
-  if (intent.block) parts.push(`护甲 ${intent.block}`);
-  if (intent.debuff === "distracted") parts.push("施加走神");
-  if (intent.addStatus) parts.push(`加入 ${intent.addStatus.count} 张${CARD_DEFS[intent.addStatus.id].name}`);
-  return parts.join(" · ") || "不会造成伤害";
-}
-
 function enemyIntentTokenHtml(intent, resolution = null) {
   const chips = [];
   if (resolution) {
@@ -531,12 +523,35 @@ function enemyIntentTokenHtml(intent, resolution = null) {
     if (!chips.length) chips.push({ kind: "effect", icon: "◆", value: "…" });
   }
   const name = resolution?.name || intent.name;
-  const detail = resolution ? `${resolution.name}：${resolution.result}` : `${intent.name}：${intentDescription(intent)}`;
+  const detailLines = resolution
+    ? [resolution.result]
+    : enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id);
+  const detail = `${name}：${detailLines.join("；")}`;
   const tone = resolution ? resolution.tone : intent.attack ? "danger" : intent.block ? "block" : "safe";
-  return `<div class="enemy-intent-token state-${tone}" title="${escapeHtml(detail)}" aria-label="敌人意图：${escapeHtml(detail)}">
+  const pinned = context.intentDetailsPinned === true;
+  const dismissed = context.intentDetailsDismissed === true;
+  const enemyDefinition = ENEMY_DEFS[game.combat?.enemy?.id];
+  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-describedby="enemy-intent-details" aria-label="敌人意图：${escapeHtml(detail)}">
     <span class="enemy-intent-chips" aria-hidden="true">${chips.map((chip) => `<i class="intent-chip intent-${chip.kind}"><em>${chip.icon}</em><b>${escapeHtml(chip.value)}</b></i>`).join("")}</span>
     <small>${escapeHtml(name)}</small>
-  </div>`;
+    <span class="enemy-intent-detail" id="enemy-intent-details" role="tooltip">
+      <span class="intent-detail-heading"><small>${resolution ? "刚刚结算" : "当前意图"}</small><strong>${escapeHtml(name)}</strong></span>
+      <span class="intent-detail-list">${detailLines.map((line) => `<span><i aria-hidden="true"></i>${escapeHtml(line)}</span>`).join("")}</span>
+      ${enemyDefinition?.mechanicName && enemyDefinition?.mechanicText ? `<span class="intent-mechanic"><b>特性 · ${escapeHtml(enemyDefinition.mechanicName)}</b><span>${escapeHtml(enemyDefinition.mechanicText)}</span></span>` : ""}
+      ${enemyDefinition?.pattern ? `<span class="intent-cycle"><b>行动周期</b>${escapeHtml(enemyDefinition.pattern)}</span>` : ""}
+      <em class="intent-detail-hint">${pinned ? "点击关闭 · Esc 也可关闭" : "点击可固定说明"}</em>
+    </span>
+  </button>`;
+}
+
+function setIntentDetailsOpen(button, open) {
+  context.intentDetailsPinned = open;
+  context.intentDetailsDismissed = !open;
+  button.classList.toggle("is-pinned", open);
+  button.classList.toggle("is-dismissed", !open);
+  button.setAttribute("aria-expanded", String(open));
+  const hint = button.querySelector(".intent-detail-hint");
+  if (hint) hint.textContent = open ? "点击关闭 · Esc 也可关闭" : "点击可固定说明";
 }
 
 function characterAssetHtml(src, className = "character-asset", alt = "") {
@@ -642,6 +657,16 @@ function createBattleMotionGhost(origin) {
   return ghost;
 }
 
+function createBattleCausalGhost(effect) {
+  if (!effect || !["debuff", "status"].includes(effect.type)) return null;
+  const ghost = document.createElement("i");
+  ghost.className = `battle-causal-ghost cause-${effect.type}${effect.count > 1 ? " is-multiple" : ""}`;
+  ghost.setAttribute("aria-hidden", "true");
+  ghost.innerHTML = "<b></b>";
+  document.body.append(ghost);
+  return ghost;
+}
+
 function clearBattleMotionArtifacts() {
   const activeTimeline = battleMotionTimeline;
   battleMotionTimeline = null;
@@ -649,7 +674,7 @@ function clearBattleMotionArtifacts() {
   const activeMedia = battleMotionMedia;
   battleMotionMedia = null;
   activeMedia?.revert();
-  document.querySelectorAll(".played-card-ghost, .pet-flight").forEach((element) => element.remove());
+  document.querySelectorAll(".played-card-ghost, .pet-flight, .battle-causal-ghost").forEach((element) => element.remove());
 }
 
 function runBattleMotion(feedback, origin = null) {
@@ -666,10 +691,33 @@ function runBattleMotion(feedback, origin = null) {
   battleMotionMedia = media;
   media.add("(prefers-reduced-motion: no-preference)", () => {
     if (screen !== "combat" || context.battleFeedback?.id !== feedback.id) return undefined;
+    const motionType = feedback.motionType || (feedback.kind === "enemy" ? "enemy-skill" : "skill");
     const ghost = createBattleMotionGhost(origin);
-    const target = app.querySelector(feedback.kind === "enemy" ? ".student-avatar" : ".enemy-avatar");
+    const targetsEnemy = feedback.kind !== "enemy"
+      && (motionType === "attack" || motionType === "pet" || feedback.enemyDamage > 0 || feedback.enemyBlockLoss > 0);
+    const target = app.querySelector(feedback.kind === "enemy" || !targetsEnemy ? ".student-avatar" : ".enemy-avatar");
     const attacker = feedback.kind === "enemy" ? app.querySelector(".enemy-avatar") : null;
+    const causalGhosts = (feedback.causalEffects || []).map((effect) => ({
+      effect,
+      element: createBattleCausalGhost(effect)
+    })).filter((entry) => entry.element);
     const targetRect = target?.getBoundingClientRect();
+    const attackerRect = attacker?.getBoundingClientRect();
+    const causalMotions = causalGhosts.map((entry, index) => {
+      const destination = entry.effect.type === "status"
+        ? app.querySelector(`.pile-button[data-zone="${entry.effect.target}"]`)
+        : app.querySelector(".player-fighter .status-row") || app.querySelector(".student-avatar");
+      const destinationRect = destination?.getBoundingClientRect();
+      if (!attackerRect || !destinationRect) return null;
+      return {
+        ...entry,
+        destination,
+        startX: attackerRect.left + attackerRect.width / 2 + index * 7,
+        startY: attackerRect.top + attackerRect.height * .42,
+        endX: destinationRect.left + destinationRect.width / 2,
+        endY: destinationRect.top + destinationRect.height / 2
+      };
+    }).filter(Boolean);
     const intentToken = feedback.kind === "enemy" ? app.querySelector(".enemy-intent-token") : null;
     const ribbon = feedbackRoot.querySelector(".feedback-ribbon");
     const streak = feedbackRoot.querySelector(".feedback-streak");
@@ -680,8 +728,12 @@ function runBattleMotion(feedback, origin = null) {
     const hitPulses = feedbackRoot.parentElement?.querySelectorAll(".enemy-hit-pulse") || [];
     const actualShield = app.querySelector(feedback.enemyBlockGain ? ".enemy-fighter .block-shield" : ".player-fighter .block-shield");
     let timeline;
-    const finish = () => {
+    const removeGhosts = () => {
       ghost?.remove();
+      causalGhosts.forEach(({ element }) => element.remove());
+    };
+    const finish = () => {
+      removeGhosts();
       if (battleMotionTimeline === timeline) battleMotionTimeline = null;
       queueMicrotask(() => {
         if (battleMotionMedia !== media) return;
@@ -689,7 +741,7 @@ function runBattleMotion(feedback, origin = null) {
         media.revert();
       });
     };
-    timeline = gsap.timeline({ defaults: { ease: "power2.out" }, onComplete: finish, onInterrupt: () => ghost?.remove() });
+    timeline = gsap.timeline({ defaults: { ease: "power2.out" }, onComplete: finish, onInterrupt: removeGhosts });
     battleMotionTimeline = timeline;
     timeline.addLabel("windup", 0);
     if (ribbon) timeline.fromTo(ribbon, { y: -10, autoAlpha: 0 }, { y: 0, autoAlpha: 1, duration: .16 }, "windup");
@@ -708,20 +760,21 @@ function runBattleMotion(feedback, origin = null) {
       const originCenterY = origin.top + origin.height / 2;
       const targetX = targetRect.left + targetRect.width / 2 - originCenterX;
       const targetY = targetRect.top + targetRect.height / 2 - originCenterY;
+      const directAttack = motionType === "attack" || motionType === "pet";
       gsap.set(ghost, { left: origin.left, top: origin.top, width: origin.width, height: origin.height, x: 0, y: 0, rotation: 0, scale: origin.kind === "pet" ? 1 : .86, autoAlpha: 1 });
-      timeline.to(ghost, { y: -24, scale: origin.kind === "pet" ? 1.08 : .94, duration: .13 }, "windup");
-      timeline.to(ghost, { x: targetX, y: targetY, scale: origin.kind === "pet" ? .78 : .42, rotation: origin.kind === "pet" ? 13 : 5, duration: .26, ease: "power3.in" }, "windup+=.11");
-      timeline.addLabel("impact", .37);
+      timeline.to(ghost, { y: directAttack ? -24 : -38, scale: origin.kind === "pet" ? 1.08 : directAttack ? .94 : .78, duration: directAttack ? .13 : .18 }, "windup");
+      timeline.to(ghost, { x: targetX, y: targetY, scale: origin.kind === "pet" ? .78 : directAttack ? .42 : .3, rotation: origin.kind === "pet" ? 13 : directAttack ? 5 : -3, duration: directAttack ? .26 : .34, ease: directAttack ? "power3.in" : "power2.inOut" }, "windup+=.11");
+      timeline.addLabel("impact", directAttack ? .37 : .46);
       timeline.to(ghost, { scale: .25, autoAlpha: 0, duration: .1 }, "impact");
     } else {
       timeline.addLabel("impact", .18);
     }
 
-    if (streak && ["attack", "danger", "pet"].includes(feedback.tone)) {
+    if (streak && ["attack", "enemy-attack", "pet"].includes(motionType)) {
       timeline.fromTo(streak, { scaleX: .05, autoAlpha: 0 }, { scaleX: 1, autoAlpha: 1, duration: .18, ease: "power3.out" }, "impact-=.05");
       timeline.to(streak, { scaleX: 1.08, autoAlpha: 0, duration: .14 }, "impact+=.15");
     }
-    if (burst && ["attack", "danger", "pet"].includes(feedback.tone)) {
+    if (burst && ["attack", "enemy-attack", "pet"].includes(motionType)) {
       timeline.fromTo(burst, { scale: .24, rotation: -12, autoAlpha: 0 }, { scale: 1.12, rotation: 8, autoAlpha: 1, duration: .19 }, "impact");
       timeline.to(burst, { scale: 1.28, autoAlpha: 0, duration: .15 }, "impact+=.17");
     }
@@ -748,6 +801,15 @@ function runBattleMotion(feedback, origin = null) {
       timeline.fromTo(hitPulses, { scale: .35, autoAlpha: 0 }, { scale: 1.12, autoAlpha: 1, duration: .2, stagger: .18, ease: "power3.out" }, "impact");
       timeline.to(hitPulses, { scale: 1.28, autoAlpha: 0, duration: .16, stagger: .18 }, "impact+=.18");
     }
+    causalMotions.forEach((motion, index) => {
+      const startAt = `impact+=${(.04 + index * .05).toFixed(2)}`;
+      gsap.set(motion.element, { left: 0, top: 0, x: motion.startX, y: motion.startY, scale: .55, rotation: -8 + index * 6, autoAlpha: 0 });
+      timeline.fromTo(motion.element, { scale: .55, autoAlpha: 0 }, { scale: .85, autoAlpha: 1, duration: .12 }, startAt);
+      timeline.to(motion.element, { x: motion.endX, y: motion.endY, scale: .68, rotation: 7 + index * 4, duration: .34, ease: "power2.inOut" }, startAt);
+      timeline.to(motion.element, { scale: 1.05, autoAlpha: 0, duration: .12 }, `${startAt}+=.34`);
+      timeline.fromTo(motion.destination, { scale: .92 }, { scale: 1.06, duration: .12, ease: "back.out(1.7)" }, `${startAt}+=.27`);
+      timeline.to(motion.destination, { scale: 1, duration: .1, clearProps: "transform" }, `${startAt}+=.39`);
+    });
     if (feedback.petChargeGain) {
       const petToken = app.querySelector(".pet-companion-token");
       if (petToken) timeline.fromTo(petToken, { scale: .82 }, { scale: 1.14, duration: .14, ease: "back.out(2)" }, "impact+=.08").to(petToken, { scale: 1, duration: .12, clearProps: "transform" });
@@ -755,7 +817,7 @@ function runBattleMotion(feedback, origin = null) {
     timeline.to(ribbon, { autoAlpha: 0, y: -4, duration: .18 }, ">-.12");
     return () => {
       timeline?.kill();
-      ghost?.remove();
+      removeGhosts();
     };
   });
 }
@@ -841,7 +903,7 @@ function battleFeedbackHtml(feedback) {
     : feedback.playerBlockAbsorbed
     ? `挡下 ${feedback.playerBlockAbsorbed}`
     : "";
-  return `<div class="battle-feedback kind-${feedback.kind} tone-${feedback.tone}${gsapDriven}" data-feedback-id="${feedback.id}" role="status" aria-live="polite" aria-atomic="true">
+  return `<div class="battle-feedback kind-${feedback.kind} tone-${feedback.tone} motion-${feedback.motionType}${gsapDriven}" data-feedback-id="${feedback.id}" role="status" aria-live="polite" aria-atomic="true">
     <div class="feedback-ribbon"><small>${escapeHtml(feedback.label)}</small><strong>${feedback.summaryParts.map(escapeHtml).join(" · ")}</strong></div>
     <div class="feedback-field" aria-hidden="true">
       <i class="feedback-streak"></i><i class="feedback-burst"></i>
@@ -943,6 +1005,23 @@ function enemyActionEffects(result) {
   return effects;
 }
 
+function enemyActionCausalEffects(result) {
+  if (!result) return [];
+  const effects = [];
+  if (result.debuff?.applied === true) {
+    effects.push({ type: "debuff", id: result.debuff.id, applied: true });
+  }
+  if (result.statusAdded) {
+    effects.push({
+      type: "status",
+      id: result.statusAdded.id,
+      count: result.statusAdded.count,
+      target: result.statusAdded.zone === "draw" ? "drawPile" : "discardPile"
+    });
+  }
+  return effects;
+}
+
 function enemyEffectChipsHtml(effects = []) {
   if (!effects.length) return "";
   return `<div class="enemy-effect-results">${effects.map((effect) => `<span class="effect-${effect.tone}">${escapeHtml(effect.label)}</span>`).join("")}</div>`;
@@ -1025,10 +1104,11 @@ function finishPlayerTurn() {
     playerBlockAbsorbed: incoming.blocked,
     enemyBlockGain: intent.block || 0,
     effectParts: actualEffects.map((effect) => effect.label),
+    causalEffects: enemyActionCausalEffects(result.enemyResult),
     enemyResolution: {
       turn: resolvingTurn,
       name: intent.name,
-      detail: intentDescription(intent),
+      detail: enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id).join(" · "),
       incoming,
       effects: actualEffects
     }
@@ -1130,6 +1210,7 @@ function renderCombat() {
   const petReady = game.pet.charge >= game.pet.maxCharge && !combat.petUsed;
   const petUnavailable = combatInputLocked || !petReady || combat.energy < 1 || combat.status !== "active";
   const petChargePercent = Math.round((game.pet.charge / Math.max(1, game.pet.maxCharge)) * 100);
+  const energy = combatEnergyState(combat);
   const visibleCombatLog = visibleCombatLogEntries(combat.log);
   const body = `
     ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
@@ -1184,7 +1265,11 @@ function renderCombat() {
             <button class="pet-skill ${petReady ? "ready" : ""}" data-action="pet-skill" aria-keyshortcuts="G" ${petUnavailable ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">G</kbd>${petReady ? "发动技能" : "尚未充满"}</button>
           </div>
         </article>
-        <div class="energy-orb"><b>${combat.energy}</b><span>能量</span></div>
+        <div class="energy-orb" aria-label="当前能量 ${energy.current}，本回合上限 ${energy.maximum}">
+          <i class="energy-orb-core" aria-hidden="true"></i>
+          <span class="energy-orb-value"><b>${energy.current}</b><i>/</i><strong>${energy.maximum}</strong></span>
+          <small>能量</small>
+        </div>
       </div>
       <button class="end-turn state-${combatInputLocked ? "resolving" : turnRisk.state}" data-action="end-turn" aria-keyshortcuts="E" aria-label="${combatInputLocked ? "敌方行动正在结算" : `结束回合，${escapeHtml(turnRisk.buttonDetail)}`}" ${combatInputLocked || combat.status !== "active" || combat.pendingDiscard ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">E</kbd><span>${combatInputLocked ? "等待结算" : "结束回合"}<small>${combatInputLocked ? "敌方行动中" : escapeHtml(turnRisk.buttonDetail)}</small></span></button>
     </div>
@@ -2656,13 +2741,30 @@ app.addEventListener("click", (event) => {
       setToast(`塔罗·${game.tarot.name}已生效：收益与代价持续到本学期结束`);
       changeScreen("map");
     }
+  } else if (action === "toggle-intent-details") {
+    setIntentDetailsOpen(button, context.intentDetailsPinned !== true);
   } else if (action === "play-card") {
     const card = game.combat.hand.find((held) => held.uid === button.dataset.uid);
+    const definition = card ? cardDefinition(card) : null;
+    const wasDistracted = game.combat.distracted === true;
+    const statusCardsBefore = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
     const motionOrigin = captureBattleMotionOrigin(button, "card");
     const before = battleStateSnapshot();
     const result = game.playCard(button.dataset.uid);
     if (!result.ok) setToast(result.reason);
-    else queueBattleFeedback("card", card ? cardDefinition(card).displayName : "卡牌生效", before, { cardPlayed: true, motionOrigin });
+    else {
+      const statusCardsAfter = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
+      const cleanseApplied = Boolean(definition && (
+        (definition.effect.clearDistracted && wasDistracted && !game.combat.distracted)
+        || (definition.effect.exhaustStatuses && statusCardsAfter < statusCardsBefore)
+      ));
+      queueBattleFeedback("card", definition?.displayName || "卡牌生效", before, {
+        cardPlayed: true,
+        cardType: definition?.type || "skill",
+        cleanseApplied,
+        motionOrigin
+      });
+    }
     recordCurrentCombat();
     render();
   } else if (action === "discard-card") {
@@ -2882,6 +2984,22 @@ app.addEventListener("click", (event) => {
   }
 });
 
+function restoreDismissedIntentDetails(target) {
+  const token = target instanceof Element ? target.closest('[data-action="toggle-intent-details"]') : null;
+  if (!token || context.intentDetailsDismissed !== true) return;
+  context.intentDetailsDismissed = false;
+  token.classList.remove("is-dismissed");
+}
+
+app.addEventListener("pointerout", (event) => {
+  const token = event.target instanceof Element ? event.target.closest('[data-action="toggle-intent-details"]') : null;
+  const relatedTarget = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+  if (!token || token.contains(relatedTarget)) return;
+  restoreDismissedIntentDetails(token);
+});
+
+app.addEventListener("focusin", (event) => restoreDismissedIntentDetails(event.target));
+
 document.addEventListener("keydown", (event) => {
   const dialog = activeDialog();
   if (semesterCalendarOpen && dialog?.id === "semester-calendar-dialog" && event.key === "Escape") {
@@ -2903,11 +3021,19 @@ document.addEventListener("keydown", (event) => {
     resolvingEnemy: context.combatInputLocked === true,
     lethalConfirmOpen: context.confirmLethalEndTurn === true,
     pileOpen: Boolean(pileView),
+    intentDetailsOpen: context.intentDetailsPinned === true,
     tutorialOpen: tutorialStep >= 0,
     pendingDiscard: game.combat.pendingDiscard > 0,
     cardCount: game.combat.hand.length
   });
   if (!command) return;
+
+  if (command.action === COMBAT_SHORTCUT_ACTION.closeIntentDetails) {
+    event.preventDefault();
+    const token = app.querySelector('[data-action="toggle-intent-details"]');
+    if (token) setIntentDetailsOpen(token, false);
+    return;
+  }
 
   let button;
   if ([COMBAT_SHORTCUT_ACTION.playCard, COMBAT_SHORTCUT_ACTION.discardCard].includes(command.action)) {

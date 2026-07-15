@@ -545,6 +545,8 @@ export const ENEMY_DEFS = {
   sleepyBug: {
     id: "sleepyBug", name: "瞌睡虫", maxHp: 20, kind: "normal",
     subtitle: "一边犯困，一边缓慢挥爪。",
+    mechanicName: "张弛节拍",
+    mechanicText: "两次攻击之间会蜷起防御，惊醒时再打出更高伤害。",
     pattern: "攻击 5 → 护甲 5 → 攻击 7",
     tip: "它蜷起来时不会攻击，适合补状态；惊醒前至少准备 7 点护甲。",
     intents: [
@@ -556,6 +558,8 @@ export const ENEMY_DEFS = {
   homeworkBlob: {
     id: "homeworkBlob", name: "作业团", maxHp: 24, kind: "normal",
     subtitle: "越拖越多，但完成一点也有回报。",
+    mechanicName: "待办污染",
+    mechanicText: "低伤拍击会把待办塞进弃牌堆，拖延会持续降低抽牌质量。",
     pattern: "攻击 3 并塞待办 → 攻击 7 → 护甲 6",
     tip: "待办会污染后续抽牌。尽快结束战斗，或用能消耗状态牌的卡清理。",
     intents: [
@@ -567,6 +571,8 @@ export const ENEMY_DEFS = {
   alarmClock: {
     id: "alarmClock", name: "闹钟怪", maxHp: 28, kind: "normal",
     subtitle: "你清楚知道它什么时候会响。",
+    mechanicName: "公开倒计时",
+    mechanicText: "先蓄响防御，再连续攻击并在第三次行动打出 14 点爆发。",
     pattern: "护甲 5 → 攻击 7 → 攻击 14",
     tip: "前两步是明确倒计时。不要把所有防御牌花在蓄响回合。",
     intents: [
@@ -578,17 +584,21 @@ export const ENEMY_DEFS = {
   phoneSpirit: {
     id: "phoneSpirit", name: "手机精", maxHp: 22, kind: "normal",
     subtitle: "只看一眼，注意力就被吸走。",
-    pattern: "施加走神 → 攻击 8 → 攻击 5 并走神",
-    tip: "走神让攻击每段 -2，多段攻击损失最大；可先防御，等状态消失再爆发。",
+    mechanicName: "分心护屏",
+    mechanicText: "发动带走神的推送行动时同步获得护甲 4 或 3，逼你错开爆发回合。",
+    pattern: "护甲 4 并施加走神 → 攻击 8 → 攻击 5、护甲 3 并走神",
+    tip: "走神让攻击每段 -2，它还会在走神回合护屏。先防御，等状态消失再爆发。",
     intents: [
-      { name: "推送轰炸", debuff: "distracted" },
+      { name: "推送轰炸", block: 4, debuff: "distracted" },
       { name: "震动撞击", attack: 8 },
-      { name: "边刷边撞", attack: 5, debuff: "distracted" }
+      { name: "边刷边撞", attack: 5, block: 3, debuff: "distracted" }
     ]
   },
   groupChat: {
     id: "groupChat", name: "群聊99+", maxHp: 26, kind: "normal",
     subtitle: "你不回复，它也会自己越聊越多。",
+    mechanicName: "多段刷屏",
+    mechanicText: "用两段攻击拆护甲，并不断把紧张塞进弃牌堆。",
     pattern: "攻击 3×2 → 塞入 1 张紧张 → 攻击 5 并塞紧张",
     tip: "多段攻击会逐段消耗护甲；紧张会污染下一轮抽牌，适合尽快解决。",
     intents: [
@@ -600,6 +610,8 @@ export const ENEMY_DEFS = {
   printerJam: {
     id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal",
     subtitle: "越着急，它越能吐出一叠没用的纸。",
+    mechanicName: "卡纸窗口",
+    mechanicText: "先堆高额护甲并塞入待办，再用单段重击和双面连击追赶。",
     pattern: "护甲 8 并塞待办 → 攻击 9 → 攻击 4×2",
     tip: "它卡纸时不会攻击，但会加护甲。用这个回合准备增伤，不要把爆发撞在护甲上。",
     intents: [

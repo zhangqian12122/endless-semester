@@ -17,12 +17,46 @@ export function finalizeCombatPersistence(result, callbacks = {}) {
 
 export const COMBAT_SHORTCUT_ACTION = Object.freeze({
   cancelLethalEndTurn: "cancel-lethal-end-turn",
+  closeIntentDetails: "close-intent-details",
   closePile: "close-pile",
   discardCard: "discard-card",
   endTurn: "end-turn",
   petSkill: "pet-skill",
   playCard: "play-card"
 });
+
+export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
+  const lines = [];
+  const attack = Math.max(0, Math.floor(Number(intent.attack) || 0));
+  const hits = attack > 0 ? Math.max(1, Math.floor(Number(intent.hits) || 1)) : 0;
+  const block = Math.max(0, Math.floor(Number(intent.block) || 0));
+
+  if (attack > 0) {
+    lines.push(hits > 1
+      ? `每段 ${attack} 点伤害，共 ${hits} 段（合计 ${attack * hits} 点）`
+      : `造成 ${attack} 点伤害`);
+  }
+  if (block > 0) lines.push(`获得 ${block} 点护甲`);
+  if (intent.debuff === "distracted") {
+    lines.push("施加走神：下回合你的攻击每段 -2");
+  } else if (intent.debuff) {
+    lines.push(`施加「${String(intent.debuff)}」`);
+  }
+  if (intent.addStatus) {
+    const count = Math.max(1, Math.floor(Number(intent.addStatus.count) || 1));
+    const id = String(intent.addStatus.id || "状态牌");
+    const resolvedName = typeof cardNameFor === "function" ? cardNameFor(id) : id;
+    const cardName = String(resolvedName || id);
+    const zone = intent.addStatus.zone === "draw"
+      ? "抽牌堆"
+      : intent.addStatus.zone === "discard"
+      ? "弃牌堆"
+      : "牌堆";
+    lines.push(`将 ${count} 张「${cardName}」加入${zone}`);
+  }
+
+  return lines.length ? lines : ["本回合不会造成伤害，也不会施加其他效果"];
+}
 
 export const ENEMY_RESOLVE_MS = 700;
 export const ENEMY_EXTRA_HIT_RESOLVE_MS = 180;
@@ -349,6 +383,42 @@ function safeBattleValue(value) {
   return Number.isFinite(number) ? number : 0;
 }
 
+export function combatEnergyState(combat = {}) {
+  const current = Math.max(0, Math.floor(safeBattleValue(combat.energy)));
+  const recordedMaximum = Math.max(0, Math.floor(safeBattleValue(combat.maxEnergy)));
+  return { current, maximum: Math.max(current, recordedMaximum) };
+}
+
+function battleMotionType(kind, options, outcome) {
+  if (kind === "pet") return "pet";
+  if (kind === "enemy") {
+    return outcome.playerDamage > 0 || outcome.playerBlockAbsorbed > 0 ? "enemy-attack" : "enemy-skill";
+  }
+  if (options.cleanseApplied === true) return "cleanse";
+  if (options.cardType === "status") return "status";
+  if (options.cardType === "attack") return "attack";
+  if (outcome.playerBlockGain > 0 && outcome.enemyDamage === 0 && outcome.enemyBlockLoss === 0) return "guard";
+  return "skill";
+}
+
+function normalizedCausalEffects(effects) {
+  if (!Array.isArray(effects)) return [];
+  return effects.map((effect) => {
+    if (effect?.type === "debuff" && effect.applied === true) {
+      return { type: "debuff", id: String(effect.id || "status"), target: "player", count: 1 };
+    }
+    if (effect?.type === "status" && ["drawPile", "discardPile"].includes(effect.target)) {
+      return {
+        type: "status",
+        id: String(effect.id || "status"),
+        target: effect.target,
+        count: Math.max(1, Math.floor(safeBattleValue(effect.count)))
+      };
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
   const kind = ["card", "pet", "enemy"].includes(options.kind) ? options.kind : "card";
   const enemyDamage = Math.max(0, safeBattleValue(before.enemyHp) - safeBattleValue(after.enemyHp));
@@ -366,6 +436,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
       safeBattleValue(after.handSize) - safeBattleValue(before.handSize) + (options.cardPlayed ? 1 : 0)
     );
   const petChargeGain = Math.max(0, safeBattleValue(after.petCharge) - safeBattleValue(before.petCharge));
+  const causalEffects = kind === "enemy" ? normalizedCausalEffects(options.causalEffects) : [];
   const effectParts = kind === "enemy" && Array.isArray(options.effectParts)
     ? options.effectParts.map((part) => String(part).trim()).filter(Boolean)
     : [];
@@ -391,6 +462,13 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     : kind === "pet"
     ? "pet"
     : "skill";
+  const motionType = battleMotionType(kind, options, {
+    enemyDamage,
+    enemyBlockLoss,
+    playerDamage,
+    playerBlockGain,
+    playerBlockAbsorbed
+  });
 
   return {
     id: Math.max(0, Math.floor(safeBattleValue(options.id))),
@@ -405,6 +483,8 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     enemyBlockGain,
     cardsDrawn,
     petChargeGain,
+    motionType,
+    causalEffects,
     summaryParts
   };
 }
@@ -428,6 +508,7 @@ export function combatShortcutCommand(code, state = {}) {
   if (code === "Escape") {
     if (state.lethalConfirmOpen) return { action: COMBAT_SHORTCUT_ACTION.cancelLethalEndTurn };
     if (state.pileOpen) return { action: COMBAT_SHORTCUT_ACTION.closePile };
+    if (state.intentDetailsOpen) return { action: COMBAT_SHORTCUT_ACTION.closeIntentDetails };
     return null;
   }
   if (state.resolvingEnemy || state.lethalConfirmOpen || state.pileOpen || state.tutorialOpen) return null;
