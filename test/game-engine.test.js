@@ -522,6 +522,21 @@ test("桌面战斗操作区固定在首屏底部并保留完整出牌入口", ()
   assert.match(styles, /@media \(max-width: 1100px\) \{\s*\.topbar \.sign-resource, \.topbar \.tarot-resource \{ display: none; \}/);
 });
 
+test("手机战斗首屏固定在动态视口内并保留横向出牌入口", () => {
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /@media \(max-width: 700px\) and \(max-height: 900px\)/);
+  assert.match(styles, /body:has\(\.combat-page\) \{ overflow: hidden; \}/);
+  assert.match(styles, /body:has\(\.combat-page\) \.topbar \{[\s\S]*?height: calc\(50px \+ env\(safe-area-inset-top\)\);/);
+  assert.match(styles, /\.combat-page \{[\s\S]*?height: calc\(100dvh - 50px - env\(safe-area-inset-top\)\);[\s\S]*?overflow: hidden;/);
+  assert.match(styles, /\.combat-page \.combat-relic-row\.is-empty \{ display: none; \}/);
+  assert.match(styles, /\.combat-page \.combat-action-dock \.pile-counts \{[\s\S]*?position: absolute;[\s\S]*?top: 0;/);
+  assert.match(styles, /\.combat-page \.combat-action-dock \.pile-button \{[\s\S]*?min-width: 48px;[\s\S]*?min-height: 48px;/);
+  assert.match(styles, /\.combat-page \.hand \{[\s\S]*?height: 216px;[\s\S]*?overflow-x: auto;[\s\S]*?scroll-snap-type: x proximity;/);
+  assert.match(styles, /\.combat-page \.hand \.game-card \{[\s\S]*?flex: 0 0 138px;[\s\S]*?height: 202px;/);
+  assert.match(styles, /\.combat-page \.pet-companion-tooltip \{[\s\S]*?position: fixed;[\s\S]*?bottom: max\(12px, env\(safe-area-inset-bottom\)\);/);
+});
+
 test("战斗双方共享校园舞台并把中央战报降为次要信息", () => {
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
   const backgroundAsset = "assets/scenes/classroom-battle-v1.webp";
