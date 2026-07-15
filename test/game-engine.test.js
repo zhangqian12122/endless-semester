@@ -448,9 +448,17 @@ test("桌面战斗操作区固定在首屏底部并保留完整出牌入口", ()
 
 test("战斗双方共享校园舞台并把中央战报降为次要信息", () => {
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+  const backgroundAsset = "assets/scenes/classroom-battle-v1.webp";
+  const backgroundUrl = new URL(`../${backgroundAsset}`, import.meta.url);
 
   assert.match(styles, /\.combat-board \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
-  assert.match(styles, /url\("assets\/scenes\/classroom-battle-v1\.webp"\) center 57% \/ cover no-repeat/);
+  assert.match(styles, new RegExp(`url\\("${backgroundAsset.replaceAll("/", "\\/")}"\\) center 57% \\/ cover no-repeat`));
+  assert.ok(existsSync(backgroundUrl), "教室战斗背景文件不存在");
+  assert.ok(statSync(backgroundUrl).size > 0, "教室战斗背景不能为空");
+  assert.ok(statSync(backgroundUrl).size <= 350 * 1024, "教室战斗背景超过 350KB");
+  const backgroundHeader = readFileSync(backgroundUrl).subarray(0, 12);
+  assert.equal(backgroundHeader.subarray(0, 4).toString("ascii"), "RIFF", "教室战斗背景不是有效 WebP 容器");
+  assert.equal(backgroundHeader.subarray(8, 12).toString("ascii"), "WEBP", "教室战斗背景缺少 WebP 标识");
   assert.match(styles, /\.battle-center \{[^}]*position: absolute;[^}]*left: 50%;[^}]*pointer-events: none;/);
   assert.match(styles, /\.combat-log \{[^}]*width: min\(250px, 100%\);[^}]*max-height: 30px;[^}]*opacity: \.67;/);
   assert.match(styles, /\.combat-log p:first-child \{[^}]*display: block;[^}]*text-overflow: ellipsis;/);
