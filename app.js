@@ -681,6 +681,56 @@ function clearBattleMotionArtifacts() {
   document.querySelectorAll(".played-card-ghost, .pet-flight, .battle-causal-ghost").forEach((element) => element.remove());
 }
 
+function enemyBattleMotionProfile(feedback) {
+  const attacksPlayer = Boolean(feedback?.playerDamage || feedback?.playerBlockAbsorbed);
+  if (feedback?.enemyId === "rivalShadow" && attacksPlayer) return "rival-rush";
+  if (feedback?.enemyId === "finalExam" && attacksPlayer) return "final-exam-smash";
+  if (feedback?.enemyId === "finalExam" && /^发卷/.test(feedback?.intentName || "")) return "final-exam-deal";
+  return attacksPlayer ? "default-attack" : "default-skill";
+}
+
+function addEnemyBattleMotion(timeline, attacker, feedback) {
+  const profile = enemyBattleMotionProfile(feedback);
+
+  if (attacker && profile === "rival-rush") {
+    timeline.to(attacker, { x: -52, rotation: -3, scaleX: 1.04, filter: "brightness(1.08)", duration: .11, ease: "power4.in" }, "windup+=.04");
+    timeline.addLabel("impact", .15);
+    timeline.to(attacker, { x: 10, rotation: 1, scaleX: .98, filter: "brightness(1.02)", duration: .09, ease: "power4.out" }, "impact");
+    timeline.to(attacker, { x: 0, rotation: 0, scaleX: 1, filter: "brightness(1)", duration: .13, ease: "power2.out", clearProps: "transform,filter" }, "impact+=.09");
+    return profile;
+  }
+
+  if (attacker && profile === "final-exam-smash") {
+    timeline.to(attacker, { x: 9, y: -4, scale: 1.12, rotation: 2, duration: .22, ease: "power2.out" }, "windup");
+    timeline.to(attacker, { x: -48, y: 8, scaleX: 1.08, scaleY: .92, rotation: -5, filter: "brightness(1.18)", duration: .16, ease: "power4.in" }, "windup+=.22");
+    timeline.addLabel("impact", .38);
+    timeline.to(attacker, { x: 9, y: -4, scaleX: .98, scaleY: 1.04, rotation: 2, filter: "brightness(1.04)", duration: .12, ease: "power4.out" }, "impact");
+    timeline.to(attacker, { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, filter: "brightness(1)", duration: .18, ease: "power2.out", clearProps: "transform,filter" }, "impact+=.12");
+    return profile;
+  }
+
+  if (attacker && profile === "final-exam-deal") {
+    timeline.fromTo(
+      attacker,
+      { x: 10, scaleX: .78, scaleY: 1.05, rotation: 2, opacity: .72 },
+      { x: -8, scaleX: 1.08, scaleY: .96, rotation: -1, opacity: 1, duration: .16, ease: "power3.out" },
+      "windup"
+    );
+    timeline.addLabel("impact", .16);
+    timeline.to(attacker, { x: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, duration: .14, ease: "back.out(1.4)", clearProps: "transform,opacity" }, "impact");
+    return profile;
+  }
+
+  if (attacker && profile === "default-attack") {
+    timeline.to(attacker, { x: -28, rotation: -2, duration: .16, ease: "power2.in" }, "windup+=.1");
+    timeline.addLabel("impact", .26);
+    timeline.to(attacker, { x: 0, rotation: 0, duration: .2, ease: "power3.out", clearProps: "transform" }, "impact+=.08");
+  } else {
+    timeline.addLabel("impact", .2);
+  }
+  return profile;
+}
+
 function runBattleMotion(feedback, origin = null) {
   if (!feedback || feedback.id === lastAnimatedFeedbackId || screen !== "combat") return;
   lastAnimatedFeedbackId = feedback.id;
@@ -752,13 +802,7 @@ function runBattleMotion(feedback, origin = null) {
 
     if (feedback.kind === "enemy") {
       if (intentToken) timeline.fromTo(intentToken, { y: -6, scale: .82, autoAlpha: .5 }, { y: 0, scale: 1.12, autoAlpha: 1, duration: .16, ease: "back.out(1.7)" }, "windup");
-      if (attacker && (feedback.playerDamage || feedback.playerBlockAbsorbed)) {
-        timeline.to(attacker, { x: -28, rotation: -2, duration: .16, ease: "power2.in" }, "windup+=.1");
-        timeline.addLabel("impact", .26);
-        timeline.to(attacker, { x: 0, rotation: 0, duration: .2, ease: "power3.out", clearProps: "transform" }, "impact+=.08");
-      } else {
-        timeline.addLabel("impact", .2);
-      }
+      addEnemyBattleMotion(timeline, attacker, feedback);
     } else if (ghost && targetRect) {
       const originCenterX = origin.left + origin.width / 2;
       const originCenterY = origin.top + origin.height / 2;
@@ -849,12 +893,19 @@ function battleStateSnapshot() {
 
 function queueBattleFeedback(kind, label, before, options = {}) {
   battleFeedbackSequence += 1;
-  const feedback = battleFeedbackFromDelta(before, battleStateSnapshot(), {
+  const feedbackDelta = battleFeedbackFromDelta(before, battleStateSnapshot(), {
     ...options,
     id: battleFeedbackSequence,
     kind,
     label
   });
+  const feedback = kind === "enemy"
+    ? {
+      ...feedbackDelta,
+      enemyId: String(options.enemyId || ""),
+      intentName: String(options.intentName || "")
+    }
+    : feedbackDelta;
   const locksCombatInput = kind === "enemy";
   const enemyResolution = locksCombatInput
     ? enemyResolutionSnapshot(options.enemyResolution, feedback)
@@ -1100,11 +1151,14 @@ function finishPlayerTurn() {
   const before = battleStateSnapshot();
   const incoming = game.incomingDamagePreview();
   const intent = game.getIntent();
+  const enemyId = game.combat.enemy.id;
   const resolvingTurn = game.combat.turn;
   const result = game.endTurn();
   const actualEffects = enemyActionEffects(result.enemyResult);
   if (!result.ok) setToast(result.reason);
   else queueBattleFeedback("enemy", `${game.combat.enemy.name} · ${intent.name}`, before, {
+    enemyId,
+    intentName: intent.name,
     playerBlockAbsorbed: incoming.blocked,
     enemyBlockGain: intent.block || 0,
     effectParts: actualEffects.map((effect) => effect.label),
