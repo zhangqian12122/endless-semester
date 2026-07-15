@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, ITEM_REWARD_FALLBACK_GOLD, TAROT_DEFS, SemesterGame, STARTING_DECK, cardDefinition, normalRouteEnemyPool, startingDeckFor } from "../game-engine.js";
 import { ACHIEVEMENT_DEFS, ARCHETYPE_CARD_IDS, BOSS_ITEM_IDS, CARD_ART_DEFS, CARD_DEFS, DEFAULT_PET_ID, ENCHANTMENT_DEFS, ENEMY_DEFS, FIRST_SEMESTER_NORMAL_ENEMY_POOLS, ITEM_DEFS, NORMAL_ENEMY_IDS, PET_DEFS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS, REGULAR_ITEM_IDS } from "../game-data.js";
 import { analyzeBuild, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ENEMY_EXTRA_HIT_RESOLVE_MS, ENEMY_RESOLVE_MS, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitBreakdown, enemyHitPulseSequence, enemyResolutionSnapshot, enemyResolveDuration, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "../app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ENEMY_EXTRA_HIT_RESOLVE_MS, ENEMY_RESOLVE_MS, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitBreakdown, enemyHitPulseSequence, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "../app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -517,6 +517,47 @@ test("已有存档时必须二次确认才能开始新游戏", () => {
   assert.equal(newGameStartDecision(null), NEW_GAME_START.start);
   assert.equal(newGameStartDecision(saved), NEW_GAME_START.confirm);
   assert.equal(newGameStartDecision(saved, true), NEW_GAME_START.start);
+});
+
+test("战败会立即终结战斗检查点并退休本局存档", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  assert.match(appSource, /function saveGame\(\) \{\s*if \(game\.combat\?\.status === "lost"\) return;/,
+    "战败复盘打开档案等只读页面时也不能把已退休对局重新写回");
+
+  const game = new SemesterGame(517, "cancer");
+  game.chooseTarot("strength");
+  const pending = game.prepareCombatStart("sleepyBug", "normal", {});
+  assert.equal(pending.started, true);
+  game.startCombat(pending.enemyId, pending.modifiers);
+  game.hp = 0;
+  game.checkCombatEnd();
+  assert.equal(game.combat.result, "lost");
+  assert.notEqual(game.pendingCombatStart, null, "战前检查点在终局持久化前仍存在");
+
+  let clearedRunSaves = 0;
+  assert.equal(finalizeCombatPersistence(game.combat.result, {
+    completeCheckpoint: () => game.completePendingCombatStart(),
+    clearRunSave: () => { clearedRunSaves += 1; }
+  }), true);
+  assert.equal(game.pendingCombatStart, null);
+  assert.equal(game.toJSON().pendingCombatStart, null);
+  assert.equal(clearedRunSaves, 1);
+
+  let wonCheckpoints = 0;
+  let clearedWonSaves = 0;
+  assert.equal(finalizeCombatPersistence("won", {
+    completeCheckpoint: () => { wonCheckpoints += 1; },
+    clearRunSave: () => { clearedWonSaves += 1; }
+  }), true);
+  assert.equal(wonCheckpoints, 1);
+  assert.equal(clearedWonSaves, 0);
+
+  let activeCallbacks = 0;
+  assert.equal(finalizeCombatPersistence("active", {
+    completeCheckpoint: () => { activeCallbacks += 1; },
+    clearRunSave: () => { activeCallbacks += 1; }
+  }), false);
+  assert.equal(activeCallbacks, 0);
 });
 
 test("只有预计致命的结束回合需要二次确认", () => {

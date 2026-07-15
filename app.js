@@ -18,7 +18,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyResolutionSnapshot, enemyResolveDuration, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -159,6 +159,7 @@ function readCareer() {
 }
 
 function saveGame() {
+  if (game.combat?.status === "lost") return;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(game.toJSON()));
   } catch {
@@ -961,10 +962,11 @@ function recordCurrentCombat() {
   combat.careerRecorded = true;
   combat.newAchievements = Array.from(new Set([...(combat.newAchievements || []), ...newAchievements]));
   saveCareer();
-  if (summary.result === "won") {
-    game.completePendingCombatStart();
-    if (context.outcome === "event") game.completePendingEvent();
-  }
+  finalizeCombatPersistence(summary.result, {
+    completeCheckpoint: () => game.completePendingCombatStart(),
+    clearRunSave: clearSave
+  });
+  if (summary.result === "won" && context.outcome === "event") game.completePendingEvent();
   if (summary.result === "won" && context.outcome === "boss") {
     game.prepareSemesterRewards(BOSS_ITEM_IDS);
     saveGame();

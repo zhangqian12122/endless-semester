@@ -8,6 +8,13 @@ export const END_TURN_ACTION = Object.freeze({
   end: "end"
 });
 
+export function finalizeCombatPersistence(result, callbacks = {}) {
+  if (!["won", "lost"].includes(result)) return false;
+  callbacks.completeCheckpoint?.();
+  if (result === "lost") callbacks.clearRunSave?.();
+  return true;
+}
+
 export const COMBAT_SHORTCUT_ACTION = Object.freeze({
   cancelLethalEndTurn: "cancel-lethal-end-turn",
   closePile: "close-pile",
