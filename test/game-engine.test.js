@@ -446,6 +446,21 @@ test("桌面战斗操作区固定在首屏底部并保留完整出牌入口", ()
   assert.match(styles, /@media \(max-width: 1100px\) \{\s*\.topbar \.sign-resource, \.topbar \.tarot-resource \{ display: none; \}/);
 });
 
+test("战斗双方共享校园舞台并把中央战报降为次要信息", () => {
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(styles, /\.combat-board \{[\s\S]*?grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /url\("assets\/scenes\/classroom-battle-v1\.webp"\) center 57% \/ cover no-repeat/);
+  assert.match(styles, /\.battle-center \{[^}]*position: absolute;[^}]*left: 50%;[^}]*pointer-events: none;/);
+  assert.match(styles, /\.combat-log \{[^}]*width: min\(250px, 100%\);[^}]*max-height: 30px;[^}]*opacity: \.67;/);
+  assert.match(styles, /\.combat-log p:first-child \{[^}]*display: block;[^}]*text-overflow: ellipsis;/);
+  assert.match(styles, /\.combat-vitals \{[^}]*width: min\(232px, 82%\);[^}]*margin: -7px auto 0;/);
+  assert.match(styles, /\.combat-action-dock::before \{[^}]*border-top: 1px solid rgba\(194,207,207,\.13\);/);
+  assert.match(styles, /@media \(min-width: 820px\) and \(min-height: 680px\) and \(max-height: 759px\)/);
+  assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-board \{ height: 226px; min-height: 226px; \}/);
+  assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-log,[\s\S]*?\.enemy-fighter > p \{ display: none; \}/);
+});
+
 test("战斗牌堆、复合敌人意图与护甲盾牌使用统一战场图形", () => {
   const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
