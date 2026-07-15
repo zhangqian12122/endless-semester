@@ -220,6 +220,27 @@ test("十件随身物品全部使用克制的小尺寸独立图标", () => {
   assert.match(styles, /\.combat-relic-icon img \{[^}]*width: 100%/);
 });
 
+test("顶栏校园币、卡组与物品使用统一的小尺寸原生图标", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.doesNotMatch(appSource, /<div class="resource">[◎▦♢]/);
+  assert.match(appSource, /class="resource resource-stat campus-coin-resource" aria-label="校园币：\$\{game\.gold\}"/);
+  assert.match(appSource, /class="resource resource-stat deck-resource" aria-label="卡组：\$\{game\.deck\.length\} 张牌"/);
+  assert.match(appSource, /class="resource resource-stat items-resource" aria-label="随身物品：\$\{game\.items\.length\} 件，容量 \$\{game\.backpackCapacity\} 件"/);
+  for (const iconClass of ["campus-coin-icon", "deck-stack-icon", "backpack-icon"]) {
+    assert.match(appSource, new RegExp(`<span class="resource-icon ${iconClass}" aria-hidden="true"></span>`));
+  }
+
+  assert.match(styles, /\.resource-stat \{[^}]*display: inline-flex;[^}]*flex: 0 0 auto;[^}]*gap: 5px;/);
+  assert.match(styles, /\.resource-icon \{[^}]*flex: 0 0 14px;[^}]*width: 14px;[^}]*height: 14px;/);
+  assert.match(styles, /\.campus-coin-icon \{[^}]*border: 1px solid currentColor;[^}]*border-radius: 50%;[^}]*box-shadow: inset/);
+  assert.match(styles, /\.campus-coin-icon::before,[\s\S]*?\.campus-coin-icon::after \{[^}]*width: 4px;[^}]*height: 4px;/);
+  assert.match(styles, /\.deck-stack-icon \{[^}]*width: 13px;[^}]*height: 11px;[^}]*border: 1px solid currentColor;/);
+  assert.match(styles, /\.backpack-icon \{[^}]*width: 12px;[^}]*height: 10px;[^}]*border: 1px solid currentColor;/);
+  assert.match(styles, /@media \(max-width: 700px\) \{[\s\S]*?\.topbar \{[^}]*flex-wrap: wrap;[\s\S]*?\.resource-stat \{ gap: 4px; \}/);
+});
+
 test("随身物品图鉴按稀有度完整筛选并保持只读入口", () => {
   const allIds = itemLibraryIds(ITEM_DEFS, "all");
   const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
@@ -287,7 +308,7 @@ test("战斗遗物栏公开待触发、已触发、持续与战外状态", () =>
   assert.match(styles, /\.combat-relic:focus \.combat-relic-tooltip/);
 });
 
-test("十六周日历完整标记进度并把节点压缩成可读符号", () => {
+test("十六周日历收纳为可访问弹层并完整保留进度与节点符号", () => {
   const semesterPlan = Array.from({ length: 17 }, () => []);
   semesterPlan[1] = [{ type: "combat", label: "入学测试" }];
   semesterPlan[3] = [
@@ -309,11 +330,23 @@ test("十六周日历完整标记进度并把节点压缩成可读符号", () =>
 
   const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
-  assert.match(appSource, /class="semester-calendar"/);
+  assert.match(appSource, /class="semester-calendar-trigger"[^>]*data-action="open-calendar"[^>]*aria-haspopup="dialog"/);
+  assert.match(appSource, /semesterCalendarOpen \? `\s*<div class="semester-calendar-backdrop"/);
+  assert.match(appSource, /id="semester-calendar-dialog" role="dialog" aria-modal="true"/);
+  assert.match(appSource, /id="semester-calendar-challenge">\$\{nextChallengeSummary\}/);
+  assert.match(appSource, /class="quiet-button calendar-dialog-close"[^>]*data-action="close-calendar"[^>]*autofocus/);
+  assert.match(appSource, /button\.dataset\.dismiss === "backdrop" && event\.target !== button/);
+  assert.match(appSource, /event\.key === "Escape"[\s\S]*?closeSemesterCalendar\(\)/);
+  assert.match(appSource, /app\.querySelector\('\[data-action="open-calendar"\]'\)\?\.focus\(\)/);
+  assert.match(appSource, /trapDialogFocus\(event, dialog\)/);
   assert.match(appSource, /class="calendar-week state-\$\{entry\.status\}"/);
   assert.match(appSource, /class="calendar-event event-\$\{node\.type\}"/);
   assert.doesNotMatch(appSource, /未来四周/);
+  assert.match(styles, /\.semester-calendar-trigger \{[^}]*min-height:\s*62px/);
+  assert.match(styles, /\.semester-calendar-backdrop \{[^}]*position:\s*fixed/);
+  assert.match(styles, /\.semester-calendar \{[^}]*max-height:[^;}]*100vh/);
   assert.match(styles, /\.semester-calendar-grid \{[^}]*grid-template-columns: repeat\(4/);
+  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.semester-calendar-grid \{[^}]*grid-template-columns: repeat\(2/);
   assert.match(styles, /\.calendar-week\.state-done \.calendar-week-date/);
   assert.match(styles, /\.calendar-week\.state-current/);
 });
@@ -493,6 +526,48 @@ test("战斗牌堆、复合敌人意图与护甲盾牌使用统一战场图形",
   assert.match(appSource, /data-zone="discardPile"/);
   assert.doesNotMatch(appSource, /data-zone="exhaustPile"/);
   assert.match(styles, /\.pile-stack \{[^}]*box-shadow: -\d+px \d+px 0 -1px[^}]*, -\d+px \d+px 0 0/);
+});
+
+test("战场意图移除黑色大底，回合规则回到新生教学", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /class="enemy-intent-token state-\$\{tone\}"[^>]*aria-label="敌人意图：\$\{escapeHtml\(detail\)\}"/);
+  assert.match(styles, /\.enemy-intent-token \{[^}]*border: 0;[^}]*background: transparent;[^}]*box-shadow: none;/);
+  assert.match(styles, /\.intent-chip \{[^}]*border: 1px solid rgba/);
+  assert.match(styles, /\.enemy-intent-token\.state-safe small/);
+  assert.doesNotMatch(appSource, /class="turn-badge"/);
+  assert.doesNotMatch(styles, /\.turn-badge/);
+  assert.match(appSource, /一回合：你出牌，敌人行动/);
+  assert.match(appSource, /玩家回合开始抽 5 张并获得 3 能量/);
+  assert.match(appSource, /敌人按头顶意图行动，再进入下一回合/);
+  assert.match(appSource, /const COMBAT_SETUP_LOG_PATTERN = \/\^\(\?:遭遇 /);
+  assert.match(appSource, /function visibleCombatLogEntries\(entries\)/);
+  assert.match(appSource, /entries\.filter\(\(entry\) => !COMBAT_SETUP_LOG_PATTERN\.test\(entry\)\)\.slice\(-3\)/);
+  assert.match(appSource, /visibleCombatLog\.reverse\(\)/);
+});
+
+test("牌堆弹层保持卡牌正常亮度且不泄露抽牌顺序", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /class="pile-dialog" role="dialog" aria-modal="true"/);
+  assert.match(appSource, /const cards = \[\.\.\.\(combat\[pileView\] \|\| \[\]\)\];/);
+  assert.match(appSource, /if \(pileView === "drawPile"\) \{\s*cards\.sort/);
+  assert.match(appSource, /仅按牌名整理展示；实际抽取顺序仍未知/);
+  assert.match(styles, /\.pile-overlay \{[^}]*background: rgba\(16,19,23,\.54\);/);
+  assert.match(styles, /\.pile-dialog \{[^}]*background: linear-gradient\(180deg, #f2ecdf, #d8cfbf\);/);
+  assert.match(styles, /\.pile-card-grid \.game-card:disabled \{[^}]*cursor: default;[^}]*opacity: 1;[^}]*filter: none;/);
+});
+
+test("战场宠物缩小并贴近学生，充能头像尺寸保持独立", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+  const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
+
+  assert.match(appSource, /<div class="player-character-stage">[\s\S]*?\$\{renderBattlePet\(\)\}/);
+  assert.match(styles, /\.battle-pet \{[^}]*right: -48px;[^}]*transform: scale\(\.82\);[^}]*transform-origin: center bottom;/);
+  assert.match(styles, /\.battle-pet \{ right: -36px; bottom: 19px; width: 76px; height: 90px; \}/);
+  assert.doesNotMatch(styles, /\.pet-companion-token \{[^}]*transform: scale\(\.82\)/);
 });
 
 test("宠物充能入口与能量组合固定在一起，并保留技能详情操作", () => {

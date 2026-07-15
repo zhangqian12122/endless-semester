@@ -54,6 +54,7 @@ let battleFeedbackSequence = 0;
 let battleMotionTimeline = null;
 let battleMotionMedia = null;
 let lastAnimatedFeedbackId = 0;
+let semesterCalendarOpen = false;
 
 const ICONS = {
   combat: "⚔",
@@ -196,9 +197,15 @@ function topBar() {
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
       </div>
-      <div class="resource">◎ ${game.gold} 校园币</div>
-      <div class="resource">▦ ${game.deck.length} 张牌</div>
-      <div class="resource">♢ ${game.items.length}/${game.backpackCapacity} 物品</div>
+      <div class="resource resource-stat campus-coin-resource" aria-label="校园币：${game.gold}">
+        <span class="resource-icon campus-coin-icon" aria-hidden="true"></span><span>${game.gold} 校园币</span>
+      </div>
+      <div class="resource resource-stat deck-resource" aria-label="卡组：${game.deck.length} 张牌">
+        <span class="resource-icon deck-stack-icon" aria-hidden="true"></span><span>${game.deck.length} 张牌</span>
+      </div>
+      <div class="resource resource-stat items-resource" aria-label="随身物品：${game.items.length} 件，容量 ${game.backpackCapacity} 件">
+        <span class="resource-icon backpack-icon" aria-hidden="true"></span><span>${game.items.length}/${game.backpackCapacity} 物品</span>
+      </div>
       <div class="resource pet-resource">${pet.shortName}羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
       <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
       ${game.tarot ? `<div class="resource tarot-resource">${game.tarot.number} · ${game.tarot.name}</div>` : ""}
@@ -444,6 +451,12 @@ function renderMap() {
   const challengeHpPercent = Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100);
   const challengeDamagePercent = Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100);
   const nodeTypeName = (node) => node.challenge ? "挑战" : ({ combat: "战斗", event: "未知", rest: "休息", shop: "商店" }[node.type]);
+  const currentWeekSymbols = calendarWeeks[game.week - 1]?.nodes
+    .map((node) => (CALENDAR_EVENT_META[node.type] || CALENDAR_EVENT_META.unknown).icon)
+    .join(" ") || "·";
+  const nextChallengeSummary = nextChallenge
+    ? `下一场挑战：第 ${nextChallenge.week} 周 · ${CHALLENGE_AFFIX_DEFS[nextChallenge.node.affix].name} · ${trial.name}`
+    : "本学期挑战已完成";
   const body = `
     <div class="route-callout">
       <div><small>当前目标</small><strong>${game.week === 16 ? "通过期末考试" : `完成第 ${game.week} 周`}</strong></div>
@@ -451,27 +464,37 @@ function renderMap() {
     </div>
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
     ${tarot ? `<div class="tarot-banner"><span>${tarot.number}</span><p><b>塔罗·${tarot.name}</b><em>收益：${tarot.boon}</em><i>代价：${tarot.cost}</i></p><small>本学期固定</small></div>` : ""}
-    <section class="semester-calendar" aria-label="${SEMESTER_WEEK_COUNT} 周学期日历">
-      <div class="semester-calendar-heading">
-        <div><small>学期日历</small><strong>${SEMESTER_WEEK_COUNT} 周全览</strong></div>
-        <span>${nextChallenge ? `下一场挑战：第 ${nextChallenge.week} 周 · ${CHALLENGE_AFFIX_DEFS[nextChallenge.node.affix].name} · ${trial.name}` : "本学期挑战已完成"}</span>
-        <div class="calendar-legend" aria-label="日历符号说明">
-          ${["combat", "elite", "event", "rest", "shop", "challenge", "boss"].map((type) => `<i><b>${CALENDAR_EVENT_META[type].icon}</b>${CALENDAR_EVENT_META[type].label}</i>`).join("")}
-        </div>
-      </div>
-      <div class="semester-calendar-grid">
-        ${calendarWeeks.map((entry) => `
-          <article class="calendar-week state-${entry.status}" aria-label="第 ${entry.week} 周，${entry.status === "done" ? "已完成" : entry.status === "current" ? "当前周" : "未开始"}">
-            <div class="calendar-week-date"><small>第</small><b>${entry.week}</b><em>周</em>${entry.status === "done" ? '<i aria-hidden="true">✓</i>' : ""}</div>
-            <div class="calendar-week-events">
-              ${entry.nodes.map((node) => {
-                const meta = CALENDAR_EVENT_META[node.type] || CALENDAR_EVENT_META.unknown;
-                return `<span class="calendar-event event-${node.type}" title="${escapeHtml(node.label)}"><b>${meta.icon}</b><em>${meta.label}</em></span>`;
-              }).join("") || '<span class="calendar-event event-unknown"><b>·</b><em>待定</em></span>'}
+    <button class="semester-calendar-trigger" data-action="open-calendar" aria-haspopup="dialog" aria-controls="semester-calendar-dialog" aria-expanded="${semesterCalendarOpen}">
+      <span><small>学期日历</small><strong>当前周 · 第 ${game.week} 周</strong></span>
+      <i aria-hidden="true">${currentWeekSymbols}</i>
+      <em>点击查看 ${SEMESTER_WEEK_COUNT} 周全览</em>
+      <b aria-hidden="true">↗</b>
+    </button>
+    ${semesterCalendarOpen ? `
+      <div class="semester-calendar-backdrop" data-action="close-calendar" data-dismiss="backdrop">
+        <section class="semester-calendar" id="semester-calendar-dialog" role="dialog" aria-modal="true" aria-labelledby="semester-calendar-title" aria-describedby="semester-calendar-challenge">
+          <div class="semester-calendar-heading">
+            <div><small>学期日历</small><strong id="semester-calendar-title">${SEMESTER_WEEK_COUNT} 周全览</strong></div>
+            <span id="semester-calendar-challenge">${nextChallengeSummary}</span>
+            <button class="quiet-button calendar-dialog-close" data-action="close-calendar" autofocus aria-label="关闭学期日历">关闭 ×</button>
+            <div class="calendar-legend" aria-label="日历符号说明">
+              ${["combat", "elite", "event", "rest", "shop", "challenge", "boss"].map((type) => `<i><b>${CALENDAR_EVENT_META[type].icon}</b>${CALENDAR_EVENT_META[type].label}</i>`).join("")}
             </div>
-          </article>`).join("")}
-      </div>
-    </section>
+          </div>
+          <div class="semester-calendar-grid">
+            ${calendarWeeks.map((entry) => `
+              <article class="calendar-week state-${entry.status}" aria-label="第 ${entry.week} 周，${entry.status === "done" ? "已完成" : entry.status === "current" ? "当前周" : "未开始"}">
+                <div class="calendar-week-date"><small>第</small><b>${entry.week}</b><em>周</em>${entry.status === "done" ? '<i aria-hidden="true">✓</i>' : ""}</div>
+                <div class="calendar-week-events">
+                  ${entry.nodes.map((node) => {
+                    const meta = CALENDAR_EVENT_META[node.type] || CALENDAR_EVENT_META.unknown;
+                    return `<span class="calendar-event event-${node.type}" title="${escapeHtml(node.label)}"><b>${meta.icon}</b><em>${meta.label}</em></span>`;
+                  }).join("") || '<span class="calendar-event event-unknown"><b>·</b><em>待定</em></span>'}
+                </div>
+              </article>`).join("")}
+          </div>
+        </section>
+      </div>` : ""}
     <div class="node-grid">
       ${nodes.map((node, index) => `
         <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
@@ -1079,6 +1102,12 @@ function combatRelicRowHtml() {
   </section>`;
 }
 
+const COMBAT_SETUP_LOG_PATTERN = /^(?:遭遇 |塔罗契约·|挑战词缀·|新生首手保底：|创可贴生效：|巨蟹座命盘：|第一节早课：|塔罗·.+生效：|第 \d+ 回合：抽 )/;
+
+function visibleCombatLogEntries(entries) {
+  return entries.filter((entry) => !COMBAT_SETUP_LOG_PATTERN.test(entry)).slice(-3);
+}
+
 function renderCombat() {
   const combat = game.combat;
   const battleFeedback = context.battleFeedback;
@@ -1101,6 +1130,7 @@ function renderCombat() {
   const petReady = game.pet.charge >= game.pet.maxCharge && !combat.petUsed;
   const petUnavailable = combatInputLocked || !petReady || combat.energy < 1 || combat.status !== "active";
   const petChargePercent = Math.round((game.pet.charge / Math.max(1, game.pet.maxCharge)) * 100);
+  const visibleCombatLog = visibleCombatLogEntries(combat.log);
   const body = `
     ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
     ${challengeTrial ? `<div class="challenge-trial-progress state-${challengeTrial.state}"><b>${challengeTrial.icon} 星座试炼 · ${challengeTrial.name}</b><span>${challengeTrial.text}</span><em>${challengeTrial.progress}</em><i>${challengeTrial.state === "achieved" ? "已达成，赢下战斗即可结算" : challengeTrial.state === "failed" ? "本场已经错过，不影响挑战胜负" : `完成额外 +${challengeTrial.bonusGold} 币`}</i></div>` : ""}
@@ -1124,9 +1154,8 @@ function renderCombat() {
       </section>
 
       <section class="battle-center">
-        <div class="turn-badge">${enemyResolution ? `第 ${enemyResolution.turn} 回合 · 敌方阶段` : `第 ${combat.turn} 回合`}</div>
         <div class="combat-log">
-          ${combat.log.slice(-6).reverse().map((entry) => `<p>${escapeHtml(entry)}</p>`).join("")}
+          ${visibleCombatLog.reverse().map((entry) => `<p>${escapeHtml(entry)}</p>`).join("")}
         </div>
       </section>
 
@@ -1198,25 +1227,28 @@ function renderCombat() {
 
 function renderPileOverlay(combat) {
   const labels = {
-    drawPile: ["抽牌堆", "牌序未知；用来判断接下来还可能抽到什么。"],
+    drawPile: ["抽牌堆", "仅按牌名整理展示；实际抽取顺序仍未知。"],
     discardPile: ["弃牌堆", "抽牌堆耗尽后，这些牌会重新洗回去。"],
     exhaustPile: ["消耗堆", "这些牌本场战斗不会再次进入抽牌堆。"]
   };
   const [title, description] = labels[pileView];
-  const cards = combat[pileView] || [];
+  const cards = [...(combat[pileView] || [])];
+  if (pileView === "drawPile") {
+    cards.sort((left, right) => cardDefinition(left).displayName.localeCompare(cardDefinition(right).displayName, "zh-CN"));
+  }
   return `<div class="pile-overlay">
-    <div class="pile-dialog">
-      <div><small>战斗信息</small><h2>${title} · ${cards.length}</h2><p>${description}</p></div>
+    <section class="pile-dialog" role="dialog" aria-modal="true" aria-labelledby="pile-dialog-title" aria-describedby="pile-dialog-description">
+      <div class="pile-dialog-heading"><small>战斗信息</small><h2 id="pile-dialog-title">${title} · ${cards.length}</h2><p id="pile-dialog-description">${description}</p></div>
       <div class="pile-card-grid">${cards.length ? cards.map((card) => cardHtml(card, { playable: false })).join("") : '<p class="empty-state">这里暂时没有牌。</p>'}</div>
-      <button class="primary centered" data-action="close-pile">返回战斗</button>
-    </div>
+      <button class="primary centered" data-action="close-pile" autofocus>返回战斗</button>
+    </section>
   </div>`;
 }
 
 function renderTutorial() {
   const steps = [
-    { number: "01", title: "先看意图，再出牌", text: "首场前 3 张手牌固定为攻击、防御与主角特性牌。中间红框显示敌人下一步；获得 5 护甲就能完全挡住“攻击 5”。" },
-    { number: "02", title: "每回合只有 3 点能量", text: "卡牌左上角是费用。攻击造成伤害，护甲只保留到下个玩家回合开始。" },
+    { number: "01", title: "先看意图，再出牌", text: "首场前 3 张手牌固定为攻击、防御与主角特性牌。敌人头顶图标公开它的下一步；获得 5 护甲就能完全挡住“攻击 5”。" },
+    { number: "02", title: "一回合：你出牌，敌人行动", text: "卡牌左上角是费用；玩家回合开始抽 5 张并获得 3 能量。出牌后点“结束回合”，敌人按头顶意图行动，再进入下一回合；护甲会在下个玩家回合开始时清空。" },
     { number: "03", title: `让${currentPetDefinition().name}一起打`, text: "每回合第一次打出攻击牌，宠物充能 +1。充满后花 1 能量出手，每场一次。" }
   ];
   const step = steps[tutorialStep];
@@ -1870,6 +1902,13 @@ function activeDialog() {
   return app.querySelector('[role="dialog"][aria-modal="true"]');
 }
 
+function closeSemesterCalendar() {
+  if (!semesterCalendarOpen) return;
+  semesterCalendarOpen = false;
+  render();
+  app.querySelector('[data-action="open-calendar"]')?.focus();
+}
+
 function focusActiveDialog() {
   const dialog = activeDialog();
   if (!dialog || dialog.contains(document.activeElement)) return;
@@ -1929,6 +1968,7 @@ function startNewGame(archetypeId = selectedArchetype) {
 function changeScreen(next, nextContext = {}) {
   screen = next;
   context = nextContext;
+  if (next !== "map") semesterCalendarOpen = false;
   if (next !== "combat") pileView = null;
   if (!game.pendingCombatStart
     && (next === "map" || next === "tarotChoice" || next === "semesterComplete" || game.pendingSemesterReward
@@ -2603,6 +2643,12 @@ app.addEventListener("click", (event) => {
     changeScreen("intro");
   } else if (action === "map") {
     if (screen !== "map") setToast("请先完成当前节点");
+  } else if (action === "open-calendar" && screen === "map") {
+    semesterCalendarOpen = true;
+    render();
+  } else if (action === "close-calendar") {
+    if (button.dataset.dismiss === "backdrop" && event.target !== button) return;
+    closeSemesterCalendar();
   } else if (action === "choose-node") {
     startNode(game.semesterPlan[game.week][Number(button.dataset.index)]);
   } else if (action === "choose-tarot") {
@@ -2838,6 +2884,11 @@ app.addEventListener("click", (event) => {
 
 document.addEventListener("keydown", (event) => {
   const dialog = activeDialog();
+  if (semesterCalendarOpen && dialog?.id === "semester-calendar-dialog" && event.key === "Escape") {
+    event.preventDefault();
+    closeSemesterCalendar();
+    return;
+  }
   if (dialog && event.key === "Tab") {
     trapDialogFocus(event, dialog);
     return;
