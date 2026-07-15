@@ -2,12 +2,45 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { enemyMechanicProgress } from "../app-flow.js";
+import { ENEMY_DEFS, NORMAL_ENEMY_IDS } from "../game-data.js";
 
-test("普通敌人不生成特殊机制进度", () => {
-  assert.equal(enemyMechanicProgress("sleepyBug", 0), null);
-  assert.equal(enemyMechanicProgress("groupChat", 7), null);
+test("未配置常驻进度的普通敌人继续返回空", () => {
+  for (const enemyId of NORMAL_ENEMY_IDS) {
+    if (enemyId === "alarmClock") continue;
+    assert.equal(enemyMechanicProgress(enemyId, 7), null, `${enemyId} 不应生成常驻进度`);
+  }
   assert.equal(enemyMechanicProgress("", 0), null);
   assert.equal(enemyMechanicProgress(undefined, 0), null);
+});
+
+test("闹钟怪用三格公开倒计时预告 14 点爆发", () => {
+  assert.deepEqual(ENEMY_DEFS.alarmClock.intents, [
+    { name: "蓄响", block: 5 },
+    { name: "铃声", attack: 7 },
+    { name: "夺命连环响", attack: 14 }
+  ]);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", 0), {
+    kind: "countdown",
+    title: "公开倒计时",
+    label: "1/3 · 蓄响",
+    detail: "当前：蓄响（护甲 5）；下一步：铃声（攻击 7）",
+    segments: ["current", "upcoming", "upcoming"]
+  });
+  assert.deepEqual(enemyMechanicProgress("alarmClock", 1), {
+    kind: "countdown",
+    title: "公开倒计时",
+    label: "2/3 · 下次 14",
+    detail: "当前：铃声（攻击 7）；下一步：夺命连环响（攻击 14）",
+    segments: ["done", "current", "upcoming"]
+  });
+  assert.deepEqual(enemyMechanicProgress("alarmClock", 2), {
+    kind: "countdown",
+    title: "公开倒计时",
+    label: "3/3 · 爆发 14",
+    detail: "当前：夺命连环响（攻击 14）；下一步：蓄响（护甲 5）",
+    segments: ["done", "done", "current"]
+  });
+  assert.deepEqual(enemyMechanicProgress("alarmClock", 3), enemyMechanicProgress("alarmClock", 0));
 });
 
 test("卷王幻影显示第几次无休加速、基础增伤与四格状态", () => {
@@ -72,7 +105,14 @@ test("期末考试按四步循环显示轮次、当前步骤与下一步", () =>
   });
 });
 
-test("特殊敌人进度会把负数、非数值与小数归一化为安全回合", () => {
+test("敌人进度会把负数、非数值与小数归一化为安全回合", () => {
+  const alarmOpening = enemyMechanicProgress("alarmClock", 0);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", -2), alarmOpening);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", Number.NaN), alarmOpening);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", Number.POSITIVE_INFINITY), alarmOpening);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", Symbol("invalid")), alarmOpening);
+  assert.deepEqual(enemyMechanicProgress("alarmClock", 2.99), enemyMechanicProgress("alarmClock", 2));
+
   const rivalOpening = enemyMechanicProgress("rivalShadow", 0);
   assert.deepEqual(enemyMechanicProgress("rivalShadow", -5), rivalOpening);
   assert.deepEqual(enemyMechanicProgress("rivalShadow", Number.NaN), rivalOpening);

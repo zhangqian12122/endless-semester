@@ -58,6 +58,20 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
   return lines.length ? lines : ["本回合不会造成伤害，也不会施加其他效果"];
 }
 
+const ALARM_CLOCK_METER_STEPS = Object.freeze([
+  Object.freeze({
+    label: "1/3 · 蓄响",
+    detail: "当前：蓄响（护甲 5）；下一步：铃声（攻击 7）"
+  }),
+  Object.freeze({
+    label: "2/3 · 下次 14",
+    detail: "当前：铃声（攻击 7）；下一步：夺命连环响（攻击 14）"
+  }),
+  Object.freeze({
+    label: "3/3 · 爆发 14",
+    detail: "当前：夺命连环响（攻击 14）；下一步：蓄响（护甲 5）"
+  })
+]);
 const SPECIAL_ENEMY_METER_STEPS = Object.freeze(["发卷", "选择题", "填空题", "大题"]);
 const MAX_SPECIAL_ENEMY_TURN = Math.floor((Number.MAX_SAFE_INTEGER - 6) / 2);
 
@@ -75,6 +89,20 @@ function normalizedIntentTurn(intentTurn) {
 
 export function enemyMechanicProgress(enemyId, intentTurn = 0) {
   const turn = normalizedIntentTurn(intentTurn);
+
+  if (enemyId === "alarmClock") {
+    const stepIndex = turn % ALARM_CLOCK_METER_STEPS.length;
+    const step = ALARM_CLOCK_METER_STEPS[stepIndex];
+    return {
+      kind: "countdown",
+      title: "公开倒计时",
+      label: step.label,
+      detail: step.detail,
+      segments: ALARM_CLOCK_METER_STEPS.map((_, index) => (
+        index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
+      ))
+    };
+  }
 
   if (enemyId === "rivalShadow") {
     const action = turn + 1;

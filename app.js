@@ -535,7 +535,11 @@ function enemyIntentTokenHtml(intent, resolution = null) {
   const pinned = context.intentDetailsPinned === true;
   const dismissed = context.intentDetailsDismissed === true;
   const enemyDefinition = ENEMY_DEFS[game.combat?.enemy?.id];
-  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-describedby="enemy-intent-details" aria-label="敌人意图：${escapeHtml(detail)}">
+  const mechanicDescriptionId = enemyMechanicProgress(
+    enemyDefinition?.id,
+    resolution ? Math.max(0, resolution.turn - 1) : game.combat?.enemy?.intentTurn
+  ) ? " enemy-mechanic-summary" : "";
+  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(detail)}">
     <span class="enemy-intent-chips" aria-hidden="true">${chips.map((chip) => `<i class="intent-chip intent-${chip.kind}"><em>${chip.icon}</em><b>${escapeHtml(chip.value)}</b></i>`).join("")}</span>
     <small>${escapeHtml(name)}</small>
     <span class="enemy-intent-detail" id="enemy-intent-details" role="tooltip">
@@ -561,7 +565,7 @@ function enemyMechanicProgressHtml(enemy, resolution = null) {
     return `<b class="${stateClass}" aria-hidden="true"></b>`;
   }).join("");
   const ariaLabel = `${progress.title}。${progress.label}。${progress.detail}`;
-  return `<aside class="enemy-mechanic-progress kind-${escapeHtml(enemy.id)}" data-progress-kind="${escapeHtml(progress.kind)}" aria-label="${escapeHtml(ariaLabel)}">
+  return `<aside class="enemy-mechanic-progress kind-${escapeHtml(enemy.id)}" id="enemy-mechanic-summary" data-progress-kind="${escapeHtml(progress.kind)}" aria-label="${escapeHtml(ariaLabel)}">
     <span><b>${escapeHtml(progress.title)}</b><em>${escapeHtml(progress.label)}</em></span>
     <i class="mechanic-progress-track" aria-hidden="true">${segments}</i>
   </aside>`;

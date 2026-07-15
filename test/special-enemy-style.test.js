@@ -26,28 +26,34 @@ test("special enemy progress stays in the enemy fighter overlay layer", () => {
   assert.match(base, /z-index:\s*7/);
 });
 
-test("rival and final exam use distinct translucent mechanic themes", () => {
+test("configured mechanic meters use distinct translucent themes", () => {
+  const alarm = rule(".enemy-mechanic-progress.kind-alarmClock");
   const rival = rule(".enemy-mechanic-progress.kind-rivalShadow");
   const finalExam = rule(".enemy-mechanic-progress.kind-finalExam");
 
+  assert.match(alarm, /--mechanic-accent:\s*#d97862/);
+  assert.match(alarm, /rgba\(86,48,39,\.84\)/);
   assert.match(rival, /--mechanic-accent:\s*#b79be7/);
   assert.match(rival, /rgba\(54,40,75,\.82\)/);
   assert.match(finalExam, /--mechanic-accent:\s*#df7768/);
   assert.match(finalExam, /rgba\(88,43,39,\.84\)/);
+  assert.notEqual(alarm, rival);
   assert.notEqual(rival, finalExam);
 });
 
-test("four-cell track preserves completed and current states", () => {
+test("default four-cell track and alarm three-cell track preserve states", () => {
   const track = rule(".mechanic-progress-track");
+  const alarmTrack = rule(".enemy-mechanic-progress.kind-alarmClock .mechanic-progress-track");
   const complete = rule(".mechanic-progress-track > b.is-complete");
   const current = rule(".mechanic-progress-track > b.is-current");
 
   assert.match(track, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(alarmTrack, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(complete, /background:\s*var\(--mechanic-accent\)/);
   assert.match(current, /background:\s*var\(--mechanic-current\)/);
 });
 
-test("mobile progress remains compact while keeping its label and four cells", () => {
+test("mobile progress remains compact while keeping its label and configured track", () => {
   const mobile = styles.match(/@media \(max-width: 700px\)\s*\{([\s\S]*)\n\}/);
   assert.ok(mobile, "missing mobile breakpoint");
   assert.match(mobile[1], /\.enemy-fighter:has\(\.enemy-mechanic-progress\) \.fighter-label\s*\{[^}]*transform:\s*translateX\(-58px\)[^}]*\}/);
