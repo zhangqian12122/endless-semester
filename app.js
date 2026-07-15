@@ -795,7 +795,13 @@ function clearBattleMotionArtifacts() {
 }
 
 function enemyBattleMotionProfile(feedback) {
-  const attacksPlayer = Boolean(feedback?.playerDamage || feedback?.playerBlockAbsorbed);
+  const attacksPlayer = feedback?.motionType === "enemy-attack"
+    || Boolean(feedback?.playerDamage || feedback?.playerBlockAbsorbed);
+  if (
+    feedback?.enemyId === "alarmClock"
+    && attacksPlayer
+    && /^夺命连环响(?:\s*·|$)/.test(feedback?.intentName || "")
+  ) return "alarm-burst";
   if (feedback?.enemyId === "rivalShadow" && attacksPlayer) return "rival-rush";
   if (feedback?.enemyId === "finalExam" && attacksPlayer) return "final-exam-smash";
   if (feedback?.enemyId === "finalExam" && /^发卷/.test(feedback?.intentName || "")) return "final-exam-deal";
@@ -860,6 +866,17 @@ function regularEnemyBattleMotionRecipe(profile, attacksPlayer) {
           { position: "windup+=.11", vars: { y: -2, rotation: 3, scale: 1.04, duration: .1, ease: "power1.inOut" } }
         ],
         impactAt: .21, settleDelay: 0, settleDuration: .15
+      }
+    },
+    "alarm-burst": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 7, y: 2, rotation: 6, scaleX: .92, scaleY: 1.08, duration: .05, ease: "power1.inOut" } },
+          { position: "windup+=.05", vars: { x: -5, y: -2, rotation: -8, scaleX: 1.04, scaleY: .96, duration: .05, ease: "power1.inOut" } },
+          { position: "windup+=.1", vars: { x: 4, y: 1, rotation: 8, scaleX: .95, scaleY: 1.05, duration: .04, ease: "power1.inOut" } },
+          { position: "windup+=.14", vars: { x: -40, y: 2, rotation: -5, scaleX: 1.12, scaleY: .9, duration: .08, ease: "power4.in" } }
+        ],
+        impactAt: .22, settleDelay: .04, settleDuration: .18
       }
     },
     "phone-vibrate": {
