@@ -18,7 +18,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -682,12 +682,28 @@ function createBattleMotionGhost(origin) {
 
 function createBattleCausalGhost(effect) {
   if (!effect || !["debuff", "status"].includes(effect.type)) return null;
+  const safeEffectIds = new Set(["distracted", "todo", "nervous"]);
+  const effectId = safeEffectIds.has(effect.id) ? effect.id : effect.type;
+  const effectCount = Math.max(1, Math.floor(Number(effect.count) || 1));
+  const effectSymbols = { distracted: "扰", todo: "待", nervous: "紧" };
   const ghost = document.createElement("i");
-  ghost.className = `battle-causal-ghost cause-${effect.type}${effect.count > 1 ? " is-multiple" : ""}`;
+  ghost.className = `battle-causal-ghost cause-${effect.type}${effectCount > 1 ? " is-multiple" : ""}`;
+  ghost.dataset.effectId = effectId;
+  ghost.dataset.count = String(effectCount);
   ghost.setAttribute("aria-hidden", "true");
-  ghost.innerHTML = "<b></b>";
+  ghost.innerHTML = `<b>${effectSymbols[effectId] || ""}</b>`;
   document.body.append(ghost);
   return ghost;
+}
+
+function battleCausalRoute(startX, startY, endX, endY) {
+  const horizontalDistance = endX - startX;
+  const direction = Math.sign(horizontalDistance) || -1;
+  const corridorX = startX + direction * Math.min(72, Math.max(36, Math.abs(horizontalDistance) * .22));
+  const corridorY = endY >= startY
+    ? Math.max(startY + 24, endY - 34)
+    : Math.min(startY - 24, endY + 34);
+  return { corridorX, corridorY, endX, endY };
 }
 
 function clearBattleMotionArtifacts() {
@@ -778,17 +794,22 @@ function runBattleMotion(feedback, origin = null) {
     const attackerRect = attacker?.getBoundingClientRect();
     const causalMotions = causalGhosts.map((entry, index) => {
       const destination = entry.effect.type === "status"
-        ? app.querySelector(`.pile-button[data-zone="${entry.effect.target}"]`)
+        ? entry.effect.target === "hand"
+          ? app.querySelector(".hand")
+          : app.querySelector(`.pile-button[data-zone="${entry.effect.target}"]`)
         : app.querySelector(".player-fighter .status-row") || app.querySelector(".student-avatar");
       const destinationRect = destination?.getBoundingClientRect();
       if (!attackerRect || !destinationRect) return null;
+      const startX = attackerRect.left + attackerRect.width / 2 + index * 7;
+      const startY = attackerRect.top + attackerRect.height * .42;
+      const endX = destinationRect.left + destinationRect.width / 2;
+      const endY = destinationRect.top + destinationRect.height / 2;
       return {
         ...entry,
         destination,
-        startX: attackerRect.left + attackerRect.width / 2 + index * 7,
-        startY: attackerRect.top + attackerRect.height * .42,
-        endX: destinationRect.left + destinationRect.width / 2,
-        endY: destinationRect.top + destinationRect.height / 2
+        startX,
+        startY,
+        ...battleCausalRoute(startX, startY, endX, endY)
       };
     }).filter(Boolean);
     const intentToken = feedback.kind === "enemy" ? app.querySelector(".enemy-intent-token") : null;
@@ -869,13 +890,14 @@ function runBattleMotion(feedback, origin = null) {
       timeline.to(hitPulses, { scale: 1.28, autoAlpha: 0, duration: .16, stagger: .18 }, "impact+=.18");
     }
     causalMotions.forEach((motion, index) => {
-      const startAt = `impact+=${(.04 + index * .05).toFixed(2)}`;
+      const startAt = "impact";
       gsap.set(motion.element, { left: 0, top: 0, x: motion.startX, y: motion.startY, scale: .55, rotation: -8 + index * 6, autoAlpha: 0 });
-      timeline.fromTo(motion.element, { scale: .55, autoAlpha: 0 }, { scale: .85, autoAlpha: 1, duration: .12 }, startAt);
-      timeline.to(motion.element, { x: motion.endX, y: motion.endY, scale: .68, rotation: 7 + index * 4, duration: .34, ease: "power2.inOut" }, startAt);
-      timeline.to(motion.element, { scale: 1.05, autoAlpha: 0, duration: .12 }, `${startAt}+=.34`);
-      timeline.fromTo(motion.destination, { scale: .92 }, { scale: 1.06, duration: .12, ease: "back.out(1.7)" }, `${startAt}+=.27`);
-      timeline.to(motion.destination, { scale: 1, duration: .1, clearProps: "transform" }, `${startAt}+=.39`);
+      timeline.fromTo(motion.element, { scale: .55, autoAlpha: 0 }, { scale: .78, autoAlpha: 1, duration: .07 }, startAt);
+      timeline.to(motion.element, { x: motion.corridorX, y: motion.corridorY, rotation: -3 + index * 4, duration: .13, ease: "power2.out" }, startAt);
+      timeline.to(motion.element, { x: motion.endX, y: motion.endY, rotation: 7 + index * 4, duration: .15, ease: "power2.inOut" }, `${startAt}+=.13`);
+      timeline.to(motion.element, { scale: 1.05, autoAlpha: 0, duration: .06 }, `${startAt}+=.28`);
+      timeline.fromTo(motion.destination, { scale: .94 }, { scale: 1.05, duration: .05, ease: "back.out(1.7)", immediateRender: false }, `${startAt}+=.25`);
+      timeline.to(motion.destination, { scale: 1, duration: .06, clearProps: "transform" }, `${startAt}+=.3`);
     });
     if (feedback.petChargeGain) {
       const petToken = app.querySelector(".pet-companion-token");
@@ -900,13 +922,22 @@ function scheduleBattleMotion() {
 
 function battleStateSnapshot() {
   const combat = game.combat;
+  const cardUids = Object.fromEntries(
+    ["hand", "drawPile", "discardPile", "exhaustPile"].map((zone) => [
+      zone,
+      Array.isArray(combat?.[zone])
+        ? combat[zone].map((card) => String(card?.uid || "")).filter(Boolean)
+        : []
+    ])
+  );
   return {
     playerHp: game.hp,
     playerBlock: combat?.playerBlock || 0,
     enemyHp: combat?.enemy?.hp || 0,
     enemyBlock: combat?.enemy?.block || 0,
     handSize: combat?.hand?.length || 0,
-    petCharge: game.pet.charge
+    petCharge: game.pet.charge,
+    cardUids
   };
 }
 
@@ -1056,7 +1087,7 @@ function enemyHitPulseHtml(steps = []) {
   </div>`;
 }
 
-function enemyActionEffects(result) {
+function enemyActionEffects(result, statusPlacements = []) {
   if (!result) return [];
   const effects = [];
   if (result.debuff) {
@@ -1067,10 +1098,14 @@ function enemyActionEffects(result) {
       effects.push({ tone: "guard", label: `${itemName}抵挡${debuffName}` });
     }
   }
-  if (result.statusAdded) {
-    const cardName = CARD_DEFS[result.statusAdded.id]?.name || result.statusAdded.id;
-    const zoneName = result.statusAdded.zone === "draw" ? "洗入抽牌堆" : "加入弃牌堆";
-    effects.push({ tone: "status", label: `${zoneName} ${result.statusAdded.count} 张${cardName}` });
+  for (const placement of statusPlacements) {
+    const cardName = CARD_DEFS[placement.id]?.name || placement.id;
+    const zoneName = placement.target === "hand"
+      ? "抽到手牌"
+      : placement.target === "drawPile"
+      ? "洗入抽牌堆"
+      : "加入弃牌堆";
+    effects.push({ tone: "status", label: `${zoneName} ${placement.count} 张${cardName}` });
   }
   for (const trigger of result.triggers || []) {
     const itemName = ITEM_DEFS[trigger.id]?.name || trigger.id;
@@ -1079,18 +1114,19 @@ function enemyActionEffects(result) {
   return effects;
 }
 
-function enemyActionCausalEffects(result) {
+function enemyActionCausalEffects(result, statusPlacements = []) {
   if (!result) return [];
   const effects = [];
   if (result.debuff?.applied === true) {
     effects.push({ type: "debuff", id: result.debuff.id, applied: true });
   }
-  if (result.statusAdded) {
+  for (const placement of statusPlacements) {
+    if (!["hand", "drawPile", "discardPile"].includes(placement.target)) continue;
     effects.push({
       type: "status",
-      id: result.statusAdded.id,
-      count: result.statusAdded.count,
-      target: result.statusAdded.zone === "draw" ? "drawPile" : "discardPile"
+      id: placement.id,
+      count: placement.count,
+      target: placement.target
     });
   }
   return effects;
@@ -1173,7 +1209,10 @@ function finishPlayerTurn() {
   const enemyId = game.combat.enemy.id;
   const resolvingTurn = game.combat.turn;
   const result = game.endTurn();
-  const actualEffects = enemyActionEffects(result.enemyResult);
+  const statusPlacements = result.ok
+    ? enemyStatusCausalPlacements(before.cardUids, game.combat, result.enemyResult?.statusAdded)
+    : [];
+  const actualEffects = enemyActionEffects(result.enemyResult, statusPlacements);
   if (!result.ok) setToast(result.reason);
   else queueBattleFeedback("enemy", `${game.combat.enemy.name} · ${intent.name}`, before, {
     enemyId,
@@ -1181,7 +1220,7 @@ function finishPlayerTurn() {
     playerBlockAbsorbed: incoming.blocked,
     enemyBlockGain: intent.block || 0,
     effectParts: actualEffects.map((effect) => effect.label),
-    causalEffects: enemyActionCausalEffects(result.enemyResult),
+    causalEffects: enemyActionCausalEffects(result.enemyResult, statusPlacements),
     enemyResolution: {
       turn: resolvingTurn,
       name: intent.name,
