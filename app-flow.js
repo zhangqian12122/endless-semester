@@ -463,7 +463,7 @@ function normalizedCausalEffects(effects) {
     if (effect?.type === "debuff" && effect.applied === true) {
       return { type: "debuff", id: String(effect.id || "status"), target: "player", count: 1 };
     }
-    if (effect?.type === "status" && ["drawPile", "discardPile"].includes(effect.target)) {
+    if (effect?.type === "status" && ["hand", "drawPile", "discardPile"].includes(effect.target)) {
       return {
         type: "status",
         id: String(effect.id || "status"),
@@ -473,6 +473,67 @@ function normalizedCausalEffects(effects) {
     }
     return null;
   }).filter(Boolean);
+}
+
+export function enemyStatusCausalPlacements(beforeCardUids, combat, statusAdded) {
+  let id;
+  let count;
+  try {
+    id = typeof statusAdded?.id === "string" ? statusAdded.id.trim() : "";
+    const numericCount = Number(statusAdded?.count);
+    count = Number.isFinite(numericCount) && numericCount > 0
+      ? Math.min(Number.MAX_SAFE_INTEGER, Math.floor(numericCount))
+      : 0;
+  } catch {
+    return [];
+  }
+  if (!id || !count || !["draw", "discard"].includes(statusAdded?.zone)) return [];
+
+  const fallbackTarget = statusAdded.zone === "draw" ? "drawPile" : "discardPile";
+  const fallback = () => [{ type: "status", id, target: fallbackTarget, count }];
+  let beforeValues = null;
+  if (Array.isArray(beforeCardUids)) {
+    beforeValues = beforeCardUids;
+  } else if (beforeCardUids instanceof Set) {
+    beforeValues = [...beforeCardUids];
+  } else if (beforeCardUids && typeof beforeCardUids === "object") {
+    const snapshotZones = ["hand", "drawPile", "discardPile", "exhaustPile"];
+    const hasSnapshotZone = snapshotZones.some((target) => Array.isArray(beforeCardUids[target]));
+    if (hasSnapshotZone) {
+      beforeValues = snapshotZones.flatMap((target) => (
+        Array.isArray(beforeCardUids[target]) ? beforeCardUids[target] : []
+      ));
+    }
+  }
+  if (!beforeValues || !combat || typeof combat !== "object") return fallback();
+
+  const before = new Set();
+  for (const uid of beforeValues) {
+    if (!["string", "number"].includes(typeof uid)) continue;
+    before.add(String(uid));
+  }
+
+  const placements = [];
+  const seen = new Set();
+  let remaining = count;
+  for (const target of ["hand", "drawPile", "discardPile"]) {
+    const zone = combat[target];
+    if (!Array.isArray(zone) || remaining <= 0) continue;
+    let placed = 0;
+    for (const card of zone) {
+      if (!card || typeof card !== "object" || String(card.id || "") !== id) continue;
+      if (!["string", "number"].includes(typeof card.uid)) continue;
+      const uid = String(card.uid);
+      if (!uid || before.has(uid) || seen.has(uid)) continue;
+      seen.add(uid);
+      placed += 1;
+      remaining -= 1;
+      if (remaining <= 0) break;
+    }
+    if (placed > 0) placements.push({ type: "status", id, target, count: placed });
+  }
+
+  return placements.length ? placements : fallback();
 }
 
 export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
