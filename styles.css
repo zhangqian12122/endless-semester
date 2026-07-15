@@ -558,6 +558,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .enemy-mouth { position: absolute; left: 37%; bottom: 23%; width: 26%; height: 13%; border: 3px solid #211c28; border-top: 0; border-radius: 0 0 50% 50%; }
 .enemy-mark { position: absolute; z-index: 5; right: 4%; top: 5%; min-width: 42px; padding: 6px 8px; color: #201923; border: 3px solid #211c28; border-radius: 9px; background: var(--enemy-accent); box-shadow: 3px 4px 0 #211c28; font-size: 12px; transform: rotate(6deg); }
 .enemy-sleepyBug { --enemy-main: #718b74; --enemy-dark: #3d5644; --enemy-accent: #c5dfb0; }
+.enemy-sleepyBug.asset-ready > .character-asset { left: -22%; width: 144%; object-position: center bottom; }
 .enemy-homeworkBlob { --enemy-main: #8a6f55; --enemy-dark: #503e32; --enemy-accent: #efcf91; }
 .enemy-alarmClock { --enemy-main: #bb5a55; --enemy-dark: #6f3433; --enemy-accent: #ffcb75; }
 .enemy-alarmClock .enemy-body { border-radius: 50%; transform: rotate(-3deg); }

@@ -91,7 +91,7 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
     cancer: "assets/characters/student-jiahao-v1.webp"
   }),
   enemies: Object.freeze({
-    sleepyBug: "assets/characters/enemy-sleepyBug-v1.webp",
+    sleepyBug: "assets/characters/enemy-sleepyBug-v3b.webp",
     homeworkBlob: "assets/characters/enemy-homeworkBlob-v1.webp",
     alarmClock: "assets/characters/enemy-alarmClock-v1.webp"
   })
