@@ -89,7 +89,9 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
     sleepyBug: "assets/characters/enemy-sleepyBug-v1.webp",
     homeworkBlob: "assets/characters/enemy-homeworkBlob-v1.webp",
     alarmClock: "assets/characters/enemy-alarmClock-v1.webp",
-    phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp"
+    phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp",
+    groupChat: "assets/characters/enemy-groupChat-v1.webp",
+    printerJam: "assets/characters/enemy-printerJam-v1.webp"
   };
 
   assert.equal(DEFAULT_PET_ID, "offlineDuck");
@@ -143,7 +145,9 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
   assert.match(styles, /\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*132%[^}]*object-position:\s*center bottom/, "作业团需要独立横向放大并落在战场地面");
   assert.match(styles, /\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*156%[^}]*object-position:\s*center bottom/, "闹钟怪需要按自身透明边距放大并落在战场地面");
   assert.match(styles, /\.enemy-phoneSpirit\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*140%[^}]*object-position:\s*center bottom/, "手机精需要按透明边距放大并落在战场地面");
-  assert.match(styles, /@media \(max-width:\s*700px\)[\s\S]*?\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset[\s\S]*?\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset/, "两名新敌人需要独立的移动端收缩规则");
+  assert.match(styles, /\.enemy-groupChat\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*128%[^}]*object-position:\s*48% bottom/, "群聊99+需要兼顾左侧通知流与右侧通知堆");
+  assert.match(styles, /\.enemy-printerJam\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*124%[^}]*object-position:\s*48% bottom/, "卡纸打印机需要同时保留左侧重击与右侧眼部");
+  assert.match(styles, /@media \(max-width:\s*700px\)[\s\S]*?\.enemy-groupChat\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*120%[\s\S]*?\.enemy-printerJam\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*118%/, "两名新敌人在 120×150 战场槽位中需要独立收缩且保留攻击方向");
 
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];

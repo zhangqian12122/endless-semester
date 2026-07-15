@@ -95,7 +95,9 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
     sleepyBug: "assets/characters/enemy-sleepyBug-v1.webp",
     homeworkBlob: "assets/characters/enemy-homeworkBlob-v1.webp",
     alarmClock: "assets/characters/enemy-alarmClock-v1.webp",
-    phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp"
+    phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp",
+    groupChat: "assets/characters/enemy-groupChat-v1.webp",
+    printerJam: "assets/characters/enemy-printerJam-v1.webp"
   })
 });
 
