@@ -597,12 +597,15 @@ export const ENEMY_DEFS = {
   groupChat: {
     id: "groupChat", name: "群聊99+", maxHp: 26, kind: "normal",
     subtitle: "你不回复，它也会自己越聊越多。",
-    mechanicName: "多段刷屏",
-    mechanicText: "用两段攻击拆护甲，并不断把紧张塞进弃牌堆。",
-    pattern: "攻击 3×2 → 塞入 1 张紧张 → 攻击 5 并塞紧张",
-    tip: "多段攻击会逐段消耗护甲；紧张会污染下一轮抽牌，适合尽快解决。",
+    mechanicName: "未读压力",
+    mechanicText: "战斗区每有 1 张紧张，消息轰炸就多攻击 1 段，最多额外 2 段；清理紧张会立刻降压。",
+    pattern: "攻击 3×(2+未读压力，最多 4 段) → 塞入 1 张紧张 → 攻击 5 并塞紧张",
+    tip: "它会先制造紧张，再借未读压力刷屏。轰炸前把手中的紧张消耗掉，可以立即减少攻击段数。",
     intents: [
-      { name: "消息轰炸", attack: 3, hits: 2 },
+      {
+        name: "消息轰炸", attack: 3, hits: 2,
+        scaling: { type: "statusHits", statusId: "nervous", maxBonus: 2, label: "未读" }
+      },
       { name: "疯狂艾特", addStatus: { id: "nervous", count: 1, zone: "discard" } },
       { name: "催你回复", attack: 5, addStatus: { id: "nervous", count: 1, zone: "discard" } }
     ]
@@ -610,13 +613,16 @@ export const ENEMY_DEFS = {
   printerJam: {
     id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal",
     subtitle: "越着急，它越能吐出一叠没用的纸。",
-    mechanicName: "卡纸窗口",
-    mechanicText: "先堆高额护甲并塞入待办，再用单段重击和双面连击追赶。",
-    pattern: "护甲 8 并塞待办 → 攻击 9 → 攻击 4×2",
-    tip: "它卡纸时不会攻击，但会加护甲。用这个回合准备增伤，不要把爆发撞在护甲上。",
+    mechanicName: "卡纸蓄压",
+    mechanicText: "出纸重击会把剩余护甲转为等量伤害，最多加 6；出手前打破护甲，重击就降回 6。",
+    pattern: "护甲 8 并塞待办 → 重击 6+剩余护甲（最多 +6） → 攻击 4×2",
+    tip: "卡纸回合就是反制窗口：哪怕只削掉一部分护甲，也会立刻压低下一次重击。",
     intents: [
       { name: "疯狂卡纸", block: 8, addStatus: { id: "todo", count: 1, zone: "discard" } },
-      { name: "突然出纸", attack: 9 },
+      {
+        name: "蓄压出纸", attack: 6,
+        scaling: { type: "enemyBlockAttack", maxBonus: 6, label: "蓄压" }
+      },
       { name: "双面打印", attack: 4, hits: 2 }
     ]
   },

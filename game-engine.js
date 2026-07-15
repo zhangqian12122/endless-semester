@@ -1522,14 +1522,54 @@ export class SemesterGame {
     const raw = definition.intentAt
       ? definition.intentAt(combat.enemy.intentTurn)
       : definition.intents[combat.enemy.intentTurn % definition.intents.length];
+    const resolved = this.resolveIntentScaling(raw);
     const damageScale = this.semester - 1;
     const damageMultiplier = combat.modifiers.damageMultiplier || 1;
     const affixDamage = combat.modifiers.affix === "deadline" && combat.turn >= 4 ? 4 : 0;
     const tarotDamage = this.tarot?.enemyAttackBonus || 0;
     return {
-      ...raw,
-      attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage : undefined
+      ...resolved,
+      attack: resolved.attack
+        ? Math.round((resolved.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage
+        : undefined
     };
+  }
+
+  resolveIntentScaling(raw) {
+    const combat = this.requireCombat();
+    const scaling = raw?.scaling;
+    if (!scaling) return { ...raw };
+
+    const cap = Math.max(0, nonNegativeInteger(scaling.maxBonus));
+    let value = 0;
+    let sourceCount = 0;
+    if (scaling.type === "statusHits") {
+      const activeZones = [combat.hand, combat.drawPile, combat.discardPile];
+      sourceCount = activeZones.reduce((total, zone) => (
+        total + (Array.isArray(zone) ? zone.filter((card) => card?.id === scaling.statusId).length : 0)
+      ), 0);
+      value = Math.min(cap, sourceCount);
+    } else if (scaling.type === "enemyBlockAttack") {
+      sourceCount = Math.max(0, nonNegativeInteger(combat.enemy.block));
+      value = Math.min(cap, sourceCount);
+    } else {
+      return { ...raw };
+    }
+
+    const resolved = {
+      ...raw,
+      name: `${raw.name} · ${scaling.label} ${value}/${cap}`,
+      mechanicState: {
+        type: scaling.type,
+        label: scaling.label,
+        value,
+        cap,
+        sourceCount
+      }
+    };
+    if (scaling.type === "statusHits") resolved.hits = Math.max(1, nonNegativeInteger(raw.hits, 1)) + value;
+    if (scaling.type === "enemyBlockAttack") resolved.attack = Math.max(0, nonNegativeInteger(raw.attack)) + value;
+    return resolved;
   }
 
   incomingDamagePreview() {
@@ -1875,6 +1915,7 @@ export class SemesterGame {
     const combat = this.requireCombat();
     if (combat.status !== "active") return { ok: false, reason: "战斗已经结束" };
     if (combat.pendingDiscard) return { ok: false, reason: "请先完成弃牌" };
+    const resolvedIntent = this.getIntent();
 
     for (const card of combat.hand) {
       const effect = cardDefinition(card).effect;
@@ -1893,17 +1934,25 @@ export class SemesterGame {
       return { ok: true };
     }
     combat.distracted = false;
-    const enemyResult = this.executeEnemyTurn();
+    const enemyResult = this.executeEnemyTurn(resolvedIntent);
     if (combat.status === "active") this.startPlayerTurn();
     return { ok: true, enemyResult };
   }
 
-  executeEnemyTurn() {
+  executeEnemyTurn(resolvedIntent = null) {
     const combat = this.requireCombat();
-    const intent = this.getIntent();
+    const currentIntent = resolvedIntent || this.getIntent();
+    const intent = Object.freeze({
+      ...currentIntent,
+      addStatus: currentIntent.addStatus ? Object.freeze({ ...currentIntent.addStatus }) : undefined,
+      mechanicState: currentIntent.mechanicState
+        ? Object.freeze({ ...currentIntent.mechanicState })
+        : undefined
+    });
     const notes = [];
     const result = {
       intentName: intent.name,
+      mechanicState: intent.mechanicState ? { ...intent.mechanicState } : null,
       attack: null,
       block: null,
       debuff: null,
