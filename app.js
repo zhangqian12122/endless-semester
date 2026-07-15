@@ -97,7 +97,9 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
     alarmClock: "assets/characters/enemy-alarmClock-v1.webp",
     phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp",
     groupChat: "assets/characters/enemy-groupChat-v1.webp",
-    printerJam: "assets/characters/enemy-printerJam-v1.webp"
+    printerJam: "assets/characters/enemy-printerJam-v1.webp",
+    rivalShadow: "assets/characters/enemy-rivalShadow-v1.webp",
+    finalExam: "assets/characters/enemy-finalExam-v1.webp"
   })
 });
 

@@ -629,24 +629,29 @@ export const ENEMY_DEFS = {
   rivalShadow: {
     id: "rivalShadow", name: "卷王幻影", maxHp: 48, kind: "elite",
     subtitle: "每拖一个回合，它都比刚才更强。",
-    pattern: "每回合攻击，伤害从 6 开始持续 +2",
+    mechanicName: "无休加速",
+    mechanicText: "每次行动都攻击；首次基础伤害为 6，之后每次都比上一次加 2，没有防御或休息回合。",
+    pattern: "连续攻击 6 → 8 → 10 → …（每次 +2，无休息）",
     tip: "它没有休息回合。精简卡组、持续输出比等待完美手牌更重要。",
     intentAt(turn) {
-      return { name: "加速内卷", attack: 6 + turn * 2 };
+      return { name: `加速内卷 · 第${turn + 1}次`, attack: 6 + turn * 2 };
     }
   },
   finalExam: {
     id: "finalExam", name: "期末考试", maxHp: 90, kind: "boss",
     subtitle: "题目完全公开，但时间不会等你。",
-    pattern: "塞入紧张 → 攻击 8 → 攻击 10 并护甲 8 → 递增大题",
+    mechanicName: "四步递增",
+    mechanicText: "每 4 次行动固定轮转发卷、选择题、填空题、大题；每完成一轮，下一次大题基础伤害加 2。",
+    pattern: "塞入 2 张紧张 → 攻击 8 → 攻击 10 并护甲 8 → 大题 16（每轮 +2）",
     tip: "四回合为一轮。发卷回合整理手牌，大题前保存高额防御。",
     intentAt(turn) {
       const step = turn % 4;
       const cycle = Math.floor(turn / 4);
-      if (step === 0) return { name: "发卷", addStatus: { id: "nervous", count: 2, zone: "draw" } };
-      if (step === 1) return { name: "选择题", attack: 8 };
-      if (step === 2) return { name: "填空题", attack: 10, block: 8 };
-      return { name: "大题", attack: 16 + cycle * 2 };
+      const roundLabel = `第${cycle + 1}轮`;
+      if (step === 0) return { name: `发卷 · ${roundLabel}`, addStatus: { id: "nervous", count: 2, zone: "draw" } };
+      if (step === 1) return { name: `选择题 · ${roundLabel}`, attack: 8 };
+      if (step === 2) return { name: `填空题 · ${roundLabel}`, attack: 10, block: 8 };
+      return { name: `大题 · ${roundLabel}`, attack: 16 + cycle * 2 };
     }
   }
 };
