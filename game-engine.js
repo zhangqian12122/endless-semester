@@ -709,10 +709,13 @@ export class SemesterGame {
     return this.hp - previous;
   }
 
-  randomEnemy({ source = "special", semester = this.semester, week = this.week } = {}) {
-    const pool = source === "route"
+  randomEnemy({ source = "special", semester = this.semester, week = this.week, exclude = [] } = {}) {
+    const sourcePool = source === "route"
       ? normalRouteEnemyPool(semester, week)
       : NORMAL_ENEMY_IDS;
+    const excludedIds = new Set(Array.isArray(exclude) ? exclude : [exclude]);
+    const availablePool = sourcePool.filter((id) => !excludedIds.has(id));
+    const pool = availablePool.length ? availablePool : sourcePool;
     return this.rng.pick(pool);
   }
 
@@ -739,13 +742,19 @@ export class SemesterGame {
     };
     let restOptions = 2;
     let shopOptions = 2;
+    let lastRouteCombatEnemy = plan[2][0].enemy;
+    const pickRouteEnemy = (source, week) => {
+      const enemy = this.randomEnemy({ source, week, exclude: lastRouteCombatEnemy });
+      lastRouteCombatEnemy = enemy;
+      return enemy;
+    };
     const challengeWeeks = [this.rng.pick([5, 7]), this.rng.pick([10, 12, 13])];
     const challengeAffixes = this.rng.shuffle(CHALLENGE_AFFIX_IDS).slice(0, challengeWeeks.length);
     const challengeAffixByWeek = new Map(challengeWeeks.map((week, index) => [week, challengeAffixes[index]]));
     for (const week of Object.keys(anchors).map(Number)) {
       const anchor = anchors[week];
       const anchorNode = makeRouteNode(anchor.type, week, {
-        enemy: anchor.type === "combat" ? this.randomEnemy({ source: "route", week }) : undefined,
+        enemy: anchor.type === "combat" ? pickRouteEnemy("route", week) : undefined,
         pool: anchor.pool
       });
       let candidates = ["combat", "combat", "event", "event", "rest", "shop"]
@@ -758,7 +767,7 @@ export class SemesterGame {
       if (alternateType === "shop") shopOptions += 1;
       const alternateNode = makeRouteNode(alternateType, week, {
         enemy: alternateType === "combat"
-          ? this.randomEnemy({ source: challengeAffixByWeek.has(week) ? "challenge" : "route", week })
+          ? pickRouteEnemy(challengeAffixByWeek.has(week) ? "challenge" : "route", week)
           : undefined,
         pool: week <= 3 ? "safe" : "all",
         challenge: challengeAffixByWeek.has(week),
