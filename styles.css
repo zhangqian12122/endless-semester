@@ -658,6 +658,52 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .fighter-label { display: inline-flex; justify-content: center; gap: 12px; margin-bottom: 10px; padding: 7px 12px; border: 1px solid rgba(255,255,255,.1); border-radius: 99px; background: rgba(9,12,17,.58); backdrop-filter: blur(5px); }
 .fighter-label span { font-weight: 900; }
 .fighter-label b { color: var(--blue); font-size: 12px; }
+.enemy-mechanic-progress {
+  --mechanic-accent: #b79be7;
+  --mechanic-current: #7fc9c3;
+  --mechanic-line: rgba(183,155,231,.48);
+  --mechanic-surface-top: rgba(54,40,75,.82);
+  --mechanic-surface-bottom: rgba(23,27,39,.72);
+  position: absolute;
+  z-index: 7;
+  top: 38px;
+  right: -48px;
+  display: grid;
+  gap: 5px;
+  width: 112px;
+  padding: 6px 7px;
+  color: #f0ebf6;
+  border: 1px solid var(--mechanic-line);
+  border-radius: 7px;
+  background: linear-gradient(145deg, var(--mechanic-surface-top), var(--mechanic-surface-bottom));
+  box-shadow: 0 8px 18px rgba(5,7,10,.3), inset 0 1px rgba(255,255,255,.06);
+  pointer-events: none;
+}
+.enemy-mechanic-progress.kind-rivalShadow {
+  --mechanic-accent: #b79be7;
+  --mechanic-current: #7fc9c3;
+  --mechanic-line: rgba(183,155,231,.48);
+  --mechanic-surface-top: rgba(54,40,75,.82);
+  --mechanic-surface-bottom: rgba(23,27,39,.72);
+}
+.enemy-mechanic-progress.kind-finalExam {
+  --mechanic-accent: #df7768;
+  --mechanic-current: #efbf87;
+  --mechanic-line: rgba(223,119,104,.5);
+  --mechanic-surface-top: rgba(88,43,39,.84);
+  --mechanic-surface-bottom: rgba(48,31,30,.74);
+}
+.enemy-mechanic-progress > span { display: grid; min-width: 0; gap: 1px; text-align: left; }
+.enemy-mechanic-progress > span b,
+.enemy-mechanic-progress > span em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.enemy-mechanic-progress > span b { color: #fff7e9; font-size: 8px; font-weight: 900; letter-spacing: .05em; line-height: 1.1; }
+.enemy-mechanic-progress > span em { color: rgba(240,235,246,.76); font-size: 7px; font-style: normal; font-weight: 800; line-height: 1.1; }
+.mechanic-progress-track { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; min-width: 0; font-style: normal; }
+.mechanic-progress-track > b { display: block; min-width: 0; height: 5px; overflow: hidden; border: 1px solid var(--mechanic-line); border-radius: 2px; background: rgba(7,9,14,.44); box-shadow: inset 0 1px rgba(255,255,255,.04); font-size: 0; }
+.mechanic-progress-track > b.is-complete { border-color: var(--mechanic-accent); background: var(--mechanic-accent); box-shadow: 0 0 5px color-mix(in srgb, var(--mechanic-accent) 54%, transparent); }
+.mechanic-progress-track > b.is-current { border-color: var(--mechanic-current); background: var(--mechanic-current); box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 0 7px color-mix(in srgb, var(--mechanic-current) 68%, transparent); }
+.enemy-mechanic-progress.kind-finalExam .mechanic-progress-track > b { border-radius: 1px; }
+.combat-board.enemy-resolving .enemy-mechanic-progress { will-change: transform; }
 .enemy-intent-token { position: absolute; z-index: 8; top: 40px; left: 31%; display: grid; justify-items: center; gap: 3px; min-width: 74px; padding: 0; color: #eee8dc; border: 0; outline: 0; background: transparent; box-shadow: none; font: inherit; text-align: center; cursor: help; appearance: none; transform: translateX(-50%); }
 .enemy-intent-chips { display: flex; justify-content: center; gap: 4px; }
 .intent-chip { display: grid; grid-template-columns: 18px auto; align-items: center; min-height: 24px; overflow: hidden; color: #f0c7bc; border: 1px solid rgba(220,111,94,.42); border-radius: 12px; background: rgba(116,48,42,.36); font-style: normal; }
@@ -1543,6 +1589,11 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .battle-pet { right: -36px; bottom: 19px; width: 76px; height: 90px; }
   .enemy-finalExam { width: 132px; }
   .fighter-label { flex-direction: column; gap: 2px; }
+  .enemy-mechanic-progress { top: 42px; right: 0; gap: 3px; width: 78px; padding: 4px 5px; border-radius: 5px; }
+  .enemy-mechanic-progress > span b { font-size: 7px; }
+  .enemy-mechanic-progress > span em { font-size: 6px; letter-spacing: 0; }
+  .mechanic-progress-track { gap: 2px; }
+  .mechanic-progress-track > b { height: 4px; }
   .enemy-intent-detail { top: -8px; right: calc(100% + 7px); width: min(210px, 50vw); padding: 10px 11px 9px; }
   .enemy-intent-detail::after { top: 22px; }
   .combat-shortcut-guide, .card-shortcut, .control-shortcut { display: none; }
