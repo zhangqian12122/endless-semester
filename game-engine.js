@@ -1523,14 +1523,16 @@ export class SemesterGame {
       ? definition.intentAt(combat.enemy.intentTurn)
       : definition.intents[combat.enemy.intentTurn % definition.intents.length];
     const resolved = this.resolveIntentScaling(raw);
+    const { postScaleAttackBonus: rawPostScaleAttackBonus = 0, ...intent } = resolved;
+    const postScaleAttackBonus = Math.max(0, nonNegativeInteger(rawPostScaleAttackBonus));
     const damageScale = this.semester - 1;
     const damageMultiplier = combat.modifiers.damageMultiplier || 1;
     const affixDamage = combat.modifiers.affix === "deadline" && combat.turn >= 4 ? 4 : 0;
     const tarotDamage = this.tarot?.enemyAttackBonus || 0;
     return {
-      ...resolved,
-      attack: resolved.attack
-        ? Math.round((resolved.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage
+      ...intent,
+      attack: intent.attack
+        ? Math.round((intent.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage + postScaleAttackBonus
         : undefined
     };
   }
@@ -1568,7 +1570,7 @@ export class SemesterGame {
       }
     };
     if (scaling.type === "statusHits") resolved.hits = Math.max(1, nonNegativeInteger(raw.hits, 1)) + value;
-    if (scaling.type === "enemyBlockAttack") resolved.attack = Math.max(0, nonNegativeInteger(raw.attack)) + value;
+    if (scaling.type === "enemyBlockAttack") resolved.postScaleAttackBonus = value;
     return resolved;
   }
 
