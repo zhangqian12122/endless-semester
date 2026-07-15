@@ -1,10 +1,17 @@
 import { cardDefinition } from "./game-engine.js";
+import { DEFAULT_PET_ID, PET_DEFS } from "./game-data.js";
+
+const DEFAULT_PET = PET_DEFS[DEFAULT_PET_ID];
+
+function activePetDefinition(game) {
+  return PET_DEFS[game?.pet?.id] || DEFAULT_PET;
+}
 
 export const BUILD_STYLE_DEFS = {
   offense: { id: "offense", label: "爆发强攻", sign: "✦", text: "用攻击密度和伤害增幅尽快结束战斗。" },
   defense: { id: "defense", label: "稳固防守", sign: "◆", text: "先覆盖公开伤害，再用安全回合慢慢取胜。" },
   cycle: { id: "cycle", label: "高速循环", sign: "↻", text: "依靠零费、抽牌和筛选反复找到关键牌。" },
-  pet: { id: "pet", label: "鹅鹅协同", sign: "鹅", text: "稳定充能，让宠物成为每场战斗的固定节奏点。" }
+  pet: { id: "pet", label: `${DEFAULT_PET.shortName}协同`, sign: DEFAULT_PET.icon, text: "稳定充能，让宠物成为每场战斗的固定节奏点。" }
 };
 
 function emptyScores() {
@@ -190,7 +197,14 @@ export function challengeRewardGuidance(game, availableItemCount = 0) {
 
   let petScore = 38;
   let petReason;
-  const nextMilestone = !game.pet.talent ? 3 : game.pet.talentLevel < 2 ? 10 : game.pet.talentLevel < 3 ? 25 : null;
+  const [chooseAt, upgradeAt, masterAt] = activePetDefinition(game).bondMilestones;
+  const nextMilestone = !game.pet.talent
+    ? chooseAt
+    : game.pet.talentLevel < 2
+    ? upgradeAt
+    : game.pet.talentLevel < 3
+    ? masterAt
+    : null;
   const nextBond = game.pet.bond + 2;
   if (nextMilestone && game.pet.bond < nextMilestone && nextBond >= nextMilestone) {
     petScore += 24;

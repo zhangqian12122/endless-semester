@@ -66,9 +66,9 @@ export const PET_TALENT_DEFS = {
     name: "奶凶路线",
     tagline: "简单直接，但不会无限膨胀",
     levels: [
-      { damageBonus: 1, text: "追着啄额外造成 1 点伤害。" },
-      { damageBonus: 2, text: "追着啄额外造成 2 点伤害。" },
-      { damageBonus: 3, text: "追着啄额外造成 3 点伤害。" }
+      { damageBonus: 1, text: "重启猛啄额外造成 1 点伤害。" },
+      { damageBonus: 2, text: "重启猛啄额外造成 2 点伤害。" },
+      { damageBonus: 3, text: "重启猛啄额外造成 3 点伤害。" }
     ]
   },
   guardian: {
@@ -77,9 +77,9 @@ export const PET_TALENT_DEFS = {
     name: "护崽路线",
     tagline: "把宠物出手变成攻防一体",
     levels: [
-      { block: 3, text: "追着啄后获得 3 点护甲。" },
-      { block: 5, text: "追着啄后获得 5 点护甲。" },
-      { block: 7, text: "追着啄后获得 7 点护甲。" }
+      { block: 3, text: "重启猛啄后获得 3 点护甲。" },
+      { block: 5, text: "重启猛啄后获得 5 点护甲。" },
+      { block: 7, text: "重启猛啄后获得 7 点护甲。" }
     ]
   },
   scout: {
@@ -88,12 +88,40 @@ export const PET_TALENT_DEFS = {
     name: "叼笔记路线",
     tagline: "用一次出手换取更多构筑选择",
     levels: [
-      { draw: 1, text: "追着啄后抽 1 张牌。" },
-      { draw: 1, nextDrawBonus: 1, text: "追着啄后抽 1 张牌，下回合多抽 1 张。" },
-      { draw: 2, nextDrawBonus: 1, text: "追着啄后抽 2 张牌，下回合多抽 1 张。" }
+      { draw: 1, text: "重启猛啄后抽 1 张牌。" },
+      { draw: 1, nextDrawBonus: 1, text: "重启猛啄后抽 1 张牌，下回合多抽 1 张。" },
+      { draw: 2, nextDrawBonus: 1, text: "重启猛啄后抽 2 张牌，下回合多抽 1 张。" }
     ]
   }
 };
+
+export const DEFAULT_PET_ID = "offlineDuck";
+
+export const PET_DEFS = Object.freeze({
+  offlineDuck: Object.freeze({
+    id: "offlineDuck",
+    name: "宕机鸭",
+    shortName: "鸭鸭",
+    icon: "鸭",
+    assets: Object.freeze({
+      battle: "assets/characters/pet-offline-duck-battle-v1.webp",
+      icon: "assets/characters/pet-offline-duck-icon-v1.webp"
+    }),
+    visual: "offlineDuck",
+    maxCharge: 2,
+    chargePerFirstAttack: 1,
+    victoryBond: 1,
+    bondMilestones: Object.freeze([3, 10, 25]),
+    talentIds: Object.freeze(["fury", "guardian", "scout"]),
+    skill: Object.freeze({
+      id: "rebootPeck",
+      name: "重启猛啄",
+      baseDamage: 7,
+      energyCost: 1,
+      maxUsesPerCombat: 1
+    })
+  })
+});
 
 export const CARD_DEFS = {
   textbookStrike: {
@@ -253,6 +281,231 @@ export const CARD_DEFS = {
   }
 };
 
+// Card art is deliberately data-driven so the graybox compositions can later
+// be replaced by approved raster artwork without touching combat rules.
+export const CARD_ART_DEFS = {
+  textbookStrike: {
+    symbol: "啪",
+    caption: "知识重击",
+    motif: "impact",
+    image: "assets/cards/textbook-strike-v1.webp",
+    focus: "55% 58%"
+  },
+  backpackGuard: {
+    symbol: "盾",
+    caption: "书包防线",
+    motif: "guard",
+    image: "assets/cards/backpack-guard-v2.webp",
+    focus: "60% 52%",
+    tone: "saturate(.9) contrast(1) brightness(1.16)",
+    hoverTone: "saturate(.98) contrast(1.04) brightness(1.23)"
+  },
+  cramming: {
+    symbol: "速",
+    caption: "临时冲刺",
+    motif: "notes",
+    image: "assets/cards/cramming-v1.webp",
+    focus: "50% 56%",
+    tone: "saturate(.9) contrast(1) brightness(1.12)",
+    hoverTone: "saturate(.98) contrast(1.04) brightness(1.2)"
+  },
+  payAttention: {
+    symbol: "记",
+    caption: "认真听讲",
+    motif: "focus",
+    image: "assets/cards/pay-attention-v1.webp",
+    focus: "55% 54%",
+    tone: "saturate(.88) contrast(.99) brightness(1.14)",
+    hoverTone: "saturate(.96) contrast(1.03) brightness(1.2)"
+  },
+  catCombo: {
+    symbol: "喵",
+    caption: "连续猫拳",
+    motif: "combo",
+    image: "assets/cards/cat-combo-v1.webp",
+    focus: "50% 50%",
+    tone: "saturate(.94) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1.02) contrast(1.06) brightness(1.18)"
+  },
+  classSprint: {
+    symbol: "冲",
+    caption: "下课铃响",
+    motif: "speed",
+    image: "assets/cards/class-sprint-v1.webp",
+    focus: "45% 55%",
+    tone: "saturate(.93) contrast(1) brightness(1.12)",
+    hoverTone: "saturate(1) contrast(1.04) brightness(1.2)"
+  },
+  stubborn: {
+    symbol: "撞",
+    caption: "头铁到底",
+    motif: "impact",
+    image: "assets/cards/stubborn-v1.webp",
+    focus: "58% 54%",
+    tone: "saturate(.92) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1) contrast(1.06) brightness(1.18)"
+  },
+  lendAHand: {
+    symbol: "搭",
+    caption: "攻守兼备",
+    motif: "balance",
+    image: "assets/cards/lend-a-hand-v1.webp",
+    focus: "55% 54%",
+    tone: "saturate(.9) contrast(1) brightness(1.12)",
+    hoverTone: "saturate(.98) contrast(1.04) brightness(1.2)"
+  },
+  holdOn: {
+    symbol: "撑",
+    caption: "咬牙扛住",
+    motif: "guard",
+    image: "assets/cards/hold-on-v1.webp",
+    focus: "54% 52%",
+    tone: "saturate(.9) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(.98) contrast(1.06) brightness(1.18)"
+  },
+  airplaneMode: {
+    symbol: "静",
+    caption: "断开干扰",
+    motif: "focus",
+    image: "assets/cards/airplane-mode-v1.webp",
+    focus: "50% 55%",
+    tone: "saturate(.86) contrast(1) brightness(1.12)",
+    hoverTone: "saturate(.94) contrast(1.04) brightness(1.2)"
+  },
+  scratchPaper: {
+    symbol: "草",
+    caption: "灵感草稿",
+    motif: "notes",
+    image: "assets/cards/scratch-paper-v1.webp",
+    focus: "50% 54%",
+    tone: "saturate(.86) contrast(1) brightness(1.14)",
+    hoverTone: "saturate(.94) contrast(1.04) brightness(1.22)"
+  },
+  borrowNotes: {
+    symbol: "借",
+    caption: "共享笔记",
+    motif: "notes",
+    image: "assets/cards/borrow-notes-v1.webp",
+    focus: "52% 50%",
+    tone: "saturate(.86) contrast(1) brightness(1.14)",
+    hoverTone: "saturate(.94) contrast(1.04) brightness(1.22)"
+  },
+  clearBacklog: {
+    symbol: "清",
+    caption: "待办归零",
+    motif: "clean",
+    image: "assets/cards/clear-backlog-v1.webp",
+    focus: "50% 54%",
+    tone: "saturate(.86) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.94) contrast(1.06) brightness(1.2)"
+  },
+  feedPet: {
+    symbol: "粮",
+    caption: "鸭鸭加餐",
+    motif: "goose",
+    image: "assets/cards/feed-pet-duck-v1.webp",
+    focus: "52% 50%",
+    tone: "saturate(.92) contrast(1) brightness(1.1)",
+    hoverTone: "saturate(1) contrast(1.04) brightness(1.18)"
+  },
+  getInZone: {
+    symbol: "燃", caption: "进入状态", motif: "power",
+    image: "assets/cards/get-in-zone-v1.webp", focus: "52% 55%",
+    tone: "saturate(.92) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1) contrast(1.06) brightness(1.18)"
+  },
+  overthink: {
+    symbol: "想", caption: "情绪内耗", motif: "void",
+    image: "assets/cards/overthink-v1.webp", focus: "50% 50%",
+    tone: "saturate(.88) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(.96) contrast(1.06) brightness(1.18)"
+  },
+  ariesRush: {
+    symbol: "冲", caption: "白羊先手", motif: "aries",
+    image: "assets/cards/aries-rush-v1.webp", focus: "55% 55%",
+    tone: "saturate(.94) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1.02) contrast(1.06) brightness(1.18)"
+  },
+  ariesRebound: {
+    symbol: "再", caption: "不服再来", motif: "aries",
+    image: "assets/cards/aries-rebound-v1.webp", focus: "48% 52%",
+    tone: "saturate(.94) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1.02) contrast(1.06) brightness(1.18)"
+  },
+  ariesHeat: {
+    symbol: "热", caption: "热血沸腾", motif: "aries",
+    image: "assets/cards/aries-heat-v1.webp", focus: "50% 52%",
+    tone: "saturate(.94) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(1.02) contrast(1.06) brightness(1.18)"
+  },
+  ariesUproar: {
+    symbol: "燃", caption: "全场起立", motif: "aries",
+    image: "assets/cards/aries-uproar-v1.webp", focus: "50% 50%",
+    tone: "saturate(.94) contrast(1.04) brightness(1.08)",
+    hoverTone: "saturate(1.02) contrast(1.08) brightness(1.16)"
+  },
+  geminiSwitch: {
+    symbol: "切", caption: "秒切桌面", motif: "gemini",
+    image: "assets/cards/gemini-switch-v1.webp", focus: "50% 54%",
+    tone: "saturate(.88) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.96) contrast(1.06) brightness(1.2)"
+  },
+  geminiJuggle: {
+    symbol: "↔", caption: "左右横跳", motif: "gemini",
+    image: "assets/cards/gemini-juggle-v1.webp", focus: "50% 50%",
+    tone: "saturate(.9) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(.98) contrast(1.06) brightness(1.18)"
+  },
+  geminiEcho: {
+    symbol: "双", caption: "灵感复制", motif: "gemini",
+    image: "assets/cards/gemini-echo-v1.webp", focus: "50% 50%",
+    tone: "saturate(.9) contrast(1.02) brightness(1.1)",
+    hoverTone: "saturate(.98) contrast(1.06) brightness(1.18)"
+  },
+  geminiDeadline: {
+    symbol: "1′", caption: "截止冲刺", motif: "gemini",
+    image: "assets/cards/gemini-deadline-v1.webp", focus: "50% 54%",
+    tone: "saturate(.9) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.98) contrast(1.06) brightness(1.2)"
+  },
+  cancerHuddle: {
+    symbol: "抱", caption: "抱团取暖", motif: "cancer",
+    image: "assets/cards/cancer-huddle-v1.webp", focus: "50% 52%",
+    tone: "saturate(.86) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.94) contrast(1.06) brightness(1.2)"
+  },
+  cancerCover: {
+    symbol: "兜", caption: "我来兜底", motif: "cancer",
+    image: "assets/cards/cancer-cover-v1.webp", focus: "53% 54%",
+    tone: "saturate(.86) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.94) contrast(1.06) brightness(1.2)"
+  },
+  cancerSteady: {
+    symbol: "稳", caption: "慢慢来", motif: "cancer",
+    image: "assets/cards/cancer-steady-v1.webp", focus: "50% 52%",
+    tone: "saturate(.84) contrast(1.02) brightness(1.12)",
+    hoverTone: "saturate(.92) contrast(1.06) brightness(1.2)"
+  },
+  cancerSafe: {
+    symbol: "安", caption: "安全感拉满", motif: "cancer",
+    image: "assets/cards/cancer-safe-v1.webp", focus: "55% 52%",
+    tone: "saturate(.88) contrast(1.04) brightness(1.1)",
+    hoverTone: "saturate(.96) contrast(1.08) brightness(1.18)"
+  },
+  todo: {
+    symbol: "未", caption: "待办堆积", motif: "status",
+    image: "assets/cards/todo-v1.webp", focus: "50% 54%",
+    tone: "saturate(.72) contrast(1.04) brightness(1.08)",
+    hoverTone: "saturate(.8) contrast(1.08) brightness(1.16)"
+  },
+  nervous: {
+    symbol: "!", caption: "紧张上头", motif: "status",
+    image: "assets/cards/nervous-v1.webp", focus: "50% 50%",
+    tone: "saturate(.78) contrast(1.04) brightness(1.08)",
+    hoverTone: "saturate(.86) contrast(1.08) brightness(1.16)"
+  }
+};
+
 export const PUBLIC_REWARD_CARD_IDS = [
   "catCombo", "classSprint", "stubborn", "lendAHand", "holdOn", "airplaneMode",
   "scratchPaper", "borrowNotes", "clearBacklog", "feedPet", "getInZone", "overthink"
@@ -270,16 +523,16 @@ export const REWARD_CARD_IDS = [
 ];
 
 export const ITEM_DEFS = {
-  autoPencil: { id: "autoPencil", name: "自动铅笔", rarity: "common", text: "每回合第一张攻击牌，每段伤害+1。" },
-  thickNotebook: { id: "thickNotebook", name: "厚笔记本", rarity: "common", text: "每回合第一次用牌获得护甲时，额外获得2点。" },
-  studentId: { id: "studentId", name: "学生证", rarity: "common", text: "商店价格降低10%。" },
-  mistakeBook: { id: "mistakeBook", name: "错题本", rarity: "uncommon", text: "每场第一次受到敌人未格挡伤害后，下回合多抽1张。" },
-  earplugs: { id: "earplugs", name: "耳塞", rarity: "uncommon", text: "每场抵挡敌人施加的第一个负面效果。" },
-  bandage: { id: "bandage", name: "创可贴", rarity: "common", text: "半血以下进入战斗时，获得6点护甲。" },
-  petSnack: { id: "petSnack", name: "宠物零食", rarity: "rare", text: "每场战斗开始时，宠物获得1点充能。" },
-  eraser: { id: "eraser", name: "橡皮擦", rarity: "uncommon", text: "每学期一次，刷新战后的卡牌奖励。" },
-  allNighter: { id: "allNighter", name: "通宵复习计划", rarity: "boss", text: "每回合+1能量；每场开始洗入2张紧张。" },
-  referenceBooks: { id: "referenceBooks", name: "全套参考书", rarity: "boss", text: "每回合多抽1张；每场第一回合少1能量。" }
+  autoPencil: { id: "autoPencil", name: "自动铅笔", rarity: "common", timing: "每回合 1 次", art: "assets/items/auto-pencil-v1.webp", text: "每回合第一张攻击牌，每段伤害+1。" },
+  thickNotebook: { id: "thickNotebook", name: "厚笔记本", rarity: "common", timing: "每回合 1 次", art: "assets/items/thick-notebook-v1.webp", text: "每回合第一次用牌获得护甲时，额外获得2点。" },
+  studentId: { id: "studentId", name: "学生证", rarity: "common", timing: "商店常驻", art: "assets/items/student-id-v1.webp", text: "商店卡牌、物品和删牌价格降低10%。" },
+  mistakeBook: { id: "mistakeBook", name: "错题本", rarity: "uncommon", timing: "每场 1 次", art: "assets/items/mistake-book-v1.webp", text: "每场第一次受到敌人未格挡伤害后，下回合多抽1张。" },
+  earplugs: { id: "earplugs", name: "耳塞", rarity: "uncommon", timing: "每场 1 次", art: "assets/items/earplugs-v1.webp", text: "每场抵挡敌人施加的第一次走神。" },
+  bandage: { id: "bandage", name: "创可贴", rarity: "common", timing: "入场触发", art: "assets/items/bandage-v1.webp", text: "半血以下进入战斗时，获得6点护甲。" },
+  petSnack: { id: "petSnack", name: "宠物零食", rarity: "rare", timing: "每场入场", art: "assets/items/pet-snack-v1.webp", text: "每场战斗开始时，宠物获得1点充能。" },
+  eraser: { id: "eraser", name: "橡皮擦", rarity: "uncommon", timing: "每学期 1 次", art: "assets/items/eraser-v1.webp", text: "每学期一次，刷新战后的卡牌奖励。" },
+  allNighter: { id: "allNighter", name: "通宵复习计划", rarity: "boss", timing: "每回合 / 每场", art: "assets/items/all-nighter-v1.webp", text: "每回合+1能量；每场开始洗入2张紧张。" },
+  referenceBooks: { id: "referenceBooks", name: "全套参考书", rarity: "boss", timing: "每回合 / 首回合", art: "assets/items/reference-books-v1.webp", text: "每回合多抽1张；每场第一回合少1能量。" }
 };
 
 export const REGULAR_ITEM_IDS = [
@@ -386,7 +639,7 @@ export const ACHIEVEMENT_DEFS = {
   firstWin: { id: "firstWin", icon: "✓", name: "顺利下课", text: "赢得第一场战斗。", metric: "combatsWon", target: 1 },
   cleanWin: { id: "cleanWin", icon: "♥", name: "一滴没掉", text: "无伤赢得一场战斗。", metric: "cleanWins", target: 1 },
   quickWin: { id: "quickWin", icon: "3", name: "三回合下课", text: "在 3 回合内赢得一场战斗。", metric: "quickWins", target: 1 },
-  gooseCall: { id: "gooseCall", icon: "鹅", name: "鹅来！", text: "累计让暴躁鹅出手 5 次。", metric: "petUses", target: 5 },
+  gooseCall: { id: "gooseCall", icon: "鸭", name: "鸭来！", text: "累计让宕机鸭出手 5 次。", metric: "petUses", target: 5 },
   campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现任意 4 种普通敌人。", metric: "normalEnemies", target: 4 },
   challengeWon: { id: "challengeWon", icon: "难", name: "主动加练", text: "赢得一次可选挑战战。", metric: "challengeWins", target: 1 },
   firstTrial: { id: "firstTrial", icon: "印", name: "试炼盖章", text: "完成任意一次星座试炼。", metric: "trialCompletions", target: 1 },

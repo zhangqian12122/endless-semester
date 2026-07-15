@@ -5,3 +5,5 @@ coverage/
 Thumbs.db
 .idea/
 .vscode/
+tmp/
+assets/cards/*.png

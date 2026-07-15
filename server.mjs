@@ -16,7 +16,10 @@ createServer(async (request, response) => {
   try {
     const requested = decodeURIComponent((request.url || "/").split("?")[0]);
     const relative = requested === "/" ? "index.html" : requested.replace(/^\/+/, "");
-    const filePath = normalize(join(root, relative));
+    const servedRelative = relative.startsWith("vendor/gsap/")
+      ? join("node_modules", "gsap", relative.slice("vendor/gsap/".length))
+      : relative;
+    const filePath = normalize(join(root, servedRelative));
     if (!filePath.startsWith(normalize(root))) throw new Error("Invalid path");
     const info = await stat(filePath);
     if (!info.isFile()) throw new Error("Not a file");

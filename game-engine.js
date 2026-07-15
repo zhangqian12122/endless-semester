@@ -3,13 +3,39 @@ import {
   CARD_DEFS,
   ENCHANTMENT_DEFS,
   ENEMY_DEFS,
+  EVENT_DEFS,
   ITEM_DEFS,
   NORMAL_ENEMY_IDS,
+  DEFAULT_PET_ID,
+  PET_DEFS,
   PET_TALENT_DEFS,
   REGULAR_ITEM_IDS,
   PUBLIC_REWARD_CARD_IDS,
   ARCHETYPE_CARD_IDS
 } from "./game-data.js";
+
+const LEGACY_PET_ID_ALIASES = Object.freeze({ goose: DEFAULT_PET_ID });
+
+function petDefinition(id = DEFAULT_PET_ID) {
+  const normalizedId = LEGACY_PET_ID_ALIASES[id] || id;
+  return PET_DEFS[normalizedId] || PET_DEFS[DEFAULT_PET_ID];
+}
+
+function createPetState(id = DEFAULT_PET_ID) {
+  const definition = petDefinition(id);
+  return {
+    id: definition.id,
+    name: definition.name,
+    bond: 0,
+    charge: 0,
+    maxCharge: definition.maxCharge,
+    talent: null,
+    talentLevel: 0,
+    pendingMilestone: null
+  };
+}
+
+const DEFAULT_PET = petDefinition();
 
 const STARTING_DECK_CORE = [
   "textbookStrike", "textbookStrike", "textbookStrike", "textbookStrike",
@@ -19,10 +45,23 @@ const STARTING_DECK_CORE = [
 
 const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
 
+const EVENT_CARD_REWARD_SOURCES = Object.freeze({
+  "quiz-card": "uncommon",
+  "club-attack": "attack",
+  "club-skill": "skill"
+});
+const EVENT_DECK_REWARD_SOURCES = Object.freeze({
+  "quiz-upgrade": "upgrade",
+  "locker-remove": "remove"
+});
+const EVENT_ITEM_REWARD_SOURCES = new Set(["box-open", "locker-open"]);
+
 export const CHALLENGE_RULES = Object.freeze({
   hpMultiplier: 1.35,
   damageMultiplier: 1.25
 });
+
+export const ITEM_REWARD_FALLBACK_GOLD = Object.freeze({ elite: 50, event: 70, boss: 100 });
 
 export const CHALLENGE_REWARD_DEFS = Object.freeze({
   cards: {
@@ -34,11 +73,11 @@ export const CHALLENGE_REWARD_DEFS = Object.freeze({
   },
   pet: {
     id: "pet",
-    icon: "鹅",
-    name: "鹅鹅特训",
+    icon: DEFAULT_PET.icon,
+    name: `${DEFAULT_PET.shortName}特训`,
     gold: 25,
     bond: 2,
-    text: "获得 25 校园币，暴躁鹅羁绊 +2。"
+    text: `获得 25 校园币，${DEFAULT_PET.name}羁绊 +2。`
   },
   item: {
     id: "item",
@@ -85,18 +124,32 @@ export const TAROT_DEFS = Object.freeze({
     boon: "每场战斗第 1 回合 +1 能量。",
     cost: "敌人生命 +15%。",
     firstTurnEnergy: 1,
-    enemyHpMultiplier: 1.15
+    enemyHpMultiplier: 1.15,
+    rest: {
+      action: "remove",
+      name: "强行超车",
+      text: "失去 6 生命，移除 1 张牌。",
+      hpCost: 6
+    }
   },
   strength: {
     id: "strength",
     number: "XI",
     icon: "力",
     name: "力量",
-    tagline: "让鹅先上",
+    tagline: "让鸭先上",
     boon: "宠物开战时获得 1 点充能。",
     cost: "敌人每段攻击伤害 +2。",
     petCharge: 1,
-    enemyAttackBonus: 2
+    enemyAttackBonus: 2,
+    rest: {
+      action: "bond",
+      name: `${DEFAULT_PET.shortName}夜训`,
+      text: "支付 30 币，羁绊 +4 并恢复 6 生命。",
+      goldCost: 30,
+      bond: 4,
+      heal: 6
+    }
   },
   hermit: {
     id: "hermit",
@@ -107,11 +160,23 @@ export const TAROT_DEFS = Object.freeze({
     boon: "每场战斗第 1 回合多抽 2 张牌。",
     cost: "敌人开战时获得 8 点护甲。",
     firstTurnDraw: 2,
-    enemyBlock: 8
+    enemyBlock: 8,
+    rest: {
+      action: "upgrade",
+      name: "闭门精读",
+      text: "支付 35 币，升级 1 张牌并恢复 8 生命。",
+      goldCost: 35,
+      heal: 8
+    }
   }
 });
 
 const TAROT_IDS = Object.keys(TAROT_DEFS);
+
+function nonNegativeInteger(value, fallback = 0) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : fallback;
+}
 
 export const CHALLENGE_AFFIX_DEFS = Object.freeze({
   deadline: {
@@ -309,21 +374,23 @@ export class SemesterGame {
     this.tarotId = null;
     this.semester = 1;
     this.week = 1;
+    this.awaitingNextSemester = false;
+    this.pendingSemesterReward = null;
+    this.pendingCombatReward = null;
+    this.pendingCombatStart = null;
+    this.pendingEventReward = null;
+    this.pendingShop = null;
+    this.pendingRest = null;
+    this.pendingItemReplacement = null;
+    this.lastEventId = null;
+    this.pendingEventId = null;
     this.maxHp = 50;
     this.hp = 50;
     this.gold = 50;
     this.deck = startingDeckFor(archetypeId).map((id) => this.createCard(id));
     this.items = [];
     this.backpackCapacity = 6;
-    this.pet = {
-      name: "暴躁鹅",
-      bond: 0,
-      charge: 0,
-      maxCharge: 2,
-      talent: null,
-      talentLevel: 0,
-      pendingMilestone: null
-    };
+    this.pet = createPetState();
     this.stats = {
       combatsStarted: 0,
       combatsCompleted: 0,
@@ -331,6 +398,7 @@ export class SemesterGame {
       challengeWins: 0,
       trialsAttempted: 0,
       trialsCompleted: 0,
+      tarotRestUses: 0,
       tarotChoices: { chariot: 0, strength: 0, hermit: 0 },
       challengeRewardChoices: { cards: 0, pet: 0, item: 0 },
       combatTurns: 0,
@@ -352,11 +420,13 @@ export class SemesterGame {
       nextEnemyBlock: 0,
       petSnackCombats: 0,
       nextShopHalf: false,
-      eraserUsed: false
+      eraserUsed: false,
+      tarotRestUsed: false
     };
     this.completedNodes = new Set();
     this.rewardIndex = 0;
     this.tutorialSeen = false;
+    this.loadRepairs = [];
     this.combat = null;
     this.semesterPlan = this.generateSemesterPlan();
   }
@@ -369,11 +439,196 @@ export class SemesterGame {
     return TAROT_DEFS[this.tarotId] || null;
   }
 
+  getPetDefinition() {
+    return petDefinition(this.pet?.id);
+  }
+
   chooseTarot(id) {
     if (this.tarotId || !TAROT_DEFS[id]) return false;
     this.tarotId = id;
     this.stats.tarotChoices[id] += 1;
     return true;
+  }
+
+  eventChoiceStatus(choice) {
+    let reason = "";
+    let actualHeal = null;
+    const hasCommonItem = this.availableItemIds({ rarity: "common" }).length > 0;
+
+    if (choice === "box-open" && !hasCommonItem) {
+      reason = "普通物品已经收齐";
+    } else if (choice === "quiz-upgrade") {
+      if (!this.deck.some((card) => !card.upgraded)) reason = "没有可升级的牌";
+      else if (this.hp <= 5) reason = "至少需要 6 点生命";
+    } else if (choice === "club-pet" && this.gold < 30) {
+      reason = "需要 30 校园币";
+    } else if (choice === "meal-sale" && this.flags.nextShopHalf) {
+      reason = "商店优惠已经生效";
+    } else if (choice === "rumor-heal") {
+      actualHeal = Math.min(4, Math.max(0, this.maxHp - this.hp));
+      if (actualHeal === 0) reason = "生命已经全满";
+    } else if (choice === "locker-open") {
+      if (!hasCommonItem) reason = "普通物品已经收齐";
+      else if (this.hp <= 6) reason = "至少需要 7 点生命";
+    } else if (choice === "locker-remove") {
+      if (this.deck.length <= 5) reason = "卡组已达到最小规模";
+      else if (this.gold < 50) reason = "需要 50 校园币";
+    }
+
+    return { choice, available: !reason, reason, actualHeal };
+  }
+
+  eventChoicePreview(choice) {
+    const status = this.eventChoiceStatus(choice);
+    const before = {
+      hp: this.hp,
+      gold: this.gold,
+      bond: this.pet.bond,
+      deckSize: this.deck.length,
+      upgradedCards: this.deck.filter((card) => card.upgraded).length
+    };
+    const after = { ...before };
+    if (choice === "quiz-upgrade") {
+      after.hp -= 5;
+      after.upgradedCards += 1;
+    } else if (choice === "club-pet") {
+      after.gold -= 30;
+      after.bond += 2;
+    } else if (choice === "locker-open") {
+      after.hp -= 6;
+    } else if (choice === "locker-remove") {
+      after.gold -= 50;
+      after.deckSize -= 1;
+    }
+    return { ...status, before, after };
+  }
+
+  copyPendingRest(started = false) {
+    if (!this.pendingRest) return null;
+    return {
+      ...this.pendingRest,
+      cardUids: [...(this.pendingRest.cardUids || [])],
+      started
+    };
+  }
+
+  prepareRest() {
+    if (this.pendingRest) return this.copyPendingRest(false);
+    const hasRestNode = this.semesterPlan[this.week]?.some((node) => node.type === "rest");
+    if (!this.tarotId || !hasRestNode || FIXED_ROUTE_WEEKS.has(this.week) || this.awaitingNextSemester
+      || this.pendingSemesterReward || this.pendingCombatReward || this.pendingCombatStart
+      || this.pendingEventReward || this.pendingEventId || this.pendingShop || this.pet.pendingMilestone) return null;
+    this.pendingRest = { stage: "choice", cardUids: [] };
+    return this.copyPendingRest(true);
+  }
+
+  prepareRestUpgrade() {
+    if (this.pendingRest?.stage !== "choice") return null;
+    const cardUids = this.deck.filter((card) => !card.upgraded).map((card) => card.uid);
+    if (!cardUids.length) return null;
+    this.pendingRest = { stage: "upgrade", cardUids };
+    return this.copyPendingRest(true);
+  }
+
+  resolveRestHeal() {
+    if (this.pendingRest?.stage !== "choice" || this.hp >= this.maxHp) return null;
+    const healed = this.heal(15);
+    this.pendingRest = null;
+    return { healed };
+  }
+
+  resolveRestPet() {
+    if (this.pendingRest?.stage !== "choice") return null;
+    this.pet.bond += 2;
+    this.updatePetMilestone();
+    this.pendingRest = { stage: "pet", cardUids: [], bond: 2, healed: 0 };
+    return { bond: 2, pendingMilestone: this.pet.pendingMilestone };
+  }
+
+  resolvePendingRestCard(uid) {
+    const pending = this.pendingRest;
+    if (!pending?.cardUids?.includes(uid)) return null;
+    let resolved = false;
+    if (pending.stage === "tarotRemove") resolved = this.removeCard(uid);
+    else if (["upgrade", "tarotUpgrade"].includes(pending.stage)) resolved = this.upgradeCard(uid);
+    if (!resolved) return null;
+    const stage = pending.stage;
+    this.pendingRest = null;
+    return { stage, uid };
+  }
+
+  completePendingRest() {
+    if (!this.pendingRest) return false;
+    this.pendingRest = null;
+    return true;
+  }
+
+  tarotRestStatus() {
+    const tarot = this.tarot;
+    if (!tarot) return null;
+    const rest = tarot.rest;
+    let reason = "";
+    if (this.flags.tarotRestUsed) reason = "本学期已经共鸣过";
+    else if (rest.hpCost && this.hp <= rest.hpCost) reason = `至少需要 ${rest.hpCost + 1} 点生命`;
+    else if (rest.goldCost && this.gold < rest.goldCost) reason = `需要 ${rest.goldCost} 校园币`;
+    else if (rest.action === "remove" && this.deck.length <= 5) reason = "卡组已达到最小规模";
+    else if (rest.action === "upgrade" && !this.deck.some((card) => !card.upgraded)) reason = "没有可升级的牌";
+    return { ...rest, tarotId: tarot.id, available: !reason, reason };
+  }
+
+  tarotRestPreview() {
+    const status = this.tarotRestStatus();
+    if (!status) return null;
+    const before = {
+      hp: this.hp,
+      gold: this.gold,
+      bond: this.pet.bond,
+      deckSize: this.deck.length,
+      upgradedCards: this.deck.filter((card) => card.upgraded).length
+    };
+    const after = { ...before };
+    if (status.hpCost) after.hp = Math.max(0, after.hp - status.hpCost);
+    if (status.goldCost) after.gold = Math.max(0, after.gold - status.goldCost);
+    if (status.heal) after.hp = Math.min(this.maxHp, after.hp + status.heal);
+    if (status.bond) after.bond += status.bond;
+    if (status.action === "remove") after.deckSize = Math.max(5, after.deckSize - 1);
+    if (status.action === "upgrade") after.upgradedCards += 1;
+    return { ...status, before, after };
+  }
+
+  resolveTarotRest() {
+    if (this.pendingRest && this.pendingRest.stage !== "choice") {
+      return { ok: false, reason: "当前休息选择正在结算" };
+    }
+    const status = this.tarotRestStatus();
+    if (!status?.available) return { ok: false, reason: status?.reason || "当前没有塔罗契约" };
+    this.flags.tarotRestUsed = true;
+    this.stats.tarotRestUses += 1;
+    if (status.hpCost) this.hp -= status.hpCost;
+    if (status.goldCost) this.gold -= status.goldCost;
+    if (status.bond) {
+      this.pet.bond += status.bond;
+      this.updatePetMilestone();
+    }
+    const healed = status.heal ? this.heal(status.heal) : 0;
+    if (this.pendingRest) {
+      if (status.action === "remove") {
+        this.pendingRest = { stage: "tarotRemove", cardUids: this.deck.map((card) => card.uid) };
+      } else if (status.action === "upgrade") {
+        this.pendingRest = {
+          stage: "tarotUpgrade",
+          cardUids: this.deck.filter((card) => !card.upgraded).map((card) => card.uid)
+        };
+      } else {
+        this.pendingRest = {
+          stage: "tarotBond",
+          cardUids: [],
+          bond: status.bond || 0,
+          healed
+        };
+      }
+    }
+    return { ok: true, action: status.action, healed, bond: status.bond || 0 };
   }
 
   createCard(id, upgraded = false) {
@@ -500,44 +755,109 @@ export class SemesterGame {
     return plan;
   }
 
-  randomItem({ rarity, allowBoss = false } = {}) {
-    const pool = (allowBoss ? Object.keys(ITEM_DEFS) : REGULAR_ITEM_IDS)
+  availableItemIds({ rarity, allowBoss = false, ids = null } = {}) {
+    const pool = (Array.isArray(ids) ? ids : allowBoss ? Object.keys(ITEM_DEFS) : REGULAR_ITEM_IDS)
+      .filter((id, index, source) => source.indexOf(id) === index)
+      .filter((id) => ITEM_DEFS[id])
       .filter((id) => !this.hasItem(id))
       .filter((id) => !rarity || ITEM_DEFS[id].rarity === rarity);
+    return pool;
+  }
+
+  claimItemRewardFallback(source) {
+    const gold = ITEM_REWARD_FALLBACK_GOLD[source];
+    if (!gold) return null;
+    this.gold += gold;
+    return { source, gold, totalGold: this.gold };
+  }
+
+  randomItem({ rarity, allowBoss = false } = {}) {
+    const pool = this.availableItemIds({ rarity, allowBoss });
     return pool.length ? this.rng.pick(pool) : null;
   }
 
+  itemRewardSourceFor(id) {
+    if (!ITEM_DEFS[id]) return null;
+    if (this.pendingEventReward?.type === "item" && (this.pendingEventReward.itemChoices || []).includes(id)) return "event";
+    const combat = this.pendingCombatReward;
+    if (combat?.stage === "item" && (combat.itemChoices || []).includes(id)
+      && ["eliteChain", "challengeChain", "eventItem"].includes(combat.type)) return "combat";
+    if (this.pendingSemesterReward?.stage === "bossItem"
+      && (this.pendingSemesterReward.itemChoices || []).includes(id)) return "semester";
+    return null;
+  }
+
+  copyPendingItemReplacement(started = false) {
+    return this.pendingItemReplacement ? { ...this.pendingItemReplacement, started } : null;
+  }
+
+  prepareItemReplacement(incoming) {
+    if (this.pendingItemReplacement) {
+      return this.pendingItemReplacement.incoming === incoming
+        ? this.copyPendingItemReplacement(false)
+        : null;
+    }
+    const source = this.itemRewardSourceFor(incoming);
+    if (!source || this.items.length < this.backpackCapacity || this.hasItem(incoming)) return null;
+    this.pendingItemReplacement = { incoming, source };
+    return this.copyPendingItemReplacement(true);
+  }
+
+  replacePendingItem(outgoing) {
+    const pending = this.pendingItemReplacement;
+    const oldIndex = this.items.indexOf(outgoing);
+    if (!pending || oldIndex < 0 || this.items.length < this.backpackCapacity
+      || this.hasItem(pending.incoming) || this.itemRewardSourceFor(pending.incoming) !== pending.source) return null;
+    this.items.splice(oldIndex, 1, pending.incoming);
+    this.stats.itemsTaken += 1;
+    this.pendingItemReplacement = null;
+    return { incoming: pending.incoming, outgoing, source: pending.source };
+  }
+
+  cancelPendingItemReplacement() {
+    if (!this.pendingItemReplacement) return false;
+    this.pendingItemReplacement = null;
+    return true;
+  }
+
   petSkillPreview() {
-    const talent = this.pet.talent ? PET_TALENT_DEFS[this.pet.talent] : null;
+    const pet = this.getPetDefinition();
+    const talent = this.pet.talent && pet.talentIds.includes(this.pet.talent)
+      ? PET_TALENT_DEFS[this.pet.talent]
+      : null;
     const level = Math.min(3, Math.max(0, Number(this.pet.talentLevel) || 0));
     const levelEffect = talent && level > 0 ? talent.levels[level - 1] : {};
     return {
-      damage: 7 + (levelEffect.damageBonus || 0),
+      damage: pet.skill.baseDamage + (levelEffect.damageBonus || 0),
       block: levelEffect.block || 0,
       draw: levelEffect.draw || 0,
       nextDrawBonus: levelEffect.nextDrawBonus || 0,
+      pet,
+      skill: pet.skill,
       talent,
       level,
-      text: levelEffect.text || "造成 7 点伤害。"
+      text: levelEffect.text || `造成 ${pet.skill.baseDamage} 点伤害。`
     };
   }
 
   updatePetMilestone() {
+    const [chooseAt, upgradeAt, masterAt] = this.getPetDefinition().bondMilestones;
     if (this.pet.pendingMilestone) return this.pet.pendingMilestone;
-    if (!this.pet.talent && this.pet.bond >= 3) this.pet.pendingMilestone = "choose";
-    else if (this.pet.talent && this.pet.talentLevel < 2 && this.pet.bond >= 10) this.pet.pendingMilestone = "upgrade";
-    else if (this.pet.talent && this.pet.talentLevel < 3 && this.pet.bond >= 25) this.pet.pendingMilestone = "master";
+    if (!this.pet.talent && this.pet.bond >= chooseAt) this.pet.pendingMilestone = "choose";
+    else if (this.pet.talent && this.pet.talentLevel < 2 && this.pet.bond >= upgradeAt) this.pet.pendingMilestone = "upgrade";
+    else if (this.pet.talent && this.pet.talentLevel < 3 && this.pet.bond >= masterAt) this.pet.pendingMilestone = "master";
     return this.pet.pendingMilestone;
   }
 
   resolvePetMilestone(talentId = null) {
+    const allowedTalents = this.getPetDefinition().talentIds;
     const milestone = this.pet.pendingMilestone;
     if (milestone === "choose") {
-      if (!PET_TALENT_DEFS[talentId]) return false;
+      if (!allowedTalents.includes(talentId) || !PET_TALENT_DEFS[talentId]) return false;
       this.pet.talent = talentId;
       this.pet.talentLevel = 1;
     } else if (milestone === "upgrade" || milestone === "master") {
-      if (!PET_TALENT_DEFS[this.pet.talent]) return false;
+      if (!allowedTalents.includes(this.pet.talent) || !PET_TALENT_DEFS[this.pet.talent]) return false;
       this.pet.talentLevel = Math.min(3, this.pet.talentLevel + 1);
     } else {
       return false;
@@ -575,6 +895,448 @@ export class SemesterGame {
       choices.push(publicCard);
     }
     return this.rng.shuffle(choices);
+  }
+
+  prepareNormalCombatReward() {
+    if (this.pendingCombatReward) {
+      return {
+        ...this.pendingCombatReward,
+        choices: [...(this.pendingCombatReward.choices || [])],
+        itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        started: false
+      };
+    }
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || this.week >= 16) return null;
+    this.gold += 15;
+    this.pendingCombatReward = { type: "normalCard", choices: this.rewardCards(3) };
+    return { ...this.pendingCombatReward, choices: [...this.pendingCombatReward.choices], started: true };
+  }
+
+  prepareEliteCombatReward(usedCardUids = []) {
+    if (this.pendingCombatReward) {
+      return {
+        ...this.pendingCombatReward,
+        choices: [...(this.pendingCombatReward.choices || [])],
+        itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        started: false
+      };
+    }
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || this.week !== 8) return null;
+    this.gold += 30;
+    this.pendingCombatReward = {
+      type: "eliteChain",
+      stage: "card",
+      choices: this.rewardCards(3),
+      itemChoices: [],
+      usedCardUids: [...new Set(usedCardUids)]
+        .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid))
+        .slice(0, 64),
+      fallbackGold: 0
+    };
+    return {
+      ...this.pendingCombatReward,
+      choices: [...this.pendingCombatReward.choices],
+      itemChoices: [],
+      usedCardUids: [...this.pendingCombatReward.usedCardUids],
+      started: true
+    };
+  }
+
+  advanceEliteCombatRewardFromCard() {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "eliteChain" || pending.stage !== "card") return false;
+    const itemChoices = this.rng.shuffle(this.availableItemIds()).slice(0, 2);
+    pending.choices = [];
+    if (itemChoices.length) {
+      pending.stage = "item";
+      pending.itemChoices = itemChoices;
+      pending.fallbackGold = 0;
+    } else {
+      const fallback = this.claimItemRewardFallback("elite");
+      pending.stage = "enchant";
+      pending.itemChoices = [];
+      pending.fallbackGold = fallback?.gold || 0;
+    }
+    return true;
+  }
+
+  advanceEliteCombatRewardFromItem() {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "eliteChain" || pending.stage !== "item" || this.pendingItemReplacement) return false;
+    pending.stage = "enchant";
+    pending.itemChoices = [];
+    pending.fallbackGold = 0;
+    return true;
+  }
+
+  prepareChallengeCombatReward({ affix, trialCompleted = false, trialBonus = 0 } = {}) {
+    if (this.pendingCombatReward) {
+      return {
+        ...this.pendingCombatReward,
+        choices: [...(this.pendingCombatReward.choices || [])],
+        itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        started: false
+      };
+    }
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || FIXED_ROUTE_WEEKS.has(this.week)
+      || !CHALLENGE_AFFIX_DEFS[affix]) return null;
+    const completed = trialCompleted === true;
+    this.pendingCombatReward = {
+      type: "challengeChain",
+      stage: "route",
+      route: null,
+      affix,
+      trialCompleted: completed,
+      trialBonus: completed
+        ? Math.min(ARCHETYPE_TRIAL_DEFS[this.archetypeId].bonusGold, nonNegativeInteger(trialBonus))
+        : 0,
+      choices: [],
+      itemChoices: [],
+      usedCardUids: [],
+      fallbackGold: 0
+    };
+    return { ...this.pendingCombatReward, choices: [], itemChoices: [], usedCardUids: [], started: true };
+  }
+
+  choosePendingChallengeReward(id) {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "challengeChain" || pending.stage !== "route") return false;
+    const reward = this.claimChallengeReward(id);
+    if (!reward) return false;
+    pending.route = id;
+    pending.choices = [];
+    pending.itemChoices = [];
+    pending.fallbackGold = 0;
+    if (id === "cards") {
+      pending.stage = "card";
+      pending.choices = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 3);
+    } else if (id === "pet") {
+      this.pet.bond += reward.bond;
+      this.updatePetMilestone();
+      pending.stage = "complete";
+    } else {
+      const itemChoices = this.rng.shuffle(this.availableItemIds()).slice(0, reward.itemChoices);
+      if (itemChoices.length) {
+        pending.stage = "item";
+        pending.itemChoices = itemChoices;
+      } else {
+        this.gold += reward.fallbackGold - reward.gold;
+        pending.stage = "complete";
+        pending.fallbackGold = reward.fallbackGold;
+      }
+    }
+    return true;
+  }
+
+  prepareEventCombatReward() {
+    if (this.pendingCombatReward) {
+      return {
+        ...this.pendingCombatReward,
+        choices: [...(this.pendingCombatReward.choices || [])],
+        itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        started: false
+      };
+    }
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || FIXED_ROUTE_WEEKS.has(this.week)) return null;
+    const rares = this.availableItemIds({ rarity: "rare" });
+    const itemChoices = rares.length
+      ? this.rng.shuffle(rares).slice(0, 2)
+      : [this.randomItem()].filter(Boolean);
+    this.pendingCombatReward = {
+      type: "eventItem",
+      stage: itemChoices.length ? "item" : "complete",
+      choices: [],
+      itemChoices,
+      usedCardUids: [],
+      fallbackGold: 0
+    };
+    if (!itemChoices.length) {
+      const fallback = this.claimItemRewardFallback("event");
+      this.pendingCombatReward.fallbackGold = fallback?.gold || 0;
+    }
+    return {
+      ...this.pendingCombatReward,
+      choices: [],
+      itemChoices: [...this.pendingCombatReward.itemChoices],
+      usedCardUids: [],
+      started: true
+    };
+  }
+
+  replacePendingCombatRewardChoices(choices) {
+    const pending = this.pendingCombatReward;
+    const canReplace = pending?.type === "normalCard"
+      || (pending?.type === "eliteChain" && pending.stage === "card");
+    if (!canReplace || !Array.isArray(choices)) return false;
+    const valid = [...new Set(choices)].filter((id) => {
+      const card = CARD_DEFS[id];
+      return card && (!card.archetype || card.archetype === this.archetypeId);
+    }).slice(0, 3);
+    if (!valid.length) return false;
+    pending.choices = valid;
+    return true;
+  }
+
+  completePendingCombatReward() {
+    if (!this.pendingCombatReward || this.pendingItemReplacement?.source === "combat") return false;
+    this.pendingCombatReward = null;
+    return true;
+  }
+
+  copyPendingEventReward(started = false) {
+    if (!this.pendingEventReward) return null;
+    return {
+      ...this.pendingEventReward,
+      choices: [...(this.pendingEventReward.choices || [])],
+      cardUids: [...(this.pendingEventReward.cardUids || [])],
+      itemChoices: [...(this.pendingEventReward.itemChoices || [])],
+      started
+    };
+  }
+
+  canPrepareEventReward() {
+    return !this.awaitingNextSemester
+      && !this.pendingSemesterReward
+      && !this.pendingCombatReward
+      && !this.pendingCombatStart
+      && !this.pendingShop
+      && !this.pendingRest
+      && !FIXED_ROUTE_WEEKS.has(this.week);
+  }
+
+  prepareEventCardReward(source, choices = []) {
+    if (this.pendingEventReward) return this.copyPendingEventReward(false);
+    const filter = EVENT_CARD_REWARD_SOURCES[source];
+    if (!filter || !this.canPrepareEventReward()) return null;
+    const valid = [...new Set(choices)].filter((id) => {
+      const card = CARD_DEFS[id];
+      if (!card || (card.archetype && card.archetype !== this.archetypeId)) return false;
+      if (filter === "uncommon") return card.rarity === "uncommon";
+      if (filter === "attack") return card.type === "attack";
+      return card.type !== "attack" && card.type !== "status";
+    }).slice(0, 3);
+    if (!valid.length) return null;
+    this.pendingEventReward = {
+      type: "card",
+      source,
+      choices: valid,
+      cardUids: [],
+      itemChoices: []
+    };
+    return this.copyPendingEventReward(true);
+  }
+
+  prepareEventDeckReward(source, cardUids = []) {
+    if (this.pendingEventReward) return this.copyPendingEventReward(false);
+    const type = EVENT_DECK_REWARD_SOURCES[source];
+    if (!type || !this.canPrepareEventReward()) return null;
+    const valid = [...new Set(cardUids)].filter((uid) => {
+      const card = this.deck.find((candidate) => candidate.uid === uid);
+      if (!card) return false;
+      if (type === "upgrade") return !card.upgraded && !["nervous", "todo"].includes(card.id);
+      return this.deck.length > 5;
+    }).slice(0, 64);
+    if (!valid.length) return null;
+    this.pendingEventReward = {
+      type,
+      source,
+      choices: [],
+      cardUids: valid,
+      itemChoices: []
+    };
+    return this.copyPendingEventReward(true);
+  }
+
+  prepareEventItemReward(source, itemChoices = []) {
+    if (this.pendingEventReward) return this.copyPendingEventReward(false);
+    if (!EVENT_ITEM_REWARD_SOURCES.has(source) || !this.canPrepareEventReward()) return null;
+    const valid = [...new Set(itemChoices)]
+      .filter((id) => ITEM_DEFS[id]?.rarity === "common" && !this.hasItem(id))
+      .slice(0, 1);
+    if (!valid.length) return null;
+    this.pendingEventReward = {
+      type: "item",
+      source,
+      choices: [],
+      cardUids: [],
+      itemChoices: valid
+    };
+    return this.copyPendingEventReward(true);
+  }
+
+  completePendingEventReward() {
+    if (!this.pendingEventReward || this.pendingItemReplacement?.source === "event") return false;
+    this.pendingEventReward = null;
+    return true;
+  }
+
+  preparePendingEvent(eventId) {
+    if (this.pendingEventId) return this.pendingEventId === eventId;
+    if (!EVENT_DEFS[eventId] || this.awaitingNextSemester || this.pendingSemesterReward
+      || this.pendingCombatReward || this.pendingCombatStart || this.pendingEventReward || this.pendingShop || this.pendingRest
+      || FIXED_ROUTE_WEEKS.has(this.week)) return false;
+    this.lastEventId = eventId;
+    this.pendingEventId = eventId;
+    return true;
+  }
+
+  completePendingEvent() {
+    if (!this.pendingEventId) return false;
+    this.pendingEventId = null;
+    return true;
+  }
+
+  copyPendingCombatStart(started = false) {
+    if (!this.pendingCombatStart) return null;
+    return {
+      ...this.pendingCombatStart,
+      modifiers: { ...(this.pendingCombatStart.modifiers || {}) },
+      started
+    };
+  }
+
+  prepareCombatStart(enemyId, outcome, modifiers = {}) {
+    if (this.pendingCombatStart) return this.copyPendingCombatStart(false);
+    if (!ENEMY_DEFS[enemyId] || !["normal", "elite", "boss", "challenge", "event"].includes(outcome)
+      || !this.tarotId || this.awaitingNextSemester || this.pendingSemesterReward || this.pendingCombatReward
+      || this.pendingEventReward || this.pendingShop || this.pendingRest || this.pet.pendingMilestone) return null;
+
+    let canonicalModifiers = null;
+    const modifierKeys = Object.keys(modifiers || {});
+    if (outcome === "challenge") {
+      if (modifiers.challenge === true
+        && modifiers.hpMultiplier === CHALLENGE_RULES.hpMultiplier
+        && modifiers.damageMultiplier === CHALLENGE_RULES.damageMultiplier
+        && CHALLENGE_AFFIX_DEFS[modifiers.affix]
+        && modifierKeys.every((key) => ["challenge", "hpMultiplier", "damageMultiplier", "affix"].includes(key))) {
+        canonicalModifiers = {
+          challenge: true,
+          hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+          damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+          affix: modifiers.affix
+        };
+      }
+    } else if (outcome === "event") {
+      if (modifiers.hpMultiplier === 1.3
+        && modifierKeys.every((key) => key === "hpMultiplier")) canonicalModifiers = { hpMultiplier: 1.3 };
+    } else if (!modifierKeys.length) {
+      canonicalModifiers = {};
+    }
+    if (!canonicalModifiers) return null;
+
+    if (outcome === "event") {
+      if (this.pendingEventId !== "campusRumor" || ENEMY_DEFS[enemyId].kind !== "normal"
+        || FIXED_ROUTE_WEEKS.has(this.week)) return null;
+    } else {
+      if (this.pendingEventId) return null;
+      const node = this.semesterPlan[this.week]?.find((candidate) => candidate.type === "combat"
+        && candidate.enemy === enemyId
+        && (candidate.challenge === true) === (outcome === "challenge"));
+      if (!node) return null;
+      const expectedOutcome = node.challenge ? "challenge" : ENEMY_DEFS[enemyId].kind;
+      if (expectedOutcome !== outcome || (outcome === "challenge" && node.affix !== canonicalModifiers.affix)) return null;
+    }
+
+    this.pendingCombatStart = { enemyId, outcome, modifiers: canonicalModifiers };
+    return this.copyPendingCombatStart(true);
+  }
+
+  completePendingCombatStart() {
+    if (!this.pendingCombatStart) return false;
+    this.pendingCombatStart = null;
+    return true;
+  }
+
+  copyPendingShop(started = false) {
+    if (!this.pendingShop) return null;
+    return {
+      ...this.pendingShop,
+      cards: this.pendingShop.cards.map((stock) => ({ ...stock })),
+      items: this.pendingShop.items.map((stock) => ({ ...stock })),
+      started
+    };
+  }
+
+  prepareShop() {
+    if (this.pendingShop) return this.copyPendingShop(false);
+    const hasShopNode = this.semesterPlan[this.week]?.some((node) => node.type === "shop");
+    if (!this.tarotId || !hasShopNode || FIXED_ROUTE_WEEKS.has(this.week) || this.awaitingNextSemester
+      || this.pendingSemesterReward || this.pendingCombatReward || this.pendingCombatStart
+      || this.pendingEventReward || this.pendingEventId || this.pendingRest || this.pet.pendingMilestone) return null;
+    const exclusive = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 1);
+    const publicCards = this.rng.shuffle(PUBLIC_REWARD_CARD_IDS).slice(0, 2);
+    const cardIds = this.rng.shuffle([...exclusive, ...publicCards]);
+    const itemIds = this.rng.shuffle(this.availableItemIds()).slice(0, 2);
+    this.pendingShop = {
+      cards: cardIds.map((id) => ({ id, sold: false })),
+      items: itemIds.map((id) => ({ id, sold: false })),
+      removePrice: 75 + (this.semester - 1) * 15,
+      removed: false
+    };
+    return this.copyPendingShop(true);
+  }
+
+  shopPrice(kind, id) {
+    const rarity = kind === "card" ? CARD_DEFS[id]?.rarity : ITEM_DEFS[id]?.rarity;
+    const base = kind === "card"
+      ? { common: 40, uncommon: 65, rare: 100 }[rarity]
+      : { common: 90, uncommon: 120, rare: 160 }[rarity];
+    if (!base) return null;
+    let price = base;
+    if (this.hasItem("studentId")) price *= 0.9;
+    if (kind === "item" && this.flags.nextShopHalf) price *= 0.5;
+    return Math.ceil(price);
+  }
+
+  shopRemovePrice() {
+    const base = Number(this.pendingShop?.removePrice);
+    if (!Number.isFinite(base) || base <= 0) return null;
+    return Math.ceil(base * (this.hasItem("studentId") ? 0.9 : 1));
+  }
+
+  buyShopCard(index) {
+    const stock = this.pendingShop?.cards?.[index];
+    const price = stock ? this.shopPrice("card", stock.id) : null;
+    if (!stock || stock.sold || price === null || this.gold < price) return null;
+    this.gold -= price;
+    this.addCard(stock.id);
+    this.stats.cardsTaken += 1;
+    if (CARD_DEFS[stock.id].archetype === this.archetypeId) this.stats.exclusiveTaken += 1;
+    else this.stats.publicTaken += 1;
+    stock.sold = true;
+    return { id: stock.id, price };
+  }
+
+  buyShopItem(id) {
+    const stock = this.pendingShop?.items?.find((entry) => entry.id === id);
+    const price = stock ? this.shopPrice("item", stock.id) : null;
+    if (!stock || stock.sold || price === null || this.gold < price
+      || this.items.length >= this.backpackCapacity || this.hasItem(id)) return null;
+    this.gold -= price;
+    this.addItem(id);
+    this.stats.itemsTaken += 1;
+    stock.sold = true;
+    this.flags.nextShopHalf = false;
+    return { id, price };
+  }
+
+  removeShopCard(uid) {
+    const shop = this.pendingShop;
+    const price = this.shopRemovePrice();
+    if (!shop || shop.removed || price === null || this.gold < price || !this.removeCard(uid)) return null;
+    this.gold -= price;
+    shop.removed = true;
+    return { uid, price };
+  }
+
+  completePendingShop() {
+    if (!this.pendingShop) return false;
+    this.pendingShop = null;
+    return true;
   }
 
   claimChallengeReward(id) {
@@ -627,6 +1389,11 @@ export class SemesterGame {
     } else if (!CHALLENGE_AFFIX_DEFS[combatModifiers.affix]) {
       delete combatModifiers.affix;
     }
+    const shouldGuaranteeTutorialOpening = this.semester === 1
+      && this.week === 1
+      && enemyId === "sleepyBug"
+      && this.stats.combatsStarted === 0
+      && !combatModifiers.challenge;
     this.stats.combatsStarted += 1;
 
     const tarot = this.tarot;
@@ -656,6 +1423,17 @@ export class SemesterGame {
       drawPile.push(this.createCard("nervous"));
     }
     if (tension) drawPile = this.rng.shuffle(drawPile);
+    let tutorialOpening = false;
+    if (shouldGuaranteeTutorialOpening) {
+      const requiredIds = ["textbookStrike", "backpackGuard", this.archetype.specialCard];
+      const openingCards = requiredIds.map((id) => drawPile.find((card) => card.id === id));
+      if (openingCards.every(Boolean)) {
+        const openingUids = new Set(openingCards.map((card) => card.uid));
+        drawPile = drawPile.filter((card) => !openingUids.has(card.uid));
+        drawPile.push(...openingCards.reverse());
+        tutorialOpening = true;
+      }
+    }
     this.flags.nextCombatTension = 0;
     if (combatModifiers.challenge) this.stats.trialsAttempted += 1;
 
@@ -664,6 +1442,7 @@ export class SemesterGame {
       result: null,
       modifiers: combatModifiers,
       turn: 0,
+      tutorialOpening,
       startingHp: this.hp,
       cardsPlayed: 0,
       cardsPlayedThisTurn: 0,
@@ -704,7 +1483,8 @@ export class SemesterGame {
       log: [
         `遭遇 ${definition.name}。它的行动会完全公开。`,
         ...(tarot ? [`塔罗契约·${tarot.name}：${tarot.boon} 代价：${tarot.cost}`] : []),
-        ...(combatModifiers.affix ? [`挑战词缀·${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].name}：${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].text}`] : [])
+        ...(combatModifiers.affix ? [`挑战词缀·${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].name}：${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].text}`] : []),
+        ...(tutorialOpening ? ["新生首手保底：前 3 张依次为攻击、防御与主角特性牌。"] : [])
       ]
     };
     this.flags.nextEnemyBlock = 0;
@@ -725,6 +1505,31 @@ export class SemesterGame {
     return {
       ...raw,
       attack: raw.attack ? Math.round((raw.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage : undefined
+    };
+  }
+
+  incomingDamagePreview() {
+    const combat = this.requireCombat();
+    const intent = this.getIntent();
+    const perHit = Math.max(0, Number(intent.attack) || 0);
+    const hits = perHit > 0 ? Math.max(1, nonNegativeInteger(intent.hits, 1)) : 0;
+    const attackTotal = perHit * hits;
+    const currentBlock = Math.max(0, nonNegativeInteger(combat.playerBlock));
+    const blocked = Math.min(currentBlock, attackTotal);
+    const endTurnHpLoss = Math.max(0, nonNegativeInteger(combat.endTurnHpLoss));
+    const attackHpLoss = endTurnHpLoss >= this.hp ? 0 : Math.max(0, attackTotal - blocked);
+    const totalHpLoss = endTurnHpLoss + attackHpLoss;
+    return {
+      perHit,
+      hits,
+      attackTotal,
+      currentBlock,
+      blocked,
+      attackHpLoss,
+      endTurnHpLoss,
+      totalHpLoss,
+      hpAfter: Math.max(0, this.hp - totalHpLoss),
+      lethal: totalHpLoss >= this.hp
     };
   }
 
@@ -752,7 +1557,7 @@ export class SemesterGame {
     combat.nextDrawPenalty = 0;
     this.drawCards(drawCount);
 
-    if (combat.turn === 1 && this.hasItem("bandage") && this.hp * 2 < this.maxHp) {
+    if (combat.turn === 1 && this.hasItem("bandage") && this.hp * 2 <= this.maxHp) {
       combat.playerBlock += 6;
       combat.log.push("创可贴生效：获得 6 点护甲。");
     }
@@ -792,6 +1597,87 @@ export class SemesterGame {
     return { ok: true };
   }
 
+  cardEffectPreview(card) {
+    const combat = this.requireCombat();
+    const definition = cardDefinition(card);
+    const effect = definition.effect;
+    const isAttackCard = definition.type === "attack";
+    const damageModifiers = [];
+    const blockModifiers = [];
+    let baseDamage = effect.damage || 0;
+
+    if (effect.safeDamage && !this.getIntent().attack) {
+      baseDamage = effect.safeDamage;
+      damageModifiers.push(`敌人未攻击：基础 ${baseDamage}`);
+    }
+    let damagePerHit = Math.max(
+      0,
+      baseDamage + (isAttackCard ? combat.attackBonus : 0) - (isAttackCard && combat.distracted ? 2 : 0)
+    );
+    if (isAttackCard && combat.attackBonus) damageModifiers.push(`攻击加成 +${combat.attackBonus}`);
+    if (isAttackCard && combat.distracted) damageModifiers.push("走神 -2");
+
+    const ariesBonus = Boolean(effect.damage && isAttackCard && this.archetypeId === "aries" && !combat.archetypeAttackUsed);
+    if (ariesBonus) {
+      damagePerHit += 2;
+      damageModifiers.push("白羊首击 +2");
+    }
+    const pencilBonus = Boolean(effect.damage && isAttackCard && this.hasItem("autoPencil") && !combat.pencilUsed);
+    if (pencilBonus) {
+      damagePerHit += 1;
+      damageModifiers.push("自动铅笔 +1");
+    }
+
+    let hits = effect.damage ? effect.hits || 1 : 0;
+    const doubleAttack = Boolean(effect.damage && isAttackCard && combat.doubleNextAttack);
+    if (doubleAttack) {
+      hits *= 2;
+      damageModifiers.push("双倍攻击");
+    }
+    const attackTotal = damagePerHit * hits;
+    let remainingBlock = combat.enemy.block;
+    let remainingHp = combat.enemy.hp;
+    let enemyBlockAbsorbed = 0;
+    let healthDamage = 0;
+    for (let index = 0; index < hits && remainingHp > 0; index += 1) {
+      const absorbed = Math.min(remainingBlock, damagePerHit);
+      remainingBlock -= absorbed;
+      enemyBlockAbsorbed += absorbed;
+      const hitDamage = Math.min(damagePerHit - absorbed, remainingHp);
+      remainingHp -= hitDamage;
+      healthDamage += hitDamage;
+    }
+
+    const notebookBonus = Boolean(effect.block && this.hasItem("thickNotebook") && !combat.notebookUsed);
+    const baseBlock = (effect.block || 0) + (notebookBonus ? 2 : 0);
+    if (notebookBonus) blockModifiers.push("厚笔记本 +2");
+    const statusCount = effect.exhaustStatuses
+      ? combat.hand.filter((held) => CARD_DEFS[held.id].type === "status").length
+      : 0;
+    const statusBlock = statusCount * (effect.blockPerStatus || 0);
+    if (statusBlock) blockModifiers.push(`清理 ${statusCount} 张状态 +${statusBlock}`);
+
+    return {
+      cost: definition.cost,
+      hasDamage: Boolean(effect.damage),
+      damagePerHit,
+      hits,
+      attackTotal,
+      enemyBlockAbsorbed,
+      healthDamage,
+      baseBlock,
+      statusBlock,
+      block: baseBlock + statusBlock,
+      selfDamage: effect.selfDamage || 0,
+      ariesBonus,
+      pencilBonus,
+      doubleAttack,
+      notebookBonus,
+      statusCount,
+      modifiers: [...damageModifiers, ...blockModifiers]
+    };
+  }
+
   playCard(uid) {
     const combat = this.requireCombat();
     const index = combat.hand.findIndex((card) => card.uid === uid);
@@ -800,6 +1686,7 @@ export class SemesterGame {
     const definition = cardDefinition(card);
     const allowed = this.canPlay(card);
     if (!allowed.ok) return allowed;
+    const resolved = this.cardEffectPreview(card);
 
     combat.hand.splice(index, 1);
     combat.energy -= definition.cost;
@@ -830,42 +1717,34 @@ export class SemesterGame {
 
     if (effect.damage) {
       const isAttackCard = definition.type === "attack";
-      let baseDamage = effect.damage;
-      const intent = this.getIntent();
-      if (effect.safeDamage && !intent.attack) baseDamage = effect.safeDamage;
-      let damagePerHit = Math.max(
-        0,
-        baseDamage + (isAttackCard ? combat.attackBonus : 0) - (isAttackCard && combat.distracted ? 2 : 0)
-      );
-      if (isAttackCard && this.archetypeId === "aries" && !combat.archetypeAttackUsed) {
+      const damagePerHit = resolved.damagePerHit;
+      if (resolved.ariesBonus) {
         combat.archetypeAttackUsed = true;
-        damagePerHit += 2;
         notes.push("白羊座命盘 +2");
       }
-      if (isAttackCard && this.hasItem("autoPencil") && !combat.pencilUsed) {
+      if (resolved.pencilBonus) {
         combat.pencilUsed = true;
-        damagePerHit += 1;
         notes.push("自动铅笔 +1");
       }
-      let hits = effect.hits || 1;
-      if (isAttackCard && combat.doubleNextAttack) {
-        hits *= 2;
+      const hits = resolved.hits;
+      if (resolved.doubleAttack) {
         combat.doubleNextAttack = false;
       }
       const total = this.damageEnemy(damagePerHit, hits);
       notes.push(`造成 ${total} 伤害`);
 
-      if (isAttackCard && !combat.petChargedThisTurn && this.pet.charge < this.pet.maxCharge) {
+      const pet = this.getPetDefinition();
+      const petChargeGain = Math.min(pet.chargePerFirstAttack, this.pet.maxCharge - this.pet.charge);
+      if (isAttackCard && !combat.petChargedThisTurn && petChargeGain > 0) {
         combat.petChargedThisTurn = true;
-        this.pet.charge += 1;
-        notes.push("暴躁鹅充能 +1");
+        this.pet.charge += petChargeGain;
+        notes.push(`${pet.shortName}充能 +${petChargeGain}`);
       }
     }
 
     if (effect.block) {
-      let amount = effect.block;
-      if (this.hasItem("thickNotebook") && !combat.notebookUsed) {
-        amount += 2;
+      const amount = resolved.baseBlock;
+      if (resolved.notebookBonus) {
         combat.notebookUsed = true;
         notes.push("厚笔记本 +2");
       }
@@ -893,7 +1772,7 @@ export class SemesterGame {
       const statuses = combat.hand.filter((held) => CARD_DEFS[held.id].type === "status");
       combat.hand = combat.hand.filter((held) => CARD_DEFS[held.id].type !== "status");
       combat.exhaustPile.push(...statuses);
-      const extra = statuses.length * effect.blockPerStatus;
+      const extra = resolved.statusBlock;
       combat.playerBlock += extra;
       notes.push(`清理 ${statuses.length} 张状态牌，护甲 +${extra}`);
     }
@@ -920,12 +1799,14 @@ export class SemesterGame {
 
   usePetSkill() {
     const combat = this.requireCombat();
+    const pet = this.getPetDefinition();
+    const { skill } = pet;
     if (combat.status !== "active") return { ok: false, reason: "战斗已经结束" };
     if (combat.petUsed) return { ok: false, reason: "本场已经用过宠物技能" };
     if (this.pet.charge < this.pet.maxCharge) return { ok: false, reason: "宠物充能未满" };
-    if (combat.energy < 1) return { ok: false, reason: "需要 1 点能量" };
+    if (combat.energy < skill.energyCost) return { ok: false, reason: `需要 ${skill.energyCost} 点能量` };
 
-    combat.energy -= 1;
+    combat.energy -= skill.energyCost;
     combat.petUsed = true;
     this.stats.petUses += 1;
     this.pet.charge = 0;
@@ -944,7 +1825,7 @@ export class SemesterGame {
       combat.nextDrawBonus += preview.nextDrawBonus;
       notes.push(`下回合多抽 ${preview.nextDrawBonus} 张`);
     }
-    combat.log.push(`暴躁鹅·追着啄：${notes.join("，")}。`);
+    combat.log.push(`${pet.name}·${skill.name}：${notes.join("，")}。`);
     this.checkCombatEnd();
     return { ok: true };
   }
@@ -987,45 +1868,60 @@ export class SemesterGame {
       return { ok: true };
     }
     combat.distracted = false;
-    this.executeEnemyTurn();
+    const enemyResult = this.executeEnemyTurn();
     if (combat.status === "active") this.startPlayerTurn();
-    return { ok: true };
+    return { ok: true, enemyResult };
   }
 
   executeEnemyTurn() {
     const combat = this.requireCombat();
     const intent = this.getIntent();
     const notes = [];
+    const result = {
+      intentName: intent.name,
+      attack: null,
+      block: null,
+      debuff: null,
+      statusAdded: null,
+      triggers: []
+    };
     combat.enemy.block = 0;
 
     if (intent.attack) {
       const hits = intent.hits || 1;
       let totalHealthDamage = 0;
+      let totalBlocked = 0;
       for (let index = 0; index < hits; index += 1) {
         const absorbed = Math.min(combat.playerBlock, intent.attack);
         combat.playerBlock -= absorbed;
+        totalBlocked += absorbed;
         const healthDamage = intent.attack - absorbed;
         this.hp -= healthDamage;
         totalHealthDamage += healthDamage;
       }
+      result.attack = { perHit: intent.attack, hits, blocked: totalBlocked, healthDamage: totalHealthDamage };
       notes.push(`攻击造成 ${totalHealthDamage} 点生命伤害`);
       this.stats.combatHpLost += totalHealthDamage;
       if (totalHealthDamage > 0 && this.hasItem("mistakeBook") && !combat.mistakeBookUsed) {
         combat.mistakeBookUsed = true;
         combat.nextDrawBonus += 1;
+        result.triggers.push({ id: "mistakeBook", effect: "nextDraw", amount: 1 });
         notes.push("错题本：下回合多抽 1 张");
       }
     }
     if (intent.block) {
       combat.enemy.block += intent.block;
+      result.block = { gained: intent.block };
       notes.push(`获得 ${intent.block} 护甲`);
     }
     if (intent.debuff) {
       if (this.hasItem("earplugs") && !combat.earplugsUsed) {
         combat.earplugsUsed = true;
+        result.debuff = { id: intent.debuff, applied: false, blockedBy: "earplugs" };
         notes.push("耳塞抵挡了走神");
       } else if (intent.debuff === "distracted") {
         combat.distracted = true;
+        result.debuff = { id: intent.debuff, applied: true, blockedBy: null };
         notes.push("施加走神：下回合攻击每段 -2");
       }
     }
@@ -1035,11 +1931,13 @@ export class SemesterGame {
         destination.push(this.createCard(intent.addStatus.id));
       }
       if (intent.addStatus.zone === "draw") combat.drawPile = this.rng.shuffle(combat.drawPile);
+      result.statusAdded = { id: intent.addStatus.id, count: intent.addStatus.count, zone: intent.addStatus.zone };
       notes.push(`加入 ${intent.addStatus.count} 张${CARD_DEFS[intent.addStatus.id].name}`);
     }
     combat.log.push(`${combat.enemy.name}·${intent.name}：${notes.join("，") || "观察了你一会儿"}。`);
     combat.enemy.intentTurn += 1;
     this.checkCombatEnd();
+    return result;
   }
 
   checkCombatEnd() {
@@ -1058,14 +1956,15 @@ export class SemesterGame {
         combat.log.push(`星座试炼·${trial.name}完成：校园币 +${trial.bonusGold}。`);
       }
       this.stats.combatTurns += combat.turn;
-      this.pet.bond += 1;
+      const pet = this.getPetDefinition();
+      this.pet.bond += pet.victoryBond;
       this.updatePetMilestone();
       for (const uid of combat.usedCardUids) {
         if (this.deck.some((card) => card.uid === uid)) {
           this.cardCombatUses[uid] = (this.cardCombatUses[uid] || 0) + 1;
         }
       }
-      combat.log.push(`胜利！暴躁鹅羁绊 +1（当前 ${this.pet.bond}）。`);
+      combat.log.push(`胜利！${pet.name}羁绊 +${pet.victoryBond}（当前 ${this.pet.bond}）。`);
     } else if (this.hp <= 0 && combat.status === "active") {
       this.hp = 0;
       combat.status = "lost";
@@ -1097,12 +1996,62 @@ export class SemesterGame {
     };
   }
 
+  prepareSemesterRewards(itemIds = []) {
+    if (this.week !== 16 || this.awaitingNextSemester) return null;
+    if (this.pendingSemesterReward) {
+      return { ...this.pendingSemesterReward, itemChoices: [...(this.pendingSemesterReward.itemChoices || [])], started: false };
+    }
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest) return null;
+    this.gold += 50;
+    const itemChoices = [...new Set(itemIds)]
+      .filter((id) => ITEM_DEFS[id]?.rarity === "boss" && !this.hasItem(id));
+    let fallbackGold = 0;
+    if (itemChoices.length) {
+      this.pendingSemesterReward = { stage: "bossItem", itemChoices };
+    } else {
+      fallbackGold = this.claimItemRewardFallback("boss")?.gold || 0;
+      this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold };
+    }
+    return { ...this.pendingSemesterReward, itemChoices: [...this.pendingSemesterReward.itemChoices], started: true };
+  }
+
+  advanceSemesterRewards() {
+    if (this.pendingSemesterReward?.stage !== "bossItem" || this.pendingItemReplacement) return false;
+    this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
+    return true;
+  }
+
+  completeCurrentSemester() {
+    if (this.week !== 16) return false;
+    this.pendingSemesterReward = null;
+    this.pendingCombatReward = null;
+    this.pendingCombatStart = null;
+    this.pendingEventReward = null;
+    this.pendingShop = null;
+    this.pendingRest = null;
+    this.pendingItemReplacement = null;
+    this.pendingEventId = null;
+    this.awaitingNextSemester = true;
+    return true;
+  }
+
   startNextSemester() {
     this.semester += 1;
     this.tarotId = null;
     this.week = 1;
+    this.awaitingNextSemester = false;
+    this.pendingSemesterReward = null;
+    this.pendingCombatReward = null;
+    this.pendingCombatStart = null;
+    this.pendingEventReward = null;
+    this.pendingShop = null;
+    this.pendingRest = null;
+    this.pendingItemReplacement = null;
+    this.lastEventId = null;
+    this.pendingEventId = null;
     this.completedNodes.clear();
     this.flags.eraserUsed = false;
+    this.flags.tarotRestUsed = false;
     this.backpackCapacity = Math.min(12, this.backpackCapacity + 1);
     this.maxHp += 2;
     this.hp = this.maxHp;
@@ -1119,6 +2068,39 @@ export class SemesterGame {
       tarotId: this.tarotId,
       semester: this.semester,
       week: this.week,
+      awaitingNextSemester: this.awaitingNextSemester,
+      pendingSemesterReward: this.pendingSemesterReward ? {
+        ...this.pendingSemesterReward,
+        itemChoices: [...(this.pendingSemesterReward.itemChoices || [])]
+      } : null,
+      pendingCombatReward: this.pendingCombatReward ? {
+        ...this.pendingCombatReward,
+        choices: [...(this.pendingCombatReward.choices || [])],
+        itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])]
+      } : null,
+      pendingCombatStart: this.pendingCombatStart ? {
+        ...this.pendingCombatStart,
+        modifiers: { ...(this.pendingCombatStart.modifiers || {}) }
+      } : null,
+      pendingEventReward: this.pendingEventReward ? {
+        ...this.pendingEventReward,
+        choices: [...(this.pendingEventReward.choices || [])],
+        cardUids: [...(this.pendingEventReward.cardUids || [])],
+        itemChoices: [...(this.pendingEventReward.itemChoices || [])]
+      } : null,
+      pendingShop: this.pendingShop ? {
+        ...this.pendingShop,
+        cards: this.pendingShop.cards.map((stock) => ({ ...stock })),
+        items: this.pendingShop.items.map((stock) => ({ ...stock }))
+      } : null,
+      pendingRest: this.pendingRest ? {
+        ...this.pendingRest,
+        cardUids: [...(this.pendingRest.cardUids || [])]
+      } : null,
+      pendingItemReplacement: this.pendingItemReplacement ? { ...this.pendingItemReplacement } : null,
+      lastEventId: this.lastEventId,
+      pendingEventId: this.pendingEventId,
       maxHp: this.maxHp,
       hp: this.hp,
       gold: this.gold,
@@ -1144,26 +2126,239 @@ export class SemesterGame {
       throw new Error("存档版本不兼容");
     }
     const game = new SemesterGame(1, data.archetypeId);
+    const loadRepairs = [];
     game.rng.state = Number(data.rngState) >>> 0;
-    game.cardSerial = Number(data.cardSerial) || 0;
+    game.cardSerial = Math.min(1_000_000_000, nonNegativeInteger(data.cardSerial));
     game.tarotId = TAROT_DEFS[data.tarotId] ? data.tarotId : null;
     game.semester = Math.max(1, Number(data.semester) || 1);
     game.week = Math.min(16, Math.max(1, Number(data.week) || 1));
+    game.awaitingNextSemester = data.awaitingNextSemester === true && game.week === 16;
+    if (data.awaitingNextSemester !== undefined
+      && (typeof data.awaitingNextSemester !== "boolean" || (data.awaitingNextSemester && game.week !== 16))) {
+      loadRepairs.push("重置异常学期完成状态");
+    }
+    game.lastEventId = EVENT_DEFS[data.lastEventId] ? data.lastEventId : null;
+    game.pendingEventId = null;
+    if (data.lastEventId !== undefined && data.lastEventId !== null && !game.lastEventId) {
+      loadRepairs.push("重置异常上一事件记录");
+    }
+    const savedSemesterReward = data.pendingSemesterReward;
+    game.pendingSemesterReward = null;
+    if (!game.awaitingNextSemester && game.week === 16 && savedSemesterReward && typeof savedSemesterReward === "object") {
+      if (savedSemesterReward.stage === "bossItem") {
+        const itemChoices = Array.isArray(savedSemesterReward.itemChoices)
+          ? [...new Set(savedSemesterReward.itemChoices)]
+            .filter((id) => ITEM_DEFS[id]?.rarity === "boss")
+          : [];
+        if (itemChoices.length) game.pendingSemesterReward = { stage: "bossItem", itemChoices };
+      } else if (savedSemesterReward.stage === "summaryUpgrade") {
+        game.pendingSemesterReward = {
+          stage: "summaryUpgrade",
+          itemChoices: [],
+          fallbackGold: nonNegativeInteger(savedSemesterReward.fallbackGold)
+        };
+      }
+    }
+    if (savedSemesterReward !== undefined && savedSemesterReward !== null && !game.pendingSemesterReward) {
+      loadRepairs.push("重置异常期末奖励状态");
+    }
+    const savedCombatReward = data.pendingCombatReward;
+    game.pendingCombatReward = null;
+    const savedCombatStart = data.pendingCombatStart;
+    game.pendingCombatStart = null;
+    const savedEventReward = data.pendingEventReward;
+    game.pendingEventReward = null;
+    const savedShop = data.pendingShop;
+    game.pendingShop = null;
+    const savedRest = data.pendingRest;
+    game.pendingRest = null;
+    const savedItemReplacement = data.pendingItemReplacement;
+    game.pendingItemReplacement = null;
+    const savedCombatChoices = Array.isArray(savedCombatReward?.choices)
+      ? [...new Set(savedCombatReward.choices)].filter((id) => {
+        const card = CARD_DEFS[id];
+        return card && (!card.archetype || card.archetype === game.archetypeId);
+      }).slice(0, 3)
+      : [];
+    const savedExclusiveChoices = savedCombatChoices
+      .filter((id) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(id));
+    if (!game.awaitingNextSemester && !game.pendingSemesterReward && game.week < 16) {
+      if (savedCombatReward?.type === "normalCard" && savedCombatChoices.length) {
+        game.pendingCombatReward = { type: "normalCard", choices: savedCombatChoices };
+      } else if (game.week === 8 && savedCombatReward?.type === "eliteChain"
+        && ["card", "item", "enchant"].includes(savedCombatReward.stage)) {
+        const itemChoices = Array.isArray(savedCombatReward.itemChoices)
+          ? [...new Set(savedCombatReward.itemChoices)]
+            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .slice(0, 2)
+          : [];
+        const usedCardUids = Array.isArray(savedCombatReward.usedCardUids)
+          ? [...new Set(savedCombatReward.usedCardUids)]
+            .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid))
+            .slice(0, 64)
+          : [];
+        const stageIsValid = savedCombatReward.stage === "enchant"
+          || (savedCombatReward.stage === "card" && savedCombatChoices.length)
+          || (savedCombatReward.stage === "item" && itemChoices.length);
+        if (stageIsValid) {
+          game.pendingCombatReward = {
+            type: "eliteChain",
+            stage: savedCombatReward.stage,
+            choices: savedCombatReward.stage === "card" ? savedCombatChoices : [],
+            itemChoices: savedCombatReward.stage === "item" ? itemChoices : [],
+            usedCardUids,
+            fallbackGold: savedCombatReward.stage === "enchant"
+              ? nonNegativeInteger(savedCombatReward.fallbackGold)
+              : 0
+          };
+        }
+      } else if (!FIXED_ROUTE_WEEKS.has(game.week) && savedCombatReward?.type === "challengeChain"
+        && ["route", "card", "item", "complete"].includes(savedCombatReward.stage)
+        && CHALLENGE_AFFIX_DEFS[savedCombatReward.affix]) {
+        const route = CHALLENGE_REWARD_DEFS[savedCombatReward.route]
+          ? savedCombatReward.route
+          : null;
+        const itemChoices = Array.isArray(savedCombatReward.itemChoices)
+          ? [...new Set(savedCombatReward.itemChoices)]
+            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .slice(0, CHALLENGE_REWARD_DEFS.item.itemChoices)
+          : [];
+        const stageIsValid = (savedCombatReward.stage === "route"
+          && (savedCombatReward.route === null || savedCombatReward.route === undefined))
+          || (savedCombatReward.stage === "card" && route === "cards" && savedExclusiveChoices.length)
+          || (savedCombatReward.stage === "item" && route === "item" && itemChoices.length)
+          || (savedCombatReward.stage === "complete" && (route === "pet"
+            || (route === "item"
+              && nonNegativeInteger(savedCombatReward.fallbackGold) === CHALLENGE_REWARD_DEFS.item.fallbackGold)));
+        if (stageIsValid) {
+          const trialCompleted = savedCombatReward.trialCompleted === true;
+          game.pendingCombatReward = {
+            type: "challengeChain",
+            stage: savedCombatReward.stage,
+            route,
+            affix: savedCombatReward.affix,
+            trialCompleted,
+            trialBonus: trialCompleted ? ARCHETYPE_TRIAL_DEFS[game.archetypeId].bonusGold : 0,
+            choices: savedCombatReward.stage === "card" ? savedExclusiveChoices : [],
+            itemChoices: savedCombatReward.stage === "item" ? itemChoices : [],
+            usedCardUids: [],
+            fallbackGold: savedCombatReward.stage === "complete" && route === "item"
+              ? CHALLENGE_REWARD_DEFS.item.fallbackGold
+              : 0
+          };
+        }
+      } else if (!FIXED_ROUTE_WEEKS.has(game.week) && savedCombatReward?.type === "eventItem"
+        && ["item", "complete"].includes(savedCombatReward.stage)) {
+        const itemChoices = Array.isArray(savedCombatReward.itemChoices)
+          ? [...new Set(savedCombatReward.itemChoices)]
+            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .slice(0, 2)
+          : [];
+        const stageIsValid = (savedCombatReward.stage === "item" && itemChoices.length)
+          || (savedCombatReward.stage === "complete"
+            && nonNegativeInteger(savedCombatReward.fallbackGold) === ITEM_REWARD_FALLBACK_GOLD.event);
+        if (stageIsValid) {
+          game.pendingCombatReward = {
+            type: "eventItem",
+            stage: savedCombatReward.stage,
+            choices: [],
+            itemChoices: savedCombatReward.stage === "item" ? itemChoices : [],
+            usedCardUids: [],
+            fallbackGold: savedCombatReward.stage === "complete"
+              ? ITEM_REWARD_FALLBACK_GOLD.event
+              : 0
+          };
+        }
+      }
+    }
+    if (savedCombatReward !== undefined && savedCombatReward !== null && !game.pendingCombatReward) {
+      loadRepairs.push("重置异常战斗奖励状态");
+    }
     game.maxHp = Math.max(1, Number(data.maxHp) || 50);
     game.hp = Math.min(game.maxHp, Math.max(1, Number(data.hp) || 1));
     game.gold = Math.max(0, Number(data.gold) || 0);
-    game.deck = Array.isArray(data.deck)
-      ? data.deck.filter((card) => CARD_DEFS[card.id]).map((card) => ({
-        id: card.id,
-        uid: String(card.uid),
-        upgraded: Boolean(card.upgraded),
-        enchantment: ENCHANTMENT_DEFS[card.enchantment]?.archetype === data.archetypeId ? card.enchantment : null
-      }))
-      : startingDeckFor(data.archetypeId).map((id) => game.createCard(id));
-    game.items = Array.isArray(data.items) ? data.items.filter((id) => ITEM_DEFS[id]) : [];
+    const usedUids = new Set();
+    let removedSavedCards = 0;
+    let repairedUids = 0;
+    let removedEnchantments = 0;
+    let addedStarterCards = 0;
+    let rebuiltDeck = false;
+    const nextCardUid = () => {
+      let uid;
+      do {
+        game.cardSerial += 1;
+        uid = `c${game.cardSerial}`;
+      } while (usedUids.has(uid));
+      usedUids.add(uid);
+      return uid;
+    };
+    game.deck = [];
+    if (Array.isArray(data.deck)) {
+      for (const savedCard of data.deck) {
+        const definition = savedCard && CARD_DEFS[savedCard.id];
+        if (!definition || definition.type === "status") {
+          removedSavedCards += 1;
+          continue;
+        }
+        const savedUid = typeof savedCard.uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(savedCard.uid)
+          ? savedCard.uid
+          : null;
+        const keepSavedUid = savedUid && !usedUids.has(savedUid);
+        let uid = keepSavedUid ? savedUid : nextCardUid();
+        if (!keepSavedUid) repairedUids += 1;
+        if (savedUid && uid === savedUid) {
+          usedUids.add(uid);
+          const serialMatch = /^c(\d{1,10})$/.exec(uid);
+          if (serialMatch) game.cardSerial = Math.max(game.cardSerial, Number(serialMatch[1]));
+        }
+        const card = { id: savedCard.id, uid, upgraded: savedCard.upgraded === true, enchantment: null };
+        const enchantment = ENCHANTMENT_DEFS[savedCard.enchantment];
+        if (enchantment?.archetype === data.archetypeId && game.canEnchant(card)) {
+          card.enchantment = savedCard.enchantment;
+        } else if (savedCard.enchantment) {
+          removedEnchantments += 1;
+        }
+        game.deck.push(card);
+      }
+    }
+    const starterIds = startingDeckFor(data.archetypeId);
+    if (!game.deck.length) {
+      game.deck = starterIds.map((id) => game.createCard(id));
+      rebuiltDeck = true;
+    } else {
+      let fillIndex = 0;
+      while (game.deck.length < 5) {
+        game.deck.push(game.createCard(starterIds[fillIndex % starterIds.length]));
+        fillIndex += 1;
+        addedStarterCards += 1;
+      }
+    }
+    if (removedSavedCards) loadRepairs.push(`移除 ${removedSavedCards} 张无效或临时牌`);
+    if (rebuiltDeck) loadRepairs.push("重建完整初始卡组");
+    else if (addedStarterCards) loadRepairs.push(`补入 ${addedStarterCards} 张基础牌`);
+    if (repairedUids) loadRepairs.push(`修复 ${repairedUids} 个卡牌编号`);
+    if (removedEnchantments) loadRepairs.push(`移除 ${removedEnchantments} 个无效刻印`);
     game.backpackCapacity = Math.min(12, Math.max(6, Number(data.backpackCapacity) || 6));
-    game.pet = { ...game.pet, ...(data.pet || {}) };
-    if (!PET_TALENT_DEFS[game.pet.talent]) {
+    game.items = Array.isArray(data.items)
+      ? [...new Set(data.items.filter((id) => ITEM_DEFS[id]))].slice(0, game.backpackCapacity)
+      : [];
+    if (Array.isArray(data.items) && data.items.length !== game.items.length) {
+      loadRepairs.push(`清理 ${data.items.length - game.items.length} 个重复或无效物品`);
+    } else if (data.items !== undefined && !Array.isArray(data.items)) {
+      loadRepairs.push("重置异常物品列表");
+    }
+    const savedPet = data.pet && typeof data.pet === "object" && !Array.isArray(data.pet) ? data.pet : {};
+    const restoredPetDefinition = petDefinition(savedPet.id);
+    game.pet = {
+      ...createPetState(restoredPetDefinition.id),
+      ...savedPet,
+      id: restoredPetDefinition.id,
+      name: restoredPetDefinition.name,
+      maxCharge: restoredPetDefinition.maxCharge
+    };
+    game.pet.bond = nonNegativeInteger(game.pet.bond);
+    game.pet.charge = Math.min(game.pet.maxCharge, nonNegativeInteger(game.pet.charge));
+    if (!restoredPetDefinition.talentIds.includes(game.pet.talent) || !PET_TALENT_DEFS[game.pet.talent]) {
       game.pet.talent = null;
       game.pet.talentLevel = 0;
       if (game.pet.pendingMilestone !== "choose") game.pet.pendingMilestone = null;
@@ -1172,8 +2367,136 @@ export class SemesterGame {
       if (game.pet.pendingMilestone === "choose") game.pet.pendingMilestone = null;
     }
     if (![null, "choose", "upgrade", "master"].includes(game.pet.pendingMilestone)) game.pet.pendingMilestone = null;
-    game.cardCombatUses = data.cardCombatUses && typeof data.cardCombatUses === "object" ? { ...data.cardCombatUses } : {};
-    game.flags = { ...game.flags, ...(data.flags || {}) };
+    const deckUids = new Set(game.deck.map((card) => card.uid));
+    if (game.pendingCombatReward?.type === "eliteChain") {
+      const savedCandidateCount = game.pendingCombatReward.usedCardUids.length;
+      game.pendingCombatReward.usedCardUids = game.pendingCombatReward.usedCardUids
+        .filter((uid) => deckUids.has(uid));
+      if (game.pendingCombatReward.usedCardUids.length !== savedCandidateCount) {
+        loadRepairs.push("清理异常精英刻印候选");
+      }
+    }
+    let repairedEventCandidates = false;
+    const canRestoreEventReward = !game.awaitingNextSemester
+      && !game.pendingSemesterReward
+      && !game.pendingCombatReward
+      && !FIXED_ROUTE_WEEKS.has(game.week)
+      && savedEventReward
+      && typeof savedEventReward === "object";
+    if (canRestoreEventReward && savedEventReward.type === "card"
+      && EVENT_CARD_REWARD_SOURCES[savedEventReward.source]) {
+      const rawChoices = Array.isArray(savedEventReward.choices) ? savedEventReward.choices : [];
+      const filter = EVENT_CARD_REWARD_SOURCES[savedEventReward.source];
+      const choices = [...new Set(rawChoices)].filter((id) => {
+        const card = CARD_DEFS[id];
+        if (!card || (card.archetype && card.archetype !== game.archetypeId)) return false;
+        if (filter === "uncommon") return card.rarity === "uncommon";
+        if (filter === "attack") return card.type === "attack";
+        return card.type !== "attack" && card.type !== "status";
+      }).slice(0, 3);
+      if (choices.length) {
+        game.pendingEventReward = {
+          type: "card",
+          source: savedEventReward.source,
+          choices,
+          cardUids: [],
+          itemChoices: []
+        };
+        repairedEventCandidates = choices.length !== rawChoices.length;
+      }
+    } else if (canRestoreEventReward
+      && ["upgrade", "remove"].includes(savedEventReward.type)
+      && EVENT_DECK_REWARD_SOURCES[savedEventReward.source] === savedEventReward.type) {
+      const rawCardUids = Array.isArray(savedEventReward.cardUids) ? savedEventReward.cardUids : [];
+      const cardUids = [...new Set(rawCardUids)].filter((uid) => {
+        if (!deckUids.has(uid)) return false;
+        if (savedEventReward.type === "upgrade") {
+          const card = game.deck.find((candidate) => candidate.uid === uid);
+          return card && !card.upgraded && !["nervous", "todo"].includes(card.id);
+        }
+        return game.deck.length > 5;
+      }).slice(0, 64);
+      if (cardUids.length) {
+        game.pendingEventReward = {
+          type: savedEventReward.type,
+          source: savedEventReward.source,
+          choices: [],
+          cardUids,
+          itemChoices: []
+        };
+        repairedEventCandidates = cardUids.length !== rawCardUids.length;
+      }
+    } else if (canRestoreEventReward && savedEventReward.type === "item"
+      && EVENT_ITEM_REWARD_SOURCES.has(savedEventReward.source)) {
+      const rawItemChoices = Array.isArray(savedEventReward.itemChoices) ? savedEventReward.itemChoices : [];
+      const itemChoices = [...new Set(rawItemChoices)]
+        .filter((id) => ITEM_DEFS[id]?.rarity === "common" && !game.hasItem(id))
+        .slice(0, 1);
+      if (itemChoices.length) {
+        game.pendingEventReward = {
+          type: "item",
+          source: savedEventReward.source,
+          choices: [],
+          cardUids: [],
+          itemChoices
+        };
+        repairedEventCandidates = itemChoices.length !== rawItemChoices.length;
+      }
+    }
+    if (savedEventReward !== undefined && savedEventReward !== null && !game.pendingEventReward) {
+      loadRepairs.push("重置异常事件奖励状态");
+    } else if (repairedEventCandidates) {
+      loadRepairs.push("清理异常事件奖励候选");
+    }
+    const canRestorePendingEvent = !game.awaitingNextSemester
+      && !game.pendingSemesterReward
+      && !game.pendingCombatReward
+      && !game.pendingEventReward
+      && !game.pet.pendingMilestone
+      && !FIXED_ROUTE_WEEKS.has(game.week)
+      && game.tarotId
+      && EVENT_DEFS[data.pendingEventId];
+    if (canRestorePendingEvent) {
+      if (game.lastEventId && game.lastEventId !== data.pendingEventId) {
+        loadRepairs.push("同步当前事件与上一事件记录");
+      }
+      game.pendingEventId = data.pendingEventId;
+      game.lastEventId = data.pendingEventId;
+    } else if (data.pendingEventId !== undefined && data.pendingEventId !== null) {
+      loadRepairs.push("重置异常待处理事件");
+    }
+    const savedUseEntries = data.cardCombatUses && typeof data.cardCombatUses === "object"
+      ? Object.entries(data.cardCombatUses)
+      : [];
+    game.cardCombatUses = data.cardCombatUses && typeof data.cardCombatUses === "object"
+      ? Object.fromEntries(
+        savedUseEntries
+          .filter(([uid]) => deckUids.has(uid))
+          .map(([uid, count]) => [uid, nonNegativeInteger(count)])
+      )
+      : {};
+    if (savedUseEntries.length !== Object.keys(game.cardCombatUses).length
+      || savedUseEntries.some(([uid, count]) => deckUids.has(uid) && count !== nonNegativeInteger(count))) {
+      loadRepairs.push("清理异常卡牌使用记录");
+    }
+    const savedFlags = data.flags && typeof data.flags === "object" ? data.flags : {};
+    game.flags = {
+      nextCombatTension: nonNegativeInteger(savedFlags.nextCombatTension),
+      nextEnemyBlock: nonNegativeInteger(savedFlags.nextEnemyBlock),
+      petSnackCombats: nonNegativeInteger(savedFlags.petSnackCombats),
+      nextShopHalf: savedFlags.nextShopHalf === true,
+      eraserUsed: savedFlags.eraserUsed === true,
+      tarotRestUsed: savedFlags.tarotRestUsed === true
+    };
+    const numericFlagKeys = ["nextCombatTension", "nextEnemyBlock", "petSnackCombats"];
+    const booleanFlagKeys = ["nextShopHalf", "eraserUsed", "tarotRestUsed"];
+    const knownFlagKeys = new Set([...numericFlagKeys, ...booleanFlagKeys]);
+    const flagsRepaired = numericFlagKeys.some((key) => Object.hasOwn(savedFlags, key)
+      && savedFlags[key] !== game.flags[key])
+      || booleanFlagKeys.some((key) => Object.hasOwn(savedFlags, key)
+        && (typeof savedFlags[key] !== "boolean" || savedFlags[key] !== game.flags[key]))
+      || Object.keys(savedFlags).some((key) => !knownFlagKeys.has(key));
+    if (flagsRepaired) loadRepairs.push("清理异常临时状态");
     game.rewardIndex = Math.max(0, Number(data.rewardIndex) || 0);
     game.tutorialSeen = Boolean(data.tutorialSeen);
     const savedRngState = game.rng.state;
@@ -1184,10 +2507,7 @@ export class SemesterGame {
       const numericStats = Object.fromEntries(
         Object.entries(defaults)
           .filter(([, value]) => typeof value === "number")
-          .map(([key]) => {
-            const value = Number(data.stats[key]);
-            return [key, Number.isFinite(value) ? Math.max(0, Math.floor(value)) : defaults[key]];
-          })
+          .map(([key]) => [key, nonNegativeInteger(data.stats[key], defaults[key])])
       );
       game.stats = {
         ...defaults,
@@ -1196,32 +2516,133 @@ export class SemesterGame {
           ? Object.fromEntries(
             Object.entries(data.stats.cardPlays)
               .filter(([id]) => CARD_DEFS[id])
-              .map(([id, count]) => {
-                const value = Number(count);
-                return [id, Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0];
-              })
+              .map(([id, count]) => [id, nonNegativeInteger(count)])
           )
           : {},
         tarotChoices: Object.fromEntries(
           TAROT_IDS.map((id) => [
             id,
-            Number.isFinite(Number(data.stats.tarotChoices?.[id]))
-              ? Math.max(0, Math.floor(Number(data.stats.tarotChoices[id])))
-              : 0
+            nonNegativeInteger(data.stats.tarotChoices?.[id])
           ])
         ),
         challengeRewardChoices: Object.fromEntries(
           Object.keys(CHALLENGE_REWARD_DEFS).map((id) => [
             id,
-            Number.isFinite(Number(data.stats.challengeRewardChoices?.[id]))
-              ? Math.max(0, Math.floor(Number(data.stats.challengeRewardChoices[id])))
-              : 0
+            nonNegativeInteger(data.stats.challengeRewardChoices?.[id])
           ])
         )
       };
     }
+    if (savedItemReplacement !== undefined && savedItemReplacement !== null) {
+      let restoredItemReplacement = null;
+      const incoming = savedItemReplacement?.incoming;
+      const source = savedItemReplacement?.source;
+      const sourceIsValid = ["combat", "event", "semester"].includes(source)
+        && game.itemRewardSourceFor(incoming) === source;
+      const canRestoreItemReplacement = sourceIsValid && ITEM_DEFS[incoming]
+        && !game.hasItem(incoming) && game.items.length >= game.backpackCapacity
+        && !game.pendingCombatStart && !game.pendingEventId && !game.pet.pendingMilestone
+        && (savedCombatStart === undefined || savedCombatStart === null)
+        && (savedShop === undefined || savedShop === null)
+        && (savedRest === undefined || savedRest === null);
+      if (canRestoreItemReplacement) restoredItemReplacement = { incoming, source };
+      game.pendingItemReplacement = restoredItemReplacement;
+      if (!restoredItemReplacement) loadRepairs.push("重置异常物品替换状态");
+    }
+    if (savedShop !== undefined && savedShop !== null) {
+      let restoredShop = null;
+      const rawCards = Array.isArray(savedShop?.cards) ? savedShop.cards : [];
+      const rawItems = Array.isArray(savedShop?.items) ? savedShop.items : [];
+      const cards = rawCards.filter((stock) => stock && typeof stock.sold === "boolean"
+        && CARD_DEFS[stock.id] && (!CARD_DEFS[stock.id].archetype || CARD_DEFS[stock.id].archetype === game.archetypeId))
+        .map((stock) => ({ id: stock.id, sold: stock.sold }));
+      const items = rawItems.filter((stock) => stock && typeof stock.sold === "boolean"
+        && ITEM_DEFS[stock.id] && ITEM_DEFS[stock.id].rarity !== "boss")
+        .map((stock) => ({ id: stock.id, sold: stock.sold }));
+      const cardIds = new Set(cards.map((stock) => stock.id));
+      const itemIds = new Set(items.map((stock) => stock.id));
+      const cardPoolIsValid = cards.length === 3 && cardIds.size === 3
+        && cards.filter((stock) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(stock.id)).length === 1
+        && cards.filter((stock) => PUBLIC_REWARD_CARD_IDS.includes(stock.id)).length === 2;
+      const itemPoolIsValid = items.length <= 2 && itemIds.size === items.length
+        && items.every((stock) => stock.sold ? game.hasItem(stock.id) : !game.hasItem(stock.id));
+      const canRestoreShop = !game.awaitingNextSemester && !game.pendingSemesterReward
+        && !game.pendingCombatReward && !game.pendingEventReward && !game.pendingEventId
+        && !game.pet.pendingMilestone && (savedCombatStart === undefined || savedCombatStart === null)
+        && !FIXED_ROUTE_WEEKS.has(game.week) && game.tarotId
+        && game.semesterPlan[game.week]?.some((node) => node.type === "shop")
+        && savedShop.removePrice === 75 + (game.semester - 1) * 15
+        && typeof savedShop.removed === "boolean" && cardPoolIsValid && itemPoolIsValid;
+      if (canRestoreShop) {
+        restoredShop = {
+          cards,
+          items,
+          removePrice: savedShop.removePrice,
+          removed: savedShop.removed
+        };
+      }
+      game.pendingShop = restoredShop;
+      if (!restoredShop) loadRepairs.push("重置异常商店状态");
+    }
+    if (savedRest !== undefined && savedRest !== null) {
+      let restoredRest = null;
+      const stage = typeof savedRest?.stage === "string" ? savedRest.stage : "";
+      const rawCardUids = Array.isArray(savedRest?.cardUids) ? savedRest.cardUids : [];
+      const uniqueCardUids = [...new Set(rawCardUids)].filter((uid) => deckUids.has(uid));
+      let expectedCardUids = null;
+      let stageIsValid = false;
+      let restDetails = {};
+      if (stage === "choice") {
+        expectedCardUids = [];
+        stageIsValid = true;
+      } else if (stage === "upgrade") {
+        expectedCardUids = game.deck.filter((card) => !card.upgraded).map((card) => card.uid);
+        stageIsValid = expectedCardUids.length > 0;
+      } else if (stage === "pet") {
+        expectedCardUids = [];
+        stageIsValid = Boolean(game.pet.pendingMilestone) && savedRest.bond === 2 && savedRest.healed === 0;
+        restDetails = { bond: 2, healed: 0 };
+      } else if (stage === "tarotRemove") {
+        expectedCardUids = game.deck.map((card) => card.uid);
+        stageIsValid = game.tarot?.rest.action === "remove" && game.flags.tarotRestUsed && game.deck.length > 5;
+      } else if (stage === "tarotUpgrade") {
+        expectedCardUids = game.deck.filter((card) => !card.upgraded).map((card) => card.uid);
+        stageIsValid = game.tarot?.rest.action === "upgrade" && game.flags.tarotRestUsed && expectedCardUids.length > 0;
+      } else if (stage === "tarotBond") {
+        expectedCardUids = [];
+        stageIsValid = game.tarot?.rest.action === "bond" && game.flags.tarotRestUsed
+          && Boolean(game.pet.pendingMilestone) && savedRest.bond === game.tarot.rest.bond
+          && Number.isInteger(savedRest.healed) && savedRest.healed >= 0
+          && savedRest.healed <= game.tarot.rest.heal;
+        restDetails = { bond: savedRest.bond, healed: savedRest.healed };
+      }
+      const candidateSetIsValid = expectedCardUids !== null
+        && rawCardUids.length === expectedCardUids.length
+        && uniqueCardUids.length === expectedCardUids.length
+        && expectedCardUids.every((uid) => uniqueCardUids.includes(uid));
+      const milestoneStateIsValid = ["pet", "tarotBond"].includes(stage)
+        ? Boolean(game.pet.pendingMilestone)
+        : !game.pet.pendingMilestone;
+      const canRestoreRest = !game.awaitingNextSemester && !game.pendingSemesterReward
+        && !game.pendingCombatReward && !game.pendingCombatStart && !game.pendingEventReward
+        && !game.pendingEventId && !game.pendingShop
+        && (savedCombatStart === undefined || savedCombatStart === null)
+        && !FIXED_ROUTE_WEEKS.has(game.week) && game.tarotId
+        && game.semesterPlan[game.week]?.some((node) => node.type === "rest")
+        && stageIsValid && candidateSetIsValid && milestoneStateIsValid;
+      if (canRestoreRest) restoredRest = { stage, cardUids: [...expectedCardUids], ...restDetails };
+      game.pendingRest = restoredRest;
+      if (!restoredRest) loadRepairs.push("重置异常休息节点状态");
+    }
+    if (savedCombatStart !== undefined && savedCombatStart !== null) {
+      const restoredCombatStart = savedCombatStart && typeof savedCombatStart === "object"
+        ? game.prepareCombatStart(savedCombatStart.enemyId, savedCombatStart.outcome, savedCombatStart.modifiers)
+        : null;
+      if (!restoredCombatStart) loadRepairs.push("重置异常战斗开局检查点");
+    }
     game.completedNodes = new Set();
     game.combat = null;
+    game.loadRepairs = loadRepairs;
     return game;
   }
 
