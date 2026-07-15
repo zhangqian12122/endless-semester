@@ -795,11 +795,126 @@ function enemyBattleMotionProfile(feedback) {
   if (feedback?.enemyId === "rivalShadow" && attacksPlayer) return "rival-rush";
   if (feedback?.enemyId === "finalExam" && attacksPlayer) return "final-exam-smash";
   if (feedback?.enemyId === "finalExam" && /^发卷/.test(feedback?.intentName || "")) return "final-exam-deal";
+  const regularProfiles = {
+    sleepyBug: "sleepy-sway",
+    homeworkBlob: "blob-squash",
+    alarmClock: "alarm-ring",
+    phoneSpirit: "phone-vibrate",
+    groupChat: "chat-pop",
+    printerJam: "printer-feed"
+  };
+  if (regularProfiles[feedback?.enemyId]) return regularProfiles[feedback.enemyId];
   return attacksPlayer ? "default-attack" : "default-skill";
+}
+
+function regularEnemyBattleMotionRecipe(profile, attacksPlayer) {
+  const recipes = {
+    "sleepy-sway": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 6, y: 4, rotation: 4, scaleX: .96, scaleY: 1.03, duration: .14, ease: "sine.inOut" } },
+          { position: "windup+=.14", vars: { x: -24, y: 2, rotation: -5, scaleX: 1.04, scaleY: .97, duration: .12, ease: "power2.in" } }
+        ],
+        impactAt: .26, settleDelay: .05, settleDuration: .16
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { x: 4, y: 5, rotation: 3, scaleX: .94, scaleY: .9, duration: .17, ease: "sine.inOut" } },
+          { position: "windup+=.17", vars: { x: 0, y: 2, rotation: 0, scaleX: 1.02, scaleY: 1.03, duration: .09, ease: "power1.out" } }
+        ],
+        impactAt: .26, settleDelay: 0, settleDuration: .14
+      }
+    },
+    "blob-squash": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 5, y: 6, rotation: 2, scaleX: 1.1, scaleY: .88, duration: .11, ease: "power2.in" } },
+          { position: "windup+=.11", vars: { x: -30, y: 0, rotation: -3, scaleX: 1.14, scaleY: .9, duration: .13, ease: "power3.in" } }
+        ],
+        impactAt: .24, settleDelay: .05, settleDuration: .17
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { y: -7, rotation: -1, scaleX: .92, scaleY: 1.15, duration: .17, ease: "power2.out" } },
+          { position: "windup+=.17", vars: { y: 0, rotation: 0, scaleX: 1.03, scaleY: .98, duration: .09, ease: "back.out(1.3)" } }
+        ],
+        impactAt: .26, settleDelay: 0, settleDuration: .14
+      }
+    },
+    "alarm-ring": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 3, rotation: 5, scale: .98, duration: .07, ease: "power1.inOut" } },
+          { position: "windup+=.07", vars: { x: -3, rotation: -6, scale: 1.02, duration: .07, ease: "power1.inOut" } },
+          { position: "windup+=.14", vars: { x: -28, rotation: -3, scale: 1.06, duration: .11, ease: "power4.in" } }
+        ],
+        impactAt: .25, settleDelay: .05, settleDuration: .17
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { y: 3, rotation: -3, scale: .96, duration: .11, ease: "power1.inOut" } },
+          { position: "windup+=.11", vars: { y: -2, rotation: 3, scale: 1.04, duration: .1, ease: "power1.inOut" } }
+        ],
+        impactAt: .21, settleDelay: 0, settleDuration: .15
+      }
+    },
+    "phone-vibrate": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 4, rotation: 2, duration: .05, ease: "power1.inOut" } },
+          { position: "windup+=.05", vars: { x: -5, rotation: -2, duration: .05, ease: "power1.inOut" } },
+          { position: "windup+=.1", vars: { x: -27, rotation: -3, scaleX: 1.06, duration: .12, ease: "power3.in" } }
+        ],
+        impactAt: .22, settleDelay: .05, settleDuration: .16
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { y: -4, rotation: 2, scale: 1.06, duration: .11, ease: "power2.out" } },
+          { position: "windup+=.11", vars: { x: -5, y: 0, rotation: -3, scaleX: 1.04, duration: .1, ease: "power2.inOut" } }
+        ],
+        impactAt: .21, settleDelay: 0, settleDuration: .15
+      }
+    },
+    "chat-pop": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 7, y: -2, scaleX: .92, scaleY: 1.04, duration: .1, ease: "power2.in" } },
+          { position: "windup+=.1", vars: { x: -29, y: 0, rotation: -3, scaleX: 1.09, scaleY: .94, duration: .12, ease: "power3.in" } }
+        ],
+        impactAt: .22, settleDelay: .05, settleDuration: .17
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { y: -6, rotation: 2, scale: 1.11, duration: .11, ease: "back.out(1.35)" } },
+          { position: "windup+=.11", vars: { x: -5, y: 0, rotation: -2, scale: 1.04, duration: .1, ease: "power2.inOut" } }
+        ],
+        impactAt: .21, settleDelay: 0, settleDuration: .15
+      }
+    },
+    "printer-feed": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 8, y: 3, rotation: 2, scaleX: .9, scaleY: 1.06, duration: .13, ease: "power2.in" } },
+          { position: "windup+=.13", vars: { x: -34, y: 0, rotation: -4, scaleX: 1.1, scaleY: .92, duration: .13, ease: "power4.in" } }
+        ],
+        impactAt: .26, settleDelay: .05, settleDuration: .18
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { y: 5, rotation: 2, scaleX: 1.07, scaleY: .9, duration: .14, ease: "power2.in" } },
+          { position: "windup+=.14", vars: { y: -4, rotation: -1, scaleX: .95, scaleY: 1.08, duration: .1, ease: "power2.out" } }
+        ],
+        impactAt: .24, settleDelay: 0, settleDuration: .16
+      }
+    }
+  };
+  return recipes[profile]?.[attacksPlayer ? "attack" : "skill"] || null;
 }
 
 function addEnemyBattleMotion(timeline, attacker, feedback) {
   const profile = enemyBattleMotionProfile(feedback);
+  const attacksPlayer = feedback?.motionType === "enemy-attack"
+    || Boolean(feedback?.playerDamage || feedback?.playerBlockAbsorbed);
 
   if (attacker && profile === "rival-rush") {
     timeline.to(attacker, { x: -52, rotation: -3, scaleX: 1.04, filter: "brightness(1.08)", duration: .11, ease: "power4.in" }, "windup+=.04");
@@ -827,6 +942,24 @@ function addEnemyBattleMotion(timeline, attacker, feedback) {
     );
     timeline.addLabel("impact", .16);
     timeline.to(attacker, { x: 0, scaleX: 1, scaleY: 1, rotation: 0, opacity: 1, duration: .14, ease: "back.out(1.4)", clearProps: "transform,opacity" }, "impact");
+    return profile;
+  }
+
+  const regularRecipe = regularEnemyBattleMotionRecipe(profile, attacksPlayer);
+  if (attacker && regularRecipe) {
+    regularRecipe.steps.forEach((step) => timeline.to(attacker, step.vars, step.position));
+    timeline.addLabel("impact", regularRecipe.impactAt);
+    timeline.to(attacker, {
+      x: 0,
+      y: 0,
+      rotation: 0,
+      scale: 1,
+      scaleX: 1,
+      scaleY: 1,
+      duration: regularRecipe.settleDuration,
+      ease: "power2.out",
+      clearProps: "transform"
+    }, `impact+=${regularRecipe.settleDelay}`);
     return profile;
   }
 
