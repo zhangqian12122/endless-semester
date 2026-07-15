@@ -86,7 +86,7 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
     cancer: jiahaoAsset
   };
   const enemyAssets = {
-    sleepyBug: "assets/characters/enemy-sleepyBug-v3b.webp",
+    sleepyBug: "assets/characters/enemy-sleepyBug-v1.webp",
     homeworkBlob: "assets/characters/enemy-homeworkBlob-v1.webp",
     alarmClock: "assets/characters/enemy-alarmClock-v1.webp"
   };
