@@ -1219,6 +1219,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .battle-center { grid-column: auto; grid-row: auto; min-height: 0; }
   .fighter { grid-row: auto; }
   .combat-controls { gap: 8px; }
+  .combat-action-dock .hand .game-card { flex-basis: 146px; width: 146px; transform: none; }
+  .combat-action-dock .hand:has(.game-card:nth-child(8)) .game-card { flex-basis: 132px; width: 132px; margin-right: -60px; }
 }
 
 @media (max-width: 620px) {
@@ -1301,7 +1303,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-shortcut-guide, .card-shortcut, .control-shortcut { display: none; }
   .energy-orb { width: 58px; height: 58px; }
   .pet-companion-token { bottom: calc(100% + 7px); }
-  .pet-companion-tooltip { position: fixed; right: 12px; bottom: 12px; left: 12px; width: auto; transform: translateY(8px); }
+  .pet-companion-tooltip { position: absolute; top: auto; right: auto; bottom: calc(100% + 8px); left: 0; width: min(350px, calc(100vw - 32px)); transform: translateY(8px); }
   .pet-companion-token:is(:hover, :focus-visible, :focus-within) .pet-companion-tooltip { transform: translateY(0); }
   .combat-passive-tooltip { position: fixed; top: auto; right: 12px; bottom: 12px; left: 12px; width: auto; transform: translateY(8px); }
   .combat-passive-tooltip::before { display: none; }
