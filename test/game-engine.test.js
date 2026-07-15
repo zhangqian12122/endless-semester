@@ -109,16 +109,18 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
     jiahao: jiahaoAsset,
     duckBattle: duckAssets.battle,
     duckIcon: duckAssets.icon,
-    sleepyBug: enemyAssets.sleepyBug
+    ...enemyAssets
   })) {
     const assetUrl = new URL(`../${asset}`, import.meta.url);
     assert.match(asset, /\.webp$/, `${label} 的运行资产必须使用 WebP`);
     assert.ok(existsSync(assetUrl), `${label} 正式 WebP 文件不存在`);
     assert.ok(statSync(assetUrl).size > 0, `${label} 正式 WebP 文件不能为空`);
     assert.ok(statSync(assetUrl).size <= 200 * 1024, `${label} 正式 WebP 文件超过 200KB`);
-    const header = readFileSync(assetUrl).subarray(0, 12);
+    const assetBytes = readFileSync(assetUrl);
+    const header = assetBytes.subarray(0, 12);
     assert.equal(header.subarray(0, 4).toString("ascii"), "RIFF", `${label} 素材不是有效 WebP 容器`);
     assert.equal(header.subarray(8, 12).toString("ascii"), "WEBP", `${label} 素材缺少 WebP 文件标识`);
+    assert.ok(assetBytes.includes(Buffer.from("ALPH")) || assetBytes.includes(Buffer.from("VP8L")), `${label} 必须包含透明通道`);
   }
 
   assert.match(appSource, /function characterAssetHtml\(src, className = "character-asset", alt = ""\)/);
@@ -137,6 +139,9 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
   assert.match(styles, /\.pet-icon-asset\s*\{/);
   assert.match(styles, /\.pet-icon-fallback\s*\{/);
   assert.match(styles, /\.enemy-sleepyBug\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*144%/, "瞌睡虫横向立绘需要独立放大以保持战场辨识度");
+  assert.match(styles, /\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*132%[^}]*object-position:\s*center bottom/, "作业团需要独立横向放大并落在战场地面");
+  assert.match(styles, /\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*132%[^}]*object-position:\s*center bottom/, "闹钟怪需要按自身透明边距放大并落在战场地面");
+  assert.match(styles, /@media \(max-width:\s*700px\)[\s\S]*?\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset[\s\S]*?\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset/, "两名新敌人需要独立的移动端收缩规则");
 
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];
