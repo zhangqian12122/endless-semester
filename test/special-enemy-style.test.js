@@ -14,7 +14,7 @@ function rule(selector) {
 test("special enemy progress stays in the enemy fighter overlay layer", () => {
   const base = rule(".enemy-mechanic-progress");
   assert.match(base, /position:\s*absolute/);
-  assert.match(base, /top:\s*38px/);
+  assert.match(base, /top:\s*0/);
   assert.match(base, /right:\s*-48px/);
   assert.match(base, /width:\s*112px/);
   assert.match(base, /pointer-events:\s*none/);
@@ -50,8 +50,10 @@ test("four-cell track preserves completed and current states", () => {
 test("mobile progress remains compact while keeping its label and four cells", () => {
   const mobile = styles.match(/@media \(max-width: 700px\)\s*\{([\s\S]*)\n\}/);
   assert.ok(mobile, "missing mobile breakpoint");
-  assert.match(mobile[1], /\.enemy-mechanic-progress\s*\{[^}]*top:\s*42px[^}]*right:\s*0[^}]*width:\s*78px[^}]*\}/);
-  assert.match(mobile[1], /\.enemy-mechanic-progress > span em\s*\{[^}]*font-size:\s*6px[^}]*\}/);
+  assert.match(mobile[1], /\.enemy-fighter:has\(\.enemy-mechanic-progress\) \.fighter-label\s*\{[^}]*transform:\s*translateX\(-58px\)[^}]*\}/);
+  assert.match(mobile[1], /\.enemy-mechanic-progress\s*\{[^}]*top:\s*0[^}]*right:\s*0[^}]*width:\s*96px[^}]*\}/);
+  assert.match(mobile[1], /\.enemy-mechanic-progress > span b\s*\{[^}]*font-size:\s*9px[^}]*\}/);
+  assert.match(mobile[1], /\.enemy-mechanic-progress > span em\s*\{[^}]*font-size:\s*8px[^}]*\}/);
   assert.doesNotMatch(mobile[1], /\.enemy-mechanic-progress > span em\s*\{[^}]*display:\s*none/);
   assert.match(rule(".mechanic-progress-track"), /repeat\(4,/);
 });

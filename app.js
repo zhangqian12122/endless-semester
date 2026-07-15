@@ -18,7 +18,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -546,6 +546,25 @@ function enemyIntentTokenHtml(intent, resolution = null) {
       <em class="intent-detail-hint">${pinned ? "点击关闭 · Esc 也可关闭" : "点击可固定说明"}</em>
     </span>
   </button>`;
+}
+
+function enemyMechanicProgressHtml(enemy, resolution = null) {
+  const intentTurn = resolution ? Math.max(0, resolution.turn - 1) : enemy?.intentTurn;
+  const progress = enemyMechanicProgress(enemy?.id, intentTurn);
+  if (!progress) return "";
+  const segments = progress.segments.map((state) => {
+    const stateClass = state === "done"
+      ? "is-complete"
+      : ["current", "continuing"].includes(state)
+      ? `is-current${state === "continuing" ? " is-continuing" : ""}`
+      : "";
+    return `<b class="${stateClass}" aria-hidden="true"></b>`;
+  }).join("");
+  const ariaLabel = `${progress.title}。${progress.label}。${progress.detail}`;
+  return `<aside class="enemy-mechanic-progress kind-${escapeHtml(enemy.id)}" data-progress-kind="${escapeHtml(progress.kind)}" aria-label="${escapeHtml(ariaLabel)}">
+    <span><b>${escapeHtml(progress.title)}</b><em>${escapeHtml(progress.label)}</em></span>
+    <i class="mechanic-progress-track" aria-hidden="true">${segments}</i>
+  </aside>`;
 }
 
 function setIntentDetailsOpen(button, open) {
@@ -1301,6 +1320,7 @@ function renderCombat() {
       <section class="fighter enemy-fighter">
         <div class="fighter-label"><span>${combat.enemy.name}</span></div>
         ${enemyIntentTokenHtml(intent, enemyResolution)}
+        ${enemyMechanicProgressHtml(combat.enemy, enemyResolution)}
         ${renderEnemyAvatar(combat.enemy)}
         <div class="combat-vitals enemy-vitals">
           <span class="block-shield ${combat.enemy.block > 0 ? "has-block" : "is-empty"}" aria-label="敌人当前护甲 ${combat.enemy.block}"><b>${combat.enemy.block}</b></span>

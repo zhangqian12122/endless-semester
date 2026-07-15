@@ -666,7 +666,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   --mechanic-surface-bottom: rgba(23,27,39,.72);
   position: absolute;
   z-index: 7;
-  top: 38px;
+  top: 0;
   right: -48px;
   display: grid;
   gap: 5px;
@@ -704,6 +704,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .mechanic-progress-track > b.is-current { border-color: var(--mechanic-current); background: var(--mechanic-current); box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 0 7px color-mix(in srgb, var(--mechanic-current) 68%, transparent); }
 .enemy-mechanic-progress.kind-finalExam .mechanic-progress-track > b { border-radius: 1px; }
 .combat-board.enemy-resolving .enemy-mechanic-progress { will-change: transform; }
+.combat-board.enemy-resolving .enemy-avatar { will-change: transform, filter; }
 .enemy-intent-token { position: absolute; z-index: 8; top: 40px; left: 31%; display: grid; justify-items: center; gap: 3px; min-width: 74px; padding: 0; color: #eee8dc; border: 0; outline: 0; background: transparent; box-shadow: none; font: inherit; text-align: center; cursor: help; appearance: none; transform: translateX(-50%); }
 .enemy-intent-chips { display: flex; justify-content: center; gap: 4px; }
 .intent-chip { display: grid; grid-template-columns: 18px auto; align-items: center; min-height: 24px; overflow: hidden; color: #f0c7bc; border: 1px solid rgba(220,111,94,.42); border-radius: 12px; background: rgba(116,48,42,.36); font-style: normal; }
@@ -1589,9 +1590,10 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .battle-pet { right: -36px; bottom: 19px; width: 76px; height: 90px; }
   .enemy-finalExam { width: 132px; }
   .fighter-label { flex-direction: column; gap: 2px; }
-  .enemy-mechanic-progress { top: 42px; right: 0; gap: 3px; width: 78px; padding: 4px 5px; border-radius: 5px; }
-  .enemy-mechanic-progress > span b { font-size: 7px; }
-  .enemy-mechanic-progress > span em { font-size: 6px; letter-spacing: 0; }
+  .enemy-fighter:has(.enemy-mechanic-progress) .fighter-label { transform: translateX(-58px); }
+  .enemy-mechanic-progress { top: 0; right: 0; gap: 4px; width: 96px; padding: 5px 6px; border-radius: 6px; }
+  .enemy-mechanic-progress > span b { font-size: 9px; }
+  .enemy-mechanic-progress > span em { font-size: 8px; letter-spacing: 0; }
   .mechanic-progress-track { gap: 2px; }
   .mechanic-progress-track > b { height: 4px; }
   .enemy-intent-detail { top: -8px; right: calc(100% + 7px); width: min(210px, 50vw); padding: 10px 11px 9px; }
