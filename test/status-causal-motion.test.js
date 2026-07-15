@@ -39,35 +39,80 @@ test("走神、待办和紧张共享单个带身份与数量的因果飞行体",
   assert.match(ghostSource, /ghost\.dataset\.count = String\(effectCount\)/);
   assert.match(ghostSource, /effectCount > 1 \? " is-multiple"/);
   assert.match(ghostSource, /ghost\.setAttribute\("aria-hidden", "true"\)/);
-  assert.match(ghostSource, /ghost\.innerHTML = `<b>\$\{effectSymbols\[effectId\] \|\| ""\}<\/b>`/);
+  assert.match(ghostSource, /ghost\.innerHTML = `<b>\$\{effectSymbols\[effectId\] \|\| ""\}<\/b><small>×\$\{effectCount\}<\/small>`/);
   assert.match(runSource, /\(feedback\.causalEffects \|\| \[\]\)\.map\(\(effect\) => \(\{[\s\S]*?createBattleCausalGhost\(effect\)/);
   assert.doesNotMatch(ghostSource, /for \(|Array\.from\(/, "数量大于 1 时也只能创建一个飞行体");
 });
 
-test("状态飞行命中手牌或牌堆并经两段走廊绕开战场中心", () => {
+function routeSegments(start, route) {
+  const points = [start, ...route.points];
+  return points.slice(1).map((point, index) => [points[index], point]);
+}
+
+function segmentHitsRect([from, to], rect) {
+  if (Math.abs(from.x - to.x) < .01) {
+    return from.x >= rect.left && from.x <= rect.right
+      && Math.max(Math.min(from.y, to.y), rect.top) <= Math.min(Math.max(from.y, to.y), rect.bottom);
+  }
+  return from.y >= rect.top && from.y <= rect.bottom
+    && Math.max(Math.min(from.x, to.x), rect.left) <= Math.min(Math.max(from.x, to.x), rect.right);
+}
+
+test("状态飞行根据真实 HUD 障碍选择无碰撞折线路径", () => {
   const routeSource = namedFunctionSource("battleCausalRoute");
   const route = new Function(`${routeSource}; return battleCausalRoute;`)();
-  const sample = route(900, 240, 180, 610);
-  const directY = 240 + (610 - 240) * ((sample.corridorX - 900) / (180 - 900));
+  const desktopBlockers = [
+    { left: 745, top: 342, right: 965, bottom: 382 },
+    { left: 290, top: 342, right: 535, bottom: 382 },
+    { left: 470, top: 250, right: 540, bottom: 350 },
+    { left: 40, top: 426, right: 110, bottom: 484 },
+    { left: 1098, top: 426, right: 1230, bottom: 484 },
+    { left: 300, top: 484, right: 980, bottom: 720 }
+  ];
+  const desktop = route(855, 271, 69, 664, {
+    viewport: { width: 1280, height: 720 },
+    blockers: desktopBlockers
+  });
+  assert.equal(desktop.collisions, 0);
+  assert.deepEqual(desktop.points.at(-1), { x: 69, y: 664 });
+  assert.ok(routeSegments({ x: 855, y: 271 }, desktop)
+    .every((segment, index, segments) => desktopBlockers.every((rect) => index === segments.length - 1
+      || !segmentHitsRect(segment, { left: rect.left - 13, top: rect.top - 13, right: rect.right + 13, bottom: rect.bottom + 13 }))));
 
-  assert.ok(sample.corridorX < 900 && sample.corridorX > 180);
-  assert.ok(sample.corridorY > directY + 100, "走廊节点应明显偏离穿过中心的直线路径");
+  const mobile = route(288, 227, 195, 732, {
+    viewport: { width: 390, height: 844 },
+    blockers: [
+      { left: 212, top: 317, right: 362, bottom: 337 },
+      { left: 129, top: 241, right: 191, bottom: 315 },
+      { left: 10, top: 499, right: 62, bottom: 553 },
+      { left: 7, top: 560, right: 65, bottom: 618 },
+      { left: 108, top: 560, right: 156, bottom: 614 },
+      { left: 164, top: 560, right: 212, bottom: 614 },
+      { left: 251, top: 560, right: 383, bottom: 615 },
+      { left: 157, top: 624, right: 302, bottom: 840 }
+    ]
+  });
+  assert.equal(mobile.collisions, 0);
+  assert.deepEqual(mobile.points.at(-1), { x: 195, y: 732 });
+  assert.ok(routeSegments({ x: 288, y: 227 }, mobile)
+    .every((segment) => !segmentHitsRect(segment, { left: 238, top: 547, right: 396, bottom: 628 })));
 
   const runSource = namedFunctionSource("runBattleMotion");
   assert.match(runSource, /entry\.effect\.target === "hand"[\s\S]*?app\.querySelector\("\.hand"\)/);
   assert.match(runSource, /\.pile-button\[data-zone="\$\{entry\.effect\.target\}"\]/);
-  assert.match(runSource, /x: motion\.corridorX, y: motion\.corridorY[\s\S]*?duration: \.13/);
-  assert.match(runSource, /x: motion\.endX, y: motion\.endY[\s\S]*?duration: \.15/);
+  assert.match(runSource, /routeBlockers = \[\.\.\.app\.querySelectorAll/);
+  assert.match(runSource, /"\.end-turn"[\s\S]*?"\.hand \.game-card"/);
+  assert.match(runSource, /motion\.points\.forEach\(\(point, pointIndex\) =>/);
 });
 
-test("因果飞行不争用 scale 且在 impact 后 0.36 秒内收口", () => {
+test("因果飞行按路径长度分配固定 0.28 秒且不争用 scale", () => {
   const runSource = namedFunctionSource("runBattleMotion");
 
   assert.match(runSource, /const startAt = "impact"/);
   assert.match(runSource, /scale: \.78, autoAlpha: 1, duration: \.07/);
-  assert.match(runSource, /x: motion\.corridorX, y: motion\.corridorY, rotation:[^}]*duration: \.13/);
-  assert.match(runSource, /x: motion\.endX, y: motion\.endY, rotation:[^}]*duration: \.15/);
-  assert.doesNotMatch(runSource, /x: motion\.(?:corridorX|endX)[^}]*scale:/, "位移 tween 不应同时争用 scale");
-  assert.match(runSource, /scale: 1\.05, autoAlpha: 0, duration: \.06 \}, `\$\{startAt\}\+=\.28`/);
-  assert.match(runSource, /duration: \.06, clearProps: "transform" \}, `\$\{startAt\}\+=\.3`/);
+  assert.match(runSource, /const routeDuration = \.28/);
+  assert.match(runSource, /const duration = routeDuration \* segmentDistance \/ routeDistance/);
+  assert.doesNotMatch(runSource, /x: point\.x[^}]*scale:/, "位移 tween 不应同时争用 scale");
+  assert.match(runSource, /scale: 1\.05, autoAlpha: 0, duration: \.06 \}, `\$\{startAt\}\+=\$\{routeDuration\}`/);
+  assert.match(runSource, /clearProps: "transform" \}, `\$\{startAt\}\+=\$\{routeDuration \+ \.02\}`/);
 });

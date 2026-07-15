@@ -691,19 +691,93 @@ function createBattleCausalGhost(effect) {
   ghost.dataset.effectId = effectId;
   ghost.dataset.count = String(effectCount);
   ghost.setAttribute("aria-hidden", "true");
-  ghost.innerHTML = `<b>${effectSymbols[effectId] || ""}</b>`;
+  ghost.innerHTML = `<b>${effectSymbols[effectId] || ""}</b><small>×${effectCount}</small>`;
   document.body.append(ghost);
   return ghost;
 }
 
-function battleCausalRoute(startX, startY, endX, endY) {
-  const horizontalDistance = endX - startX;
-  const direction = Math.sign(horizontalDistance) || -1;
-  const corridorX = startX + direction * Math.min(72, Math.max(36, Math.abs(horizontalDistance) * .22));
-  const corridorY = endY >= startY
-    ? Math.max(startY + 24, endY - 34)
-    : Math.min(startY - 24, endY + 34);
-  return { corridorX, corridorY, endX, endY };
+function battleCausalRoute(startX, startY, endX, endY, options = {}) {
+  const viewportWidth = Math.max(320, Number(options.viewport?.width) || 1280);
+  const viewportHeight = Math.max(480, Number(options.viewport?.height) || 720);
+  const clearance = 13;
+  const clamp = (value, minimum, maximum) => Math.min(maximum, Math.max(minimum, value));
+  const normalizedRect = (rect) => {
+    const left = Number(rect?.left);
+    const top = Number(rect?.top);
+    const right = Number(rect?.right);
+    const bottom = Number(rect?.bottom);
+    if (![left, top, right, bottom].every(Number.isFinite) || right <= left || bottom <= top) return null;
+    return { left: left - clearance, top: top - clearance, right: right + clearance, bottom: bottom + clearance };
+  };
+  const blockers = (Array.isArray(options.blockers) ? options.blockers : []).map(normalizedRect).filter(Boolean);
+  const pointInside = (point, rect) => point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+  const segmentHits = (from, to, rect) => {
+    if (Math.abs(from.x - to.x) < .01) {
+      return from.x >= rect.left && from.x <= rect.right
+        && Math.max(Math.min(from.y, to.y), rect.top) <= Math.min(Math.max(from.y, to.y), rect.bottom);
+    }
+    if (Math.abs(from.y - to.y) < .01) {
+      return from.y >= rect.top && from.y <= rect.bottom
+        && Math.max(Math.min(from.x, to.x), rect.left) <= Math.min(Math.max(from.x, to.x), rect.right);
+    }
+    return true;
+  };
+  const uniqueAxes = (values, maximum) => [...new Set(values
+    .map((value) => Math.round(clamp(Number(value) || 0, 18, maximum - 18) * 2) / 2))];
+  const xAxes = uniqueAxes([
+    startX, endX, (startX + endX) / 2, 18, viewportWidth - 18,
+    ...blockers.flatMap((rect) => [rect.left - 1, rect.right + 1])
+  ], viewportWidth);
+  const yAxes = uniqueAxes([
+    startY, endY, (startY + endY) / 2, 52, viewportHeight - 18,
+    ...blockers.flatMap((rect) => [rect.top - 1, rect.bottom + 1])
+  ], viewportHeight);
+  const nearestAxes = (axes, pivot, limit) => axes
+    .slice()
+    .sort((left, right) => Math.abs(left - pivot) - Math.abs(right - pivot))
+    .slice(0, limit);
+  const exitAxes = nearestAxes(xAxes, startX, 12);
+  const laneAxes = nearestAxes(yAxes, (startY + endY) / 2, 14);
+  const railAxes = nearestAxes(xAxes, endX, 12);
+  const start = { x: startX, y: startY };
+  const end = { x: endX, y: endY };
+  let best = null;
+
+  for (const exitX of exitAxes) {
+    for (const laneY of laneAxes) {
+      for (const railX of railAxes) {
+        const rawPoints = [
+          { x: exitX, y: startY },
+          { x: exitX, y: laneY },
+          { x: railX, y: laneY },
+          { x: railX, y: endY },
+          end
+        ];
+        const points = rawPoints.filter((point, index) => index === 0
+          ? Math.abs(point.x - start.x) > .01 || Math.abs(point.y - start.y) > .01
+          : Math.abs(point.x - rawPoints[index - 1].x) > .01 || Math.abs(point.y - rawPoints[index - 1].y) > .01);
+        const path = [start, ...points];
+        let collisions = 0;
+        let distance = 0;
+        for (let index = 1; index < path.length; index += 1) {
+          const from = path[index - 1];
+          const to = path[index];
+          const isFirst = index === 1;
+          const isLast = index === path.length - 1;
+          distance += Math.abs(to.x - from.x) + Math.abs(to.y - from.y);
+          collisions += blockers.filter((rect) => {
+            if (isFirst && pointInside(start, rect)) return false;
+            if (isLast && pointInside(end, rect)) return false;
+            return segmentHits(from, to, rect);
+          }).length;
+        }
+        const score = collisions * 10000 + distance + points.length * 8;
+        if (!best || score < best.score) best = { score, collisions, points };
+      }
+    }
+  }
+
+  return best || { score: 0, collisions: 0, points: [end] };
 }
 
 function clearBattleMotionArtifacts() {
@@ -792,6 +866,20 @@ function runBattleMotion(feedback, origin = null) {
     })).filter((entry) => entry.element);
     const targetRect = target?.getBoundingClientRect();
     const attackerRect = attacker?.getBoundingClientRect();
+    const routeBlockers = [...app.querySelectorAll([
+      ".player-fighter .student-avatar",
+      ".battle-pet",
+      ".combat-vitals",
+      ".enemy-intent-token",
+      ".enemy-mechanic-progress",
+      ".pet-companion-token",
+      ".energy-orb",
+      ".end-turn",
+      ".hand .game-card"
+    ].join(","))].map((element) => {
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
+    });
     const causalMotions = causalGhosts.map((entry, index) => {
       const destination = entry.effect.type === "status"
         ? entry.effect.target === "hand"
@@ -809,7 +897,12 @@ function runBattleMotion(feedback, origin = null) {
         destination,
         startX,
         startY,
-        ...battleCausalRoute(startX, startY, endX, endY)
+        ...battleCausalRoute(startX, startY, endX, endY, {
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+          sourceRect: attackerRect,
+          destinationRect,
+          blockers: routeBlockers
+        })
       };
     }).filter(Boolean);
     const intentToken = feedback.kind === "enemy" ? app.querySelector(".enemy-intent-token") : null;
@@ -891,13 +984,31 @@ function runBattleMotion(feedback, origin = null) {
     }
     causalMotions.forEach((motion, index) => {
       const startAt = "impact";
+      const routeDuration = .28;
+      const routePath = [{ x: motion.startX, y: motion.startY }, ...motion.points];
+      const routeDistance = routePath.slice(1).reduce((total, point, pointIndex) => {
+        const previous = routePath[pointIndex];
+        return total + Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+      }, 0) || 1;
+      let routeElapsed = 0;
       gsap.set(motion.element, { left: 0, top: 0, x: motion.startX, y: motion.startY, scale: .55, rotation: -8 + index * 6, autoAlpha: 0 });
       timeline.fromTo(motion.element, { scale: .55, autoAlpha: 0 }, { scale: .78, autoAlpha: 1, duration: .07 }, startAt);
-      timeline.to(motion.element, { x: motion.corridorX, y: motion.corridorY, rotation: -3 + index * 4, duration: .13, ease: "power2.out" }, startAt);
-      timeline.to(motion.element, { x: motion.endX, y: motion.endY, rotation: 7 + index * 4, duration: .15, ease: "power2.inOut" }, `${startAt}+=.13`);
-      timeline.to(motion.element, { scale: 1.05, autoAlpha: 0, duration: .06 }, `${startAt}+=.28`);
-      timeline.fromTo(motion.destination, { scale: .94 }, { scale: 1.05, duration: .05, ease: "back.out(1.7)", immediateRender: false }, `${startAt}+=.25`);
-      timeline.to(motion.destination, { scale: 1, duration: .06, clearProps: "transform" }, `${startAt}+=.3`);
+      motion.points.forEach((point, pointIndex) => {
+        const previous = routePath[pointIndex];
+        const segmentDistance = Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y);
+        const duration = routeDuration * segmentDistance / routeDistance;
+        timeline.to(motion.element, {
+          x: point.x,
+          y: point.y,
+          rotation: -4 + pointIndex * 3 + index * 4,
+          duration,
+          ease: pointIndex === motion.points.length - 1 ? "power2.inOut" : "power1.inOut"
+        }, routeElapsed ? `${startAt}+=${routeElapsed}` : startAt);
+        routeElapsed += duration;
+      });
+      timeline.to(motion.element, { scale: 1.05, autoAlpha: 0, duration: .06 }, `${startAt}+=${routeDuration}`);
+      timeline.fromTo(motion.destination, { scale: .94 }, { scale: 1.05, duration: .05, ease: "back.out(1.7)", immediateRender: false }, `${startAt}+=${routeDuration - .03}`);
+      timeline.to(motion.destination, { scale: 1, duration: .06, clearProps: "transform" }, `${startAt}+=${routeDuration + .02}`);
     });
     if (feedback.petChargeGain) {
       const petToken = app.querySelector(".pet-companion-token");

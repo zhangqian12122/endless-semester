@@ -45,6 +45,22 @@ test("多张新增状态分散到不同牌区时按固定目标顺序分组", ()
   ]);
 });
 
+test("同一区域新增两张状态只生成一个带数量的因果目标", () => {
+  const placements = enemyStatusCausalPlacements([], {
+    hand: [],
+    drawPile: [status("nervous", "new-a"), status("nervous", "new-b")],
+    discardPile: []
+  }, { id: "nervous", count: 2, zone: "draw" });
+
+  assert.deepEqual(placements, [
+    { type: "status", id: "nervous", target: "drawPile", count: 2 }
+  ]);
+  assert.deepEqual(battleFeedbackFromDelta({}, {}, {
+    kind: "enemy",
+    causalEffects: placements
+  }).causalEffects, placements);
+});
+
 test("既有同名卡、其他卡和重复 UID 不会被误判为本次投放", () => {
   assert.deepEqual(enemyStatusCausalPlacements({
     hand: ["old-hand"],
