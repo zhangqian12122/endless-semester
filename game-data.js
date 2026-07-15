@@ -633,7 +633,30 @@ export const ENEMY_DEFS = {
   }
 };
 
-export const NORMAL_ENEMY_IDS = ["sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit", "groupChat", "printerJam"];
+export const NORMAL_ENEMY_IDS = Object.freeze([
+  "sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit", "groupChat", "printerJam"
+]);
+
+export const FIRST_SEMESTER_NORMAL_ENEMY_POOLS = Object.freeze([
+  Object.freeze({
+    id: "foundation",
+    startWeek: 1,
+    endWeek: 5,
+    enemyIds: Object.freeze(["sleepyBug", "alarmClock"])
+  }),
+  Object.freeze({
+    id: "status",
+    startWeek: 6,
+    endWeek: 10,
+    enemyIds: Object.freeze(["sleepyBug", "alarmClock", "homeworkBlob", "phoneSpirit"])
+  }),
+  Object.freeze({
+    id: "full",
+    startWeek: 11,
+    endWeek: 16,
+    enemyIds: NORMAL_ENEMY_IDS
+  })
+]);
 
 export const ACHIEVEMENT_DEFS = {
   firstWin: { id: "firstWin", icon: "✓", name: "顺利下课", text: "赢得第一场战斗。", metric: "combatsWon", target: 1 },

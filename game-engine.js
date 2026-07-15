@@ -4,6 +4,7 @@ import {
   ENCHANTMENT_DEFS,
   ENEMY_DEFS,
   EVENT_DEFS,
+  FIRST_SEMESTER_NORMAL_ENEMY_POOLS,
   ITEM_DEFS,
   NORMAL_ENEMY_IDS,
   DEFAULT_PET_ID,
@@ -200,6 +201,14 @@ export const CHALLENGE_AFFIX_DEFS = Object.freeze({
 });
 
 const CHALLENGE_AFFIX_IDS = Object.keys(CHALLENGE_AFFIX_DEFS);
+
+export function normalRouteEnemyPool(semester, week) {
+  if (Number(semester) !== 1) return NORMAL_ENEMY_IDS;
+  const currentWeek = Math.min(16, Math.max(1, Math.floor(Number(week) || 1)));
+  return FIRST_SEMESTER_NORMAL_ENEMY_POOLS.find((stage) => (
+    currentWeek >= stage.startWeek && currentWeek <= stage.endWeek
+  ))?.enemyIds || NORMAL_ENEMY_IDS;
+}
 
 function makeRouteNode(type, week, options = {}) {
   if (type === "combat") {
@@ -700,8 +709,11 @@ export class SemesterGame {
     return this.hp - previous;
   }
 
-  randomEnemy() {
-    return this.rng.pick(NORMAL_ENEMY_IDS);
+  randomEnemy({ source = "special", semester = this.semester, week = this.week } = {}) {
+    const pool = source === "route"
+      ? normalRouteEnemyPool(semester, week)
+      : NORMAL_ENEMY_IDS;
+    return this.rng.pick(pool);
   }
 
   generateSemesterPlan() {
@@ -713,9 +725,9 @@ export class SemesterGame {
 
     const anchors = {
       3: { type: "event", pool: "safe" },
-      4: { type: "combat", enemy: "phoneSpirit" },
+      4: { type: "combat" },
       5: { type: "rest" },
-      6: { type: "combat", enemy: "alarmClock" },
+      6: { type: "combat" },
       7: { type: "shop" },
       9: { type: "rest" },
       10: { type: "event", pool: "all" },
@@ -733,7 +745,7 @@ export class SemesterGame {
     for (const week of Object.keys(anchors).map(Number)) {
       const anchor = anchors[week];
       const anchorNode = makeRouteNode(anchor.type, week, {
-        enemy: anchor.type === "combat" ? (anchor.enemy || this.randomEnemy()) : undefined,
+        enemy: anchor.type === "combat" ? this.randomEnemy({ source: "route", week }) : undefined,
         pool: anchor.pool
       });
       let candidates = ["combat", "combat", "event", "event", "rest", "shop"]
@@ -745,7 +757,9 @@ export class SemesterGame {
       if (alternateType === "rest") restOptions += 1;
       if (alternateType === "shop") shopOptions += 1;
       const alternateNode = makeRouteNode(alternateType, week, {
-        enemy: alternateType === "combat" ? this.randomEnemy() : undefined,
+        enemy: alternateType === "combat"
+          ? this.randomEnemy({ source: challengeAffixByWeek.has(week) ? "challenge" : "route", week })
+          : undefined,
         pool: week <= 3 ? "safe" : "all",
         challenge: challengeAffixByWeek.has(week),
         affix: challengeAffixByWeek.get(week)
