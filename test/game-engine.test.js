@@ -140,7 +140,7 @@ test("嘉豪、宕机鸭与代表敌人保持独立素材并保留灰盒降级",
   assert.match(styles, /\.pet-icon-fallback\s*\{/);
   assert.match(styles, /\.enemy-sleepyBug\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*144%/, "瞌睡虫横向立绘需要独立放大以保持战场辨识度");
   assert.match(styles, /\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*132%[^}]*object-position:\s*center bottom/, "作业团需要独立横向放大并落在战场地面");
-  assert.match(styles, /\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*132%[^}]*object-position:\s*center bottom/, "闹钟怪需要按自身透明边距放大并落在战场地面");
+  assert.match(styles, /\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset\s*\{[^}]*width:\s*156%[^}]*object-position:\s*center bottom/, "闹钟怪需要按自身透明边距放大并落在战场地面");
   assert.match(styles, /@media \(max-width:\s*700px\)[\s\S]*?\.enemy-homeworkBlob\.asset-ready\s*>\s*\.character-asset[\s\S]*?\.enemy-alarmClock\.asset-ready\s*>\s*\.character-asset/, "两名新敌人需要独立的移动端收缩规则");
 
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
