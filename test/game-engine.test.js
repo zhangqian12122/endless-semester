@@ -435,13 +435,15 @@ test("桌面战斗操作区固定在首屏底部并保留完整出牌入口", ()
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(appSource, /<section class="combat-action-dock" aria-label="战斗操作区">/);
-  assert.match(styles, /@media \(min-width: 820px\) and \(min-height: 620px\)/);
+  assert.match(styles, /@media \(min-width: 820px\) and \(min-height: 680px\)/);
   assert.match(styles, /\.combat-page \{[^}]*height: calc\(100vh - 64px\);[^}]*overflow: hidden;/);
   assert.match(styles, /\.combat-action-dock \{ position: fixed;[^}]*bottom: 0;[^}]*height: 294px;/);
   assert.match(styles, /\.combat-action-dock \.hand \{[^}]*height: 236px;[^}]*min-height: 236px;/);
   assert.match(styles, /\.combat-action-dock \.combat-shortcut-guide \{ display: none; \}/);
   assert.match(styles, /\.combat-action-dock \.hand \.game-card \{[^}]*flex-basis: 146px;[^}]*width: 146px;[^}]*transform: none;/);
   assert.match(styles, /\.combat-action-dock \.hand:has\(\.game-card:nth-child\(8\)\) \.game-card \{[^}]*flex-basis: 132px;[^}]*margin-right: -60px;/);
+  assert.match(styles, /@media \(min-width: 820px\) and \(max-width: 980px\) and \(min-height: 620px\)/);
+  assert.match(styles, /@media \(max-width: 1100px\) \{\s*\.topbar \.sign-resource, \.topbar \.tarot-resource \{ display: none; \}/);
 });
 
 test("战斗牌堆、复合敌人意图与护甲盾牌使用统一战场图形", () => {
