@@ -58,6 +58,62 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
   return lines.length ? lines : ["本回合不会造成伤害，也不会施加其他效果"];
 }
 
+const SPECIAL_ENEMY_METER_STEPS = Object.freeze(["发卷", "选择题", "填空题", "大题"]);
+const MAX_SPECIAL_ENEMY_TURN = Math.floor((Number.MAX_SAFE_INTEGER - 6) / 2);
+
+function normalizedIntentTurn(intentTurn) {
+  let numericTurn = 0;
+  try {
+    numericTurn = Number(intentTurn);
+  } catch {
+    return 0;
+  }
+  return Number.isFinite(numericTurn)
+    ? Math.min(MAX_SPECIAL_ENEMY_TURN, Math.max(0, Math.floor(numericTurn)))
+    : 0;
+}
+
+export function enemyMechanicProgress(enemyId, intentTurn = 0) {
+  const turn = normalizedIntentTurn(intentTurn);
+
+  if (enemyId === "rivalShadow") {
+    const action = turn + 1;
+    const baseDamage = 6 + turn * 2;
+    return {
+      kind: "escalation",
+      title: "无休加速",
+      label: `第${action}次 · 基础伤害 ${baseDamage}`,
+      detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
+      segments: Array.from({ length: 4 }, (_, index) => {
+        if (action >= 4 && index === 3) return "continuing";
+        if (index + 1 < action) return "done";
+        if (index + 1 === action) return "current";
+        return "upcoming";
+      })
+    };
+  }
+
+  if (enemyId === "finalExam") {
+    const stepIndex = turn % SPECIAL_ENEMY_METER_STEPS.length;
+    const round = Math.floor(turn / SPECIAL_ENEMY_METER_STEPS.length) + 1;
+    const currentStep = SPECIAL_ENEMY_METER_STEPS[stepIndex];
+    const nextStepIndex = (stepIndex + 1) % SPECIAL_ENEMY_METER_STEPS.length;
+    const nextRound = stepIndex === SPECIAL_ENEMY_METER_STEPS.length - 1 ? round + 1 : round;
+    const nextStep = SPECIAL_ENEMY_METER_STEPS[nextStepIndex];
+    return {
+      kind: "cycle",
+      title: "四步递增",
+      label: `第${round}轮 · ${stepIndex + 1}/4`,
+      detail: `当前：${currentStep}；下一步：${nextStep}${nextRound === round ? "" : `（第${nextRound}轮）`}`,
+      segments: SPECIAL_ENEMY_METER_STEPS.map((_, index) => (
+        index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
+      ))
+    };
+  }
+
+  return null;
+}
+
 export const ENEMY_RESOLVE_MS = 700;
 export const ENEMY_EXTRA_HIT_RESOLVE_MS = 180;
 
