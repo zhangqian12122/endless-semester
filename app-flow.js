@@ -429,6 +429,43 @@ export function combatMechanicStatusCleared(cardPreview = {}, intent = {}, hand 
   return hand.filter((card) => card?.id === statusId).length;
 }
 
+export function combatEnemyBlockAttackProjection(cardPreview = {}, incomingPreview = {}, mechanicState = {}) {
+  if (mechanicState?.type !== "enemyBlockAttack") return null;
+  const sourceBefore = Math.max(0, Math.floor(safeBattleValue(mechanicState.sourceCount)));
+  const cap = Math.max(0, Math.floor(safeBattleValue(mechanicState.cap)));
+  const bonusBefore = Math.min(
+    cap,
+    sourceBefore,
+    Math.max(0, Math.floor(safeBattleValue(mechanicState.value)))
+  );
+  const blockBroken = Math.min(
+    sourceBefore,
+    Math.max(0, Math.floor(safeBattleValue(cardPreview.enemyBlockAbsorbed)))
+  );
+  const sourceAfter = Math.max(0, sourceBefore - blockBroken);
+  const bonusAfter = Math.min(cap, sourceAfter);
+  const bonusReduced = Math.max(0, bonusBefore - bonusAfter);
+  const perHitBefore = Math.max(0, safeBattleValue(incomingPreview.perHit));
+  const hits = perHitBefore > 0
+    ? Math.max(1, Math.floor(safeBattleValue(incomingPreview.hits) || 1))
+    : 0;
+
+  if (!blockBroken || !bonusReduced || !hits) return null;
+  const perHitAfter = Math.max(0, perHitBefore - bonusReduced);
+  return {
+    blockBroken,
+    sourceBefore,
+    sourceAfter,
+    bonusBefore,
+    bonusAfter,
+    bonusReduced,
+    perHitBefore,
+    perHitAfter,
+    hits,
+    attackTotalAfter: perHitAfter * hits
+  };
+}
+
 export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, options = {}) {
   if (options.playable === false) return null;
   const enemyHp = Math.max(0, safeBattleValue(options.enemyHp));
@@ -505,6 +542,58 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
           : `${detailPrefix}，预计损失 ${totalLossAfterCard} 生命`
       };
     }
+  }
+
+  const blockAttackProjection = combatEnemyBlockAttackProjection(
+    cardPreview,
+    incomingPreview,
+    mechanicState
+  );
+  if (blockAttackProjection) {
+    const {
+      attackTotalAfter,
+      blockBroken,
+      bonusBefore,
+      bonusAfter,
+      sourceBefore,
+      sourceAfter,
+      perHitBefore,
+      perHitAfter
+    } = blockAttackProjection;
+    const attackLossAfterCard = unavoidableLoss >= hpAfterCard
+      ? 0
+      : Math.max(0, attackTotalAfter - currentBlock - block);
+    const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
+    const selfDamage = Math.max(0, playerHp - hpAfterCard);
+    const projectedLoss = selfDamage + totalLossAfterCard;
+    const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
+    const label = `重击 ${perHitBefore}→${perHitAfter}`;
+    const detailPrefix = `击破 ${blockBroken} 点护甲：敌方护甲从 ${sourceBefore} 降至 ${sourceAfter}，蓄压 +${bonusBefore}→+${bonusAfter}，重击从 ${perHitBefore} 降至 ${perHitAfter}`;
+    const lossDetail = selfDamage > 0
+      ? `预计合计损失 ${projectedLoss} 生命（卡牌自伤 ${selfDamage}，敌方行动 ${totalLossAfterCard}）`
+      : `敌方行动预计造成 ${totalLossAfterCard} 点生命损失`;
+
+    if (lethalBefore && !lethalAfter) {
+      return {
+        tone: "rescue",
+        label: `${label} · 脱险`,
+        detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
+      };
+    }
+    if (totalLossAfterCard === 0 && selfDamage === 0) {
+      return {
+        tone: "guard",
+        label: `${label} · 无伤`,
+        detail: `${detailPrefix}，打出后无伤`
+      };
+    }
+    return {
+      tone: lethalAfter ? "danger" : "counter",
+      label: lethalAfter ? `${label} · 仍致命` : `${label} · -${projectedLoss}生命`,
+      detail: lethalAfter
+        ? `${detailPrefix}，仍会致命，${lossDetail}`
+        : `${detailPrefix}，${lossDetail}`
+    };
   }
 
   if (!block || !currentTotalLoss) return null;

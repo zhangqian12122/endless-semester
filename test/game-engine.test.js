@@ -5,7 +5,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, ITEM_REWARD_FALLBACK_GOLD, TAROT_DEFS, SemesterGame, STARTING_DECK, cardDefinition, normalRouteEnemyPool, startingDeckFor } from "../game-engine.js";
 import { ACHIEVEMENT_DEFS, ARCHETYPE_CARD_IDS, BOSS_ITEM_IDS, CARD_ART_DEFS, CARD_DEFS, DEFAULT_PET_ID, ENCHANTMENT_DEFS, ENEMY_DEFS, FIRST_SEMESTER_NORMAL_ENEMY_POOLS, ITEM_DEFS, NORMAL_ENEMY_IDS, PET_DEFS, PET_TALENT_DEFS, PUBLIC_REWARD_CARD_IDS, REGULAR_ITEM_IDS } from "../game-data.js";
 import { analyzeBuild, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "../build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ENEMY_EXTRA_HIT_RESOLVE_MS, ENEMY_RESOLVE_MS, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitBreakdown, enemyHitPulseSequence, enemyIntentDetailLines, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "../app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ENEMY_EXTRA_HIT_RESOLVE_MS, ENEMY_RESOLVE_MS, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnemyBlockAttackProjection, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitBreakdown, enemyHitPulseSequence, enemyIntentDetailLines, enemyResolutionSnapshot, enemyResolveDuration, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "../app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -1020,6 +1020,151 @@ test("清空待办会在出牌前准确预告群聊轰炸减段与生命结果",
   assert.match(styles, /\.card-tactical-cue\.cue-danger/);
   assert.match(styles, /\.hand \.game-card\.tactical-danger/);
   assert.match(styles, /\.card-tactical-cue \{[^}]*max-width: calc\(100% - 16px\);[^}]*text-overflow: ellipsis;/);
+});
+
+test("击破打印机护甲会按真实断点预告重击降伤与生存结果", () => {
+  const mechanicState = { type: "enemyBlockAttack", value: 6, cap: 6, sourceCount: 8 };
+  const incoming = {
+    perHit: 12,
+    hits: 1,
+    attackTotal: 12,
+    currentBlock: 0,
+    attackHpLoss: 12,
+    endTurnHpLoss: 0,
+    totalHpLoss: 12,
+    lethal: true
+  };
+
+  assert.equal(combatEnemyBlockAttackProjection(
+    { enemyBlockAbsorbed: 2 },
+    incoming,
+    mechanicState
+  ), null, "8 点护甲只打掉 2 点时仍处于 +6 上限，不能虚报降伤");
+  assert.deepEqual(combatEnemyBlockAttackProjection(
+    { enemyBlockAbsorbed: 5 },
+    incoming,
+    mechanicState
+  ), {
+    blockBroken: 5,
+    sourceBefore: 8,
+    sourceAfter: 3,
+    bonusBefore: 6,
+    bonusAfter: 3,
+    bonusReduced: 3,
+    perHitBefore: 12,
+    perHitAfter: 9,
+    hits: 1,
+    attackTotalAfter: 9
+  });
+  assert.equal(combatEnemyBlockAttackProjection(
+    { enemyBlockAbsorbed: 5 },
+    incoming,
+    { type: "statusHits", value: 2, cap: 2, sourceCount: 2 }
+  ), null, "其他敌人机制不能生成打印机重击预告");
+
+  const challengeProjection = combatEnemyBlockAttackProjection(
+    { enemyBlockAbsorbed: 5 },
+    { ...incoming, perHit: 15, attackTotal: 15, totalHpLoss: 15 },
+    mechanicState
+  );
+  assert.equal(challengeProjection.perHitAfter, 12, "挑战倍率只影响基础伤害，蓄压减少量不能再次乘倍率");
+
+  const cardPreview = {
+    healthDamage: 0,
+    block: 0,
+    selfDamage: 0,
+    enemyBlockAbsorbed: 5
+  };
+  assert.deepEqual(combatCardTacticalCue(cardPreview, incoming, {
+    enemyHp: 32,
+    playerHp: 10,
+    playable: true,
+    mechanicState
+  }), {
+    tone: "rescue",
+    label: "重击 12→9 · 脱险",
+    detail: "击破 5 点护甲：敌方护甲从 8 降至 3，蓄压 +6→+3，重击从 12 降至 9，解除致命，预计剩余 1 生命"
+  });
+  assert.deepEqual(combatCardTacticalCue(cardPreview, { ...incoming, lethal: false }, {
+    enemyHp: 32,
+    playerHp: 30,
+    playable: true,
+    mechanicState
+  }), {
+    tone: "counter",
+    label: "重击 12→9 · -9生命",
+    detail: "击破 5 点护甲：敌方护甲从 8 降至 3，蓄压 +6→+3，重击从 12 降至 9，敌方行动预计造成 9 点生命损失"
+  });
+  assert.deepEqual(combatCardTacticalCue(cardPreview, {
+    ...incoming,
+    currentBlock: 9,
+    attackHpLoss: 3,
+    totalHpLoss: 3,
+    lethal: false
+  }, {
+    enemyHp: 32,
+    playerHp: 30,
+    playable: true,
+    mechanicState
+  }), {
+    tone: "guard",
+    label: "重击 12→9 · 无伤",
+    detail: "击破 5 点护甲：敌方护甲从 8 降至 3，蓄压 +6→+3，重击从 12 降至 9，打出后无伤"
+  });
+  assert.deepEqual(combatCardTacticalCue({ ...cardPreview, selfDamage: 3 }, incoming, {
+    enemyHp: 32,
+    playerHp: 12,
+    playable: true,
+    mechanicState
+  }), {
+    tone: "danger",
+    label: "重击 12→9 · 仍致命",
+    detail: "击破 5 点护甲：敌方护甲从 8 降至 3，蓄压 +6→+3，重击从 12 降至 9，仍会致命，预计合计损失 12 生命（卡牌自伤 3，敌方行动 9）"
+  });
+  assert.deepEqual(combatCardTacticalCue({ ...cardPreview, healthDamage: 1 }, incoming, {
+    enemyHp: 1,
+    playerHp: 10,
+    playable: true,
+    mechanicState
+  }), {
+    tone: "finish",
+    label: "可结束战斗",
+    detail: "预计造成 1 点生命伤害"
+  }, "斩杀提示必须优先于已经不会发生的敌方重击");
+  assert.equal(combatCardTacticalCue(cardPreview, incoming, {
+    enemyHp: 32,
+    playerHp: 10,
+    playable: false,
+    mechanicState
+  }), null, "无法支付的卡牌不能显示反制提示");
+
+  const integration = new SemesterGame(224, "cancer");
+  integration.startCombat("printerJam");
+  integration.endTurn();
+  integration.hp = 10;
+  const strike = integration.createCard("textbookStrike");
+  integration.combat.hand = [strike];
+  integration.combat.drawPile = [];
+  integration.combat.discardPile = [];
+  const stateBeforePreview = JSON.stringify(integration.toJSON());
+  const strikePreview = integration.cardEffectPreview(strike);
+  const strikeIntent = integration.getIntent();
+  const strikeIncoming = integration.incomingDamagePreview();
+  const strikeCue = combatCardTacticalCue(strikePreview, strikeIncoming, {
+    enemyHp: integration.combat.enemy.hp,
+    playerHp: integration.hp,
+    playable: integration.canPlay(strike).ok,
+    mechanicState: strikeIntent.mechanicState
+  });
+  assert.equal(JSON.stringify(integration.toJSON()), stateBeforePreview, "重击投影必须保持存档与随机数状态只读");
+  assert.equal(strikePreview.enemyBlockAbsorbed, 5);
+  assert.equal(strikeCue.label, "重击 12→9 · 脱险");
+  integration.playCard(strike.uid);
+  assert.equal(integration.combat.enemy.block, 3);
+  assert.equal(integration.getIntent().attack, 9);
+  const resolved = integration.endTurn().enemyResult;
+  assert.equal(resolved.attack.perHit, 9);
+  assert.equal(integration.hp, 1, "预告的剩余生命必须与真实结算一致");
 });
 
 test("卡面只在实时数值确实变化时显示紧凑预览", () => {
