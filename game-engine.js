@@ -1106,6 +1106,9 @@ export class SemesterGame {
     this.items.splice(oldIndex, 1, pending.incoming);
     this.stats.itemsTaken += 1;
     this.pendingItemReplacement = null;
+    if (pending.source === "semester") {
+      this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
+    }
     return { incoming: pending.incoming, outgoing, source: pending.source };
   }
 
@@ -2756,7 +2759,14 @@ export class SemesterGame {
     if (this.pendingSemesterReward) {
       return { ...this.pendingSemesterReward, itemChoices: [...(this.pendingSemesterReward.itemChoices || [])], started: false };
     }
-    if (this.pendingCombatStart || this.pendingShop || this.pendingRest) return null;
+    const combat = this.combat;
+    const receipt = combat?.victoryReceipt;
+    if (this.pendingCombatStart || this.pendingCombatReward || this.pendingEventReward
+      || this.pendingShop || this.pendingRest || this.pendingItemReplacement
+      || combat?.status !== "won" || combat.result !== "won" || combat.rewardPrepared === true
+      || receipt?.outcome !== "boss" || receipt.week !== 16 || receipt.week !== this.week
+      || receipt.enemyId !== "finalExam" || receipt.enemyId !== combat.enemy?.id
+      || ENEMY_DEFS[receipt.enemyId]?.kind !== "boss") return null;
     this.gold += 50;
     const itemChoices = [...new Set(itemIds)]
       .filter((id) => ITEM_DEFS[id]?.rarity === "boss" && !this.hasItem(id));
@@ -2767,17 +2777,46 @@ export class SemesterGame {
       fallbackGold = this.claimItemRewardFallback("boss")?.gold || 0;
       this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold };
     }
+    combat.rewardPrepared = true;
     return { ...this.pendingSemesterReward, itemChoices: [...this.pendingSemesterReward.itemChoices], started: true };
   }
 
-  advanceSemesterRewards() {
+  resolvePendingSemesterItem(id) {
+    const pending = this.pendingSemesterReward;
+    if (pending?.stage !== "bossItem" || this.pendingItemReplacement
+      || !pending.itemChoices?.includes(id) || !ITEM_DEFS[id]
+      || ITEM_DEFS[id].rarity !== "boss" || this.hasItem(id)) return null;
+    if (this.items.length >= this.backpackCapacity) {
+      const replacement = this.prepareItemReplacement(id);
+      return replacement ? { id, status: "replacement", replacement } : null;
+    }
+    if (!this.addItem(id)) return null;
+    this.stats.itemsTaken += 1;
+    this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
+    return { id, status: "claimed" };
+  }
+
+  skipPendingSemesterItem() {
     if (this.pendingSemesterReward?.stage !== "bossItem" || this.pendingItemReplacement) return false;
     this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
     return true;
   }
 
-  completeCurrentSemester() {
-    if (this.week !== 16) return false;
+  advanceSemesterRewards() {
+    return this.skipPendingSemesterItem();
+  }
+
+  completeCurrentSemester(uid = undefined) {
+    if (this.week !== 16 || this.awaitingNextSemester
+      || this.pendingSemesterReward?.stage !== "summaryUpgrade"
+      || this.pendingItemReplacement) return false;
+    const eligible = this.eligibleSummaryCards();
+    if (eligible.length) {
+      if (typeof uid !== "string" || !eligible.some((card) => card.uid === uid)
+        || !this.upgradeCard(uid)) return false;
+    } else if (uid !== undefined && uid !== null) {
+      return false;
+    }
     this.pendingSemesterReward = null;
     this.pendingCombatReward = null;
     this.pendingCombatStart = null;
@@ -2791,6 +2830,7 @@ export class SemesterGame {
   }
 
   startNextSemester() {
+    if (!this.awaitingNextSemester || this.week !== 16) return false;
     this.semester += 1;
     this.tarotId = null;
     this.week = 1;
@@ -2813,6 +2853,7 @@ export class SemesterGame {
     this.hp = this.maxHp;
     this.combat = null;
     this.semesterPlan = this.generateSemesterPlan();
+    return true;
   }
 
   toJSON() {

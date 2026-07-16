@@ -3170,14 +3170,20 @@ function showCardReward(options = {}) {
   });
 }
 
-function showItemReward(choices, onDone = advanceWeek, title) {
+function showItemReward(choices, onDone = advanceWeek, title, rewardSource = null) {
   const available = choices.filter(Boolean).filter((id) => !game.hasItem(id));
   if (!available.length) {
     setToast("没有新的随身物品，本次物品奖励已跳过");
     onDone();
     return false;
   }
-  changeScreen("itemReward", { choices: available, onDone, title });
+  changeScreen("itemReward", {
+    choices: available,
+    onDone,
+    title,
+    rewardSource,
+    settling: false
+  });
   return true;
 }
 
@@ -3222,16 +3228,51 @@ function finishCardReward(id, source, token) {
 }
 
 function grantItem(id) {
-  if (game.addItem(id)) {
-    game.stats.itemsTaken += 1;
-    const next = context.onDone;
-    if (typeof next === "function") next();
-  } else if (game.items.length >= game.backpackCapacity) {
-    if (game.prepareItemReplacement(id)) resumePendingItemReplacement();
-    else setToast("这件物品当前无法进入替换流程");
-  } else {
-    setToast("这个物品已经在书包里了");
+  const rewardContext = context;
+  if (screen !== "itemReward" || rewardContext.settling === true
+    || !rewardContext.choices?.includes(id)) return false;
+  const source = game.itemRewardSourceFor(id);
+  if (!source || source !== rewardContext.rewardSource || typeof rewardContext.onDone !== "function") return false;
+
+  if (source === "semester") {
+    const result = game.resolvePendingSemesterItem(id);
+    if (!result) return false;
+    rewardContext.settling = true;
+    if (result.status === "replacement") resumePendingItemReplacement();
+    else rewardContext.onDone(result);
+    return true;
   }
+
+  if (game.items.length >= game.backpackCapacity) {
+    const replacement = game.prepareItemReplacement(id);
+    if (replacement) {
+      rewardContext.settling = true;
+      resumePendingItemReplacement();
+      return true;
+    }
+    setToast("这件物品当前无法进入替换流程");
+    return false;
+  }
+  if (!game.addItem(id)) {
+    setToast("这个物品已经在书包里了");
+    return false;
+  }
+  game.stats.itemsTaken += 1;
+  rewardContext.settling = true;
+  rewardContext.onDone({ id, status: "claimed" });
+  return true;
+}
+
+function skipItemReward() {
+  const rewardContext = context;
+  if (screen !== "itemReward" || rewardContext.settling === true
+    || typeof rewardContext.onDone !== "function" || !rewardContext.rewardSource
+    || !rewardContext.choices?.length
+    || !rewardContext.choices.every((id) => game.itemRewardSourceFor(id) === rewardContext.rewardSource)) return false;
+  if (rewardContext.rewardSource === "semester" && !game.skipPendingSemesterItem()) return false;
+  rewardContext.settling = true;
+  rewardContext.onDone({ status: "skipped" });
+  return true;
 }
 
 function resumeItemRewardSource(source) {
@@ -3247,8 +3288,7 @@ function resumeItemRewardSource(source) {
 
 function completeItemRewardSource(source) {
   if (source === "semester") {
-    game.advanceSemesterRewards();
-    showSemesterSummary();
+    resumeSemesterRewards();
   } else if (source === "event") {
     game.completePendingEventReward();
     advanceWeek();
@@ -3412,7 +3452,7 @@ function resumeEliteCombatReward() {
       showItemReward(choices, () => {
         game.advanceEliteCombatRewardFromItem();
         resumeEliteCombatReward();
-      }, "精英物品奖励");
+      }, "精英物品奖励", "combat");
       return;
     }
     game.advanceEliteCombatRewardFromItem();
@@ -3479,7 +3519,7 @@ function resumeChallengeCombatReward() {
       showItemReward(choices, () => {
         game.completePendingCombatReward();
         advanceWeek();
-      }, `${signatureItem ? `${ENEMY_DEFS[pending.enemyId]?.name || "挑战怪物"}遗落 · ${signatureItem.name}` : "失物招领"} · ${CHALLENGE_REWARD_DEFS.item.gold} 校园币已到账`);
+      }, `${signatureItem ? `${ENEMY_DEFS[pending.enemyId]?.name || "挑战怪物"}遗落 · ${signatureItem.name}` : "失物招领"} · ${CHALLENGE_REWARD_DEFS.item.gold} 校园币已到账`, "combat");
       return;
     }
     game.completePendingCombatReward();
@@ -3528,7 +3568,7 @@ function resumeEventCombatReward() {
       showItemReward(choices, () => {
         game.completePendingCombatReward();
         advanceWeek();
-      }, "怪谈调查奖励");
+      }, "怪谈调查奖励", "combat");
       return;
     }
     game.completePendingCombatReward();
@@ -3603,7 +3643,7 @@ function resumePendingEventReward() {
     return;
   }
   if (pending.type === "item") {
-    showItemReward(pending.itemChoices, finish, pending.source === "box-open" ? "纸箱里的物品" : "旧柜里的物品");
+    showItemReward(pending.itemChoices, finish, pending.source === "box-open" ? "纸箱里的物品" : "旧柜里的物品", "event");
     return;
   }
   game.completePendingEventReward();
@@ -3614,8 +3654,11 @@ function resumePendingEventReward() {
 function resumeSemesterRewards() {
   const pending = game.pendingSemesterReward;
   if (!pending) {
-    game.prepareSemesterRewards(BOSS_ITEM_IDS);
-    return resumeSemesterRewards();
+    const prepared = game.prepareSemesterRewards(BOSS_ITEM_IDS);
+    if (prepared) return resumeSemesterRewards();
+    changeScreen("map");
+    setToast("期末奖励尚未解锁，请先完成第 16 周的期末考试");
+    return false;
   }
   if (game.pet.pendingMilestone) {
     showPetMilestone(resumeSemesterRewards);
@@ -3625,12 +3668,15 @@ function resumeSemesterRewards() {
     const choices = pending.itemChoices.filter((id) => !game.hasItem(id));
     if (choices.length) {
       showItemReward(choices, () => {
-        game.advanceSemesterRewards();
         showSemesterSummary();
-      }, "期末纪念物");
+      }, "期末纪念物", "semester");
       return;
     }
-    game.advanceSemesterRewards();
+    if (!game.skipPendingSemesterItem()) {
+      changeScreen("map");
+      setToast("期末纪念物状态已经失效，请重新进入结算");
+      return false;
+    }
   }
   showSemesterSummary();
   if (pending.fallbackGold) setToast(`Boss 物品已收齐，纪念物改为 ${pending.fallbackGold} 校园币`);
@@ -3647,8 +3693,11 @@ function showSemesterSummary() {
       ? `最接近的是${closest.name} ${closest.current}/${closest.target}，还差 ${closest.remaining} 场。`
       : "本学期还没有卡牌获得主力进度。";
     setToast(`没有卡牌达到主力升级条件，已跳过。${progressHint}`);
-    game.completeCurrentSemester();
-    changeScreen("semesterComplete");
+    if (game.completeCurrentSemester()) changeScreen("semesterComplete");
+    else {
+      setToast("期末总结状态已经失效，请重新进入结算");
+      resumeSemesterRewards();
+    }
     return;
   }
   showCardSelection({
@@ -3657,9 +3706,11 @@ function showSemesterSummary() {
     description: "只有真正进入过本学期战斗节奏的卡，才能沉淀为长期能力。",
     cards: eligible,
     onSelect(card) {
-      game.upgradeCard(card.uid);
-      game.completeCurrentSemester();
-      changeScreen("semesterComplete");
+      if (game.completeCurrentSemester(card.uid)) changeScreen("semesterComplete");
+      else {
+        setToast("这张牌不在本次主力升级候选中");
+        render();
+      }
     }
   });
 }
@@ -3754,7 +3805,7 @@ function resolveEventChoice(choice) {
 
 app.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
-  if (!button || button.disabled) return;
+  if (!button || button.disabled || event.detail > 1) return;
   const action = button.dataset.action;
 
   if (action === "new-game") {
@@ -3924,7 +3975,7 @@ app.addEventListener("click", (event) => {
   } else if (action === "choose-item") {
     grantItem(button.dataset.id);
   } else if (action === "skip-item") {
-    context.onDone();
+    skipItemReward();
   } else if (action === "replace-item") {
     const result = game.replacePendingItem(button.dataset.id);
     if (result) {
@@ -4081,8 +4132,11 @@ app.addEventListener("click", (event) => {
     game.completePendingShop();
     advanceWeek();
   } else if (action === "next-semester") {
-    game.startNextSemester();
-    changeScreen("tarotChoice");
+    if (game.startNextSemester()) changeScreen("tarotChoice");
+    else {
+      setToast("本学期尚未完成期末结算");
+      render();
+    }
   }
 });
 

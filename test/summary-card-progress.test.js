@@ -17,8 +17,9 @@ function winUsingCard(game, card) {
 
 function enterNextSemester(game) {
   game.week = 16;
+  game.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
   assert.equal(game.completeCurrentSemester(), true);
-  game.startNextSemester();
+  assert.equal(game.startNextSemester(), true);
 }
 
 test("同一学期的主力牌进度可保存恢复，读取不会改变状态或随机数", () => {
