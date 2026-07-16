@@ -37,6 +37,20 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
       : `造成 ${attack} 点伤害`);
   }
   if (block > 0) lines.push(`获得 ${block} 点护甲`);
+  if (intent.mechanicState?.type === "enemyBlockAttack") {
+    const armor = Math.max(0, Math.floor(Number(intent.mechanicState.sourceCount) || 0));
+    const bonus = Math.max(0, Math.floor(Number(intent.mechanicState.value) || 0));
+    const cap = Math.max(0, Math.floor(Number(intent.mechanicState.cap) || 0));
+    const excessArmor = Math.max(0, armor - cap);
+
+    if (bonus === 0) {
+      lines.push("蓄压额外伤害已解除");
+    } else if (excessArmor > 0) {
+      lines.push(`当前 ${armor} 点护甲使重击 +${bonus}；再击破 ${excessArmor + 1} 点，伤害才会下降 1`);
+    } else {
+      lines.push(`当前 ${armor} 点护甲使重击 +${bonus}；每击破 1 点，伤害降低 1`);
+    }
+  }
   if (intent.debuff === "distracted") {
     lines.push("施加走神：下回合你的攻击每段 -2");
   } else if (intent.debuff) {

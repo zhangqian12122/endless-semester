@@ -530,7 +530,6 @@ function enemyIntentTokenHtml(intent, resolution = null) {
   const detailLines = resolution
     ? [resolution.result]
     : enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id);
-  const detail = `${name}：${detailLines.join("；")}`;
   const tone = resolution ? resolution.tone : intent.attack ? "danger" : intent.block ? "block" : "safe";
   const pinned = context.intentDetailsPinned === true;
   const dismissed = context.intentDetailsDismissed === true;
@@ -539,7 +538,7 @@ function enemyIntentTokenHtml(intent, resolution = null) {
     enemyDefinition?.id,
     resolution ? Math.max(0, resolution.turn - 1) : game.combat?.enemy?.intentTurn
   ) ? " enemy-mechanic-summary" : "";
-  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(detail)}">
+  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-controls="enemy-intent-details" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(name)}">
     <span class="enemy-intent-chips" aria-hidden="true">${chips.map((chip) => `<i class="intent-chip intent-${chip.kind}"><em>${chip.icon}</em><b>${escapeHtml(chip.value)}</b></i>`).join("")}</span>
     <small>${escapeHtml(name)}</small>
     <span class="enemy-intent-detail" id="enemy-intent-details" role="tooltip">

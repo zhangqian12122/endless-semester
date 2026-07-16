@@ -614,9 +614,9 @@ export const ENEMY_DEFS = {
     id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal",
     subtitle: "越着急，它越能吐出一叠没用的纸。",
     mechanicName: "卡纸蓄压",
-    mechanicText: "出纸重击会把剩余护甲转为等量伤害，最多加 6；出手前打破护甲，重击就降回 6。",
+    mechanicText: "剩余护甲会转为等量重击伤害，最多加 6；6 点以上的护甲不会继续增伤，压到 5 点或更少才会逐点降伤。",
     pattern: "护甲 8 并塞待办 → 重击 6+剩余护甲（最多 +6） → 攻击 4×2",
-    tip: "卡纸回合就是反制窗口：哪怕只削掉一部分护甲，也会立刻压低下一次重击。",
+    tip: "先打掉超出 6 点的护甲；压到 5 点或更少后，每少 1 甲，重击少 1 伤害，打穿则解除全部蓄压。",
     intents: [
       { name: "疯狂卡纸", block: 8, addStatus: { id: "todo", count: 1, zone: "discard" } },
       {
