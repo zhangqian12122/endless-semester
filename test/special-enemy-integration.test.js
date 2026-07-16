@@ -8,12 +8,12 @@ const indexSource = readFileSync(new URL("../index.html", import.meta.url), "utf
 
 test("敌人机制牌接入战场并在结算期间冻结刚刚执行的步骤", () => {
   assert.match(appSource, /enemyMechanicProgress[\s\S]*?from "\.\/app-flow\.js"/);
-  assert.match(appSource, /function enemyMechanicProgressHtml\(enemy, resolution = null\)/);
+  assert.match(appSource, /function enemyMechanicProgressHtml\(enemy, intent, resolution = null\)/);
   assert.match(appSource, /const intentTurn = resolution \? Math\.max\(0, resolution\.turn - 1\) : enemy\?\.intentTurn/);
-  assert.match(appSource, /enemyMechanicProgress\(enemy\?\.id, intentTurn\)/);
+  assert.match(appSource, /enemyMechanicProgress\(enemy\?\.id, intentTurn, resolution\?\.mechanicState \|\| intent\?\.mechanicState\)/);
   assert.match(appSource, /class="enemy-mechanic-progress kind-\$\{escapeHtml\(enemy\.id\)\}" id="enemy-mechanic-summary"/);
   assert.match(appSource, /class="mechanic-progress-track" aria-hidden="true"/);
-  assert.match(appSource, /\$\{enemyMechanicProgressHtml\(combat\.enemy, enemyResolution\)\}/);
+  assert.match(appSource, /\$\{enemyMechanicProgressHtml\(combat\.enemy, intent, enemyResolution\)\}/);
   assert.match(appSource, /const ariaLabel = `\$\{progress\.title\}。\$\{progress\.label\}。\$\{progress\.detail\}`/);
   assert.match(appSource, /const mechanicDescriptionId = enemyMechanicProgress\([\s\S]*?\? " enemy-mechanic-summary" : ""/);
   assert.match(appSource, /aria-describedby="enemy-intent-details\$\{mechanicDescriptionId\}"/);
@@ -29,6 +29,6 @@ test("持续递增格与实际动画目标只在敌方结算阶段获得合成�
 test("敌人机制牌 UI 资源使用同一缓存版本", () => {
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];
-  assert.equal(styleVersion, "1.8.29");
+  assert.equal(styleVersion, "1.8.30");
   assert.equal(appVersion, styleVersion);
 });

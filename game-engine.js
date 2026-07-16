@@ -1646,7 +1646,8 @@ export class SemesterGame {
         maxHp: enemyMaxHp,
         hp: enemyMaxHp,
         block: (this.flags.nextEnemyBlock || 0) + (tarot?.enemyBlock || 0),
-        intentTurn: 0
+        intentTurn: 0,
+        interruptDamageThisTurn: 0
       },
       energy: 0,
       maxEnergy: 0,
@@ -1697,11 +1698,41 @@ export class SemesterGame {
     const damageMultiplier = combat.modifiers.damageMultiplier || 1;
     const affixDamage = combat.modifiers.affix === "deadline" && combat.turn >= 4 ? 4 : 0;
     const tarotDamage = this.tarot?.enemyAttackBonus || 0;
+    const attackBeforeInterrupt = intent.attack
+      ? Math.round((intent.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage + postScaleAttackBonus
+      : undefined;
+    const rivalInterrupt = this.rivalInterruptState(attackBeforeInterrupt);
     return {
       ...intent,
-      attack: intent.attack
-        ? Math.round((intent.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage + postScaleAttackBonus
-        : undefined
+      attack: rivalInterrupt?.attackAfter ?? attackBeforeInterrupt,
+      mechanicState: rivalInterrupt || intent.mechanicState
+    };
+  }
+
+  rivalInterruptState(attackBefore = 0) {
+    const combat = this.requireCombat();
+    if (combat.enemy.id !== "rivalShadow") return null;
+    const definition = ENEMY_DEFS.rivalShadow;
+    const cap = Math.max(1, nonNegativeInteger(definition.interruptThreshold, 10));
+    const sourceCount = Math.max(0, nonNegativeInteger(combat.enemy.interruptDamageThisTurn));
+    const value = Math.min(cap, sourceCount);
+    const triggered = value >= cap;
+    const attackReduction = Math.max(0, nonNegativeInteger(definition.interruptAttackReduction, 3));
+    const reduction = triggered
+      ? attackReduction
+      : 0;
+    const normalizedAttack = Math.max(0, nonNegativeInteger(attackBefore));
+    return {
+      type: "rivalInterrupt",
+      label: "打断内卷",
+      value,
+      cap,
+      sourceCount,
+      triggered,
+      attackReduction,
+      reduction,
+      attackBefore: normalizedAttack,
+      attackAfter: Math.max(0, normalizedAttack - reduction)
     };
   }
 
@@ -1769,6 +1800,7 @@ export class SemesterGame {
 
   startPlayerTurn() {
     const combat = this.requireCombat();
+    combat.enemy.interruptDamageThisTurn = 0;
     combat.turn += 1;
     combat.cardsPlayedThisTurn = 0;
     combat.playerBlock = 0;
@@ -2151,6 +2183,15 @@ export class SemesterGame {
     }
     combat.enemy.hp = Math.max(0, combat.enemy.hp);
     combat.damageDealt += dealt;
+    if (combat.enemy.id === "rivalShadow" && dealt > 0 && combat.enemy.hp > 0) {
+      const definition = ENEMY_DEFS.rivalShadow;
+      const cap = Math.max(1, nonNegativeInteger(definition.interruptThreshold, 10));
+      const before = Math.min(cap, Math.max(0, nonNegativeInteger(combat.enemy.interruptDamageThisTurn)));
+      combat.enemy.interruptDamageThisTurn = Math.min(cap, before + dealt);
+      if (before < cap && combat.enemy.interruptDamageThisTurn >= cap) {
+        combat.log.push(`打断内卷：本次公开攻击降低 ${definition.interruptAttackReduction} 点。`);
+      }
+    }
     return dealt;
   }
 

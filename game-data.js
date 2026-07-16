@@ -706,9 +706,11 @@ export const ENEMY_DEFS = {
     id: "rivalShadow", name: "卷王幻影", maxHp: 48, kind: "elite",
     subtitle: "每拖一个回合，它都比刚才更强。",
     mechanicName: "无休加速",
-    mechanicText: "每次行动都攻击；首次基础伤害为 6，之后每次都比上一次加 2，没有防御或休息回合。",
+    mechanicText: "每次行动都攻击；首次基础伤害为 6，之后每次都比上一次加 2，且没有防御或休息回合。每个玩家回合造成 10 点实际生命伤害，可打断本次内卷，使当前攻击 -3。",
     pattern: "连续攻击 6 → 8 → 10 → …（每次 +2，无休息）",
-    tip: "它没有休息回合。精简卡组、持续输出比等待完美手牌更重要。",
+    tip: "护甲吸收的伤害不计入打断。用多段攻击或宠物补足 10 点实际伤害，就能削弱本回合的公开攻击。",
+    interruptThreshold: 10,
+    interruptAttackReduction: 3,
     intentAt(turn) {
       return { name: `加速内卷 · 第${turn + 1}次`, attack: 6 + turn * 2 };
     }

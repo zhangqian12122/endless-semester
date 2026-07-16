@@ -43,34 +43,41 @@ test("闹钟怪用三格公开倒计时预告 14 点爆发", () => {
   assert.deepEqual(enemyMechanicProgress("alarmClock", 3), enemyMechanicProgress("alarmClock", 0));
 });
 
-test("卷王幻影显示第几次无休加速、基础增伤与四格状态", () => {
-  assert.deepEqual(enemyMechanicProgress("rivalShadow", 0), {
-    kind: "escalation",
-    title: "无休加速",
-    label: "第1次 · 基础伤害 6",
-    detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
-    segments: ["current", "upcoming", "upcoming", "upcoming"]
+test("卷王幻影公开十格打断进度并保留当前加速轮次", () => {
+  const openingState = {
+    type: "rivalInterrupt", value: 0, cap: 10, triggered: false,
+    attackBefore: 6, attackAfter: 6
+  };
+  assert.deepEqual(enemyMechanicProgress("rivalShadow", 0, openingState), {
+    kind: "interrupt",
+    title: "打断内卷",
+    label: "0/10 · 当前攻击 6",
+    detail: "第1次加速，基础伤害 6；本回合累计实际生命伤害，达到 10 后当前攻击 -3，下回合重置。",
+    segments: Array(10).fill("upcoming")
   });
-  assert.deepEqual(enemyMechanicProgress("rivalShadow", 2), {
-    kind: "escalation",
-    title: "无休加速",
-    label: "第3次 · 基础伤害 10",
-    detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
-    segments: ["done", "done", "current", "upcoming"]
+
+  const pressuredState = {
+    type: "rivalInterrupt", value: 7, cap: 10, triggered: false,
+    attackBefore: 10, attackAfter: 10
+  };
+  assert.deepEqual(enemyMechanicProgress("rivalShadow", 2, pressuredState), {
+    kind: "interrupt",
+    title: "打断内卷",
+    label: "7/10 · 还差 3",
+    detail: "第3次加速，基础伤害 10；本回合累计实际生命伤害，达到 10 后当前攻击 -3，下回合重置。",
+    segments: [...Array(7).fill("done"), ...Array(3).fill("upcoming")]
   });
-  assert.deepEqual(enemyMechanicProgress("rivalShadow", 3), {
-    kind: "escalation",
-    title: "无休加速",
-    label: "第4次 · 基础伤害 12",
-    detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
-    segments: ["done", "done", "done", "continuing"]
-  });
-  assert.deepEqual(enemyMechanicProgress("rivalShadow", 8), {
-    kind: "escalation",
-    title: "无休加速",
-    label: "第9次 · 基础伤害 22",
-    detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
-    segments: ["done", "done", "done", "continuing"]
+
+  const interruptedState = {
+    type: "rivalInterrupt", value: 10, cap: 10, triggered: true,
+    attackBefore: 12, attackAfter: 9
+  };
+  assert.deepEqual(enemyMechanicProgress("rivalShadow", 3, interruptedState), {
+    kind: "interrupt",
+    title: "打断内卷",
+    label: "已打断 · 12→9",
+    detail: "第4次加速，基础伤害 12；本回合累计实际生命伤害，达到 10 后当前攻击 -3，下回合重置。",
+    segments: Array(10).fill("done")
   });
 });
 

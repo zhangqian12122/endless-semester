@@ -41,14 +41,16 @@ test("configured mechanic meters use distinct translucent themes", () => {
   assert.notEqual(rival, finalExam);
 });
 
-test("default four-cell track and alarm three-cell track preserve states", () => {
+test("default four-cell、alarm three-cell 与 rival ten-cell tracks preserve states", () => {
   const track = rule(".mechanic-progress-track");
   const alarmTrack = rule(".enemy-mechanic-progress.kind-alarmClock .mechanic-progress-track");
+  const rivalTrack = rule(".enemy-mechanic-progress.kind-rivalShadow .mechanic-progress-track");
   const complete = rule(".mechanic-progress-track > b.is-complete");
   const current = rule(".mechanic-progress-track > b.is-current");
 
   assert.match(track, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(alarmTrack, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(rivalTrack, /grid-template-columns:\s*repeat\(10,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(complete, /background:\s*var\(--mechanic-accent\)/);
   assert.match(current, /background:\s*var\(--mechanic-current\)/);
 });

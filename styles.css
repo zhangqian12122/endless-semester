@@ -758,6 +758,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .mechanic-progress-track > b.is-complete { border-color: var(--mechanic-accent); background: var(--mechanic-accent); box-shadow: 0 0 5px color-mix(in srgb, var(--mechanic-accent) 54%, transparent); }
 .mechanic-progress-track > b.is-current { border-color: var(--mechanic-current); background: var(--mechanic-current); box-shadow: 0 0 0 1px rgba(255,255,255,.2), 0 0 7px color-mix(in srgb, var(--mechanic-current) 68%, transparent); }
 .enemy-mechanic-progress.kind-alarmClock .mechanic-progress-track { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.enemy-mechanic-progress.kind-rivalShadow .mechanic-progress-track { grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 2px; }
 .enemy-mechanic-progress.kind-finalExam .mechanic-progress-track > b { border-radius: 1px; }
 .combat-board.enemy-resolving .enemy-mechanic-progress { will-change: transform; }
 .combat-board.enemy-resolving .enemy-avatar { will-change: transform, filter; }

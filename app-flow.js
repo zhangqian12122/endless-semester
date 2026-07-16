@@ -51,6 +51,18 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
       lines.push(`当前 ${armor} 点护甲使重击 +${bonus}；每击破 1 点，伤害降低 1`);
     }
   }
+  if (intent.mechanicState?.type === "rivalInterrupt") {
+    const value = Math.max(0, Math.floor(Number(intent.mechanicState.value) || 0));
+    const cap = Math.max(1, Math.floor(Number(intent.mechanicState.cap) || 10));
+    const reduction = Math.max(0, Math.floor(Number(intent.mechanicState.attackReduction) || 3));
+    const attackBefore = Math.max(0, Math.floor(Number(intent.mechanicState.attackBefore) || attack));
+    const attackAfter = Math.max(0, Math.floor(Number(intent.mechanicState.attackAfter) || attack));
+    if (intent.mechanicState.triggered) {
+      lines.push(`本回合已打断内卷：公开攻击 ${attackBefore}→${attackAfter}；下回合重新累计`);
+    } else {
+      lines.push(`打断进度 ${value}/${cap}：再造成 ${Math.max(0, cap - value)} 点实际生命伤害，达到后当前攻击 -${reduction}`);
+    }
+  }
   if (intent.debuff === "distracted") {
     lines.push("施加走神：下回合你的攻击每段 -2");
   } else if (intent.debuff) {
@@ -101,7 +113,7 @@ function normalizedIntentTurn(intentTurn) {
     : 0;
 }
 
-export function enemyMechanicProgress(enemyId, intentTurn = 0) {
+export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = null) {
   const turn = normalizedIntentTurn(intentTurn);
 
   if (enemyId === "alarmClock") {
@@ -121,17 +133,21 @@ export function enemyMechanicProgress(enemyId, intentTurn = 0) {
   if (enemyId === "rivalShadow") {
     const action = turn + 1;
     const baseDamage = 6 + turn * 2;
+    const cap = Math.max(1, Math.floor(Number(mechanicState?.cap) || 10));
+    const value = Math.min(cap, Math.max(0, Math.floor(Number(mechanicState?.value) || 0)));
+    const triggered = mechanicState?.type === "rivalInterrupt" && mechanicState.triggered === true;
+    const attackBefore = Math.max(0, Math.floor(Number(mechanicState?.attackBefore) || baseDamage));
+    const attackAfter = Math.max(0, Math.floor(Number(mechanicState?.attackAfter) || attackBefore));
     return {
-      kind: "escalation",
-      title: "无休加速",
-      label: `第${action}次 · 基础伤害 ${baseDamage}`,
-      detail: "每次行动都攻击，基础伤害每次 +2，没有休息回合。",
-      segments: Array.from({ length: 4 }, (_, index) => {
-        if (action >= 4 && index === 3) return "continuing";
-        if (index + 1 < action) return "done";
-        if (index + 1 === action) return "current";
-        return "upcoming";
-      })
+      kind: "interrupt",
+      title: "打断内卷",
+      label: triggered
+        ? `已打断 · ${attackBefore}→${attackAfter}`
+        : value > 0
+        ? `${value}/${cap} · 还差 ${cap - value}`
+        : `0/${cap} · 当前攻击 ${attackBefore}`,
+      detail: `第${action}次加速，基础伤害 ${baseDamage}；本回合累计实际生命伤害，达到 ${cap} 后当前攻击 -3，下回合重置。`,
+      segments: Array.from({ length: cap }, (_, index) => index < value ? "done" : "upcoming")
     };
   }
 
@@ -215,7 +231,10 @@ export function enemyResolutionSnapshot(resolution, feedback = {}) {
     result: mechanicalParts.join(" · ") || (effects.length ? "非伤害效果已结算" : "效果已生效"),
     tone: Number(feedback.playerDamage) > 0 ? "danger" : "safe",
     hitBreakdown: enemyHitBreakdown(resolution.incoming),
-    effects
+    effects,
+    mechanicState: resolution.mechanicState && typeof resolution.mechanicState === "object"
+      ? { ...resolution.mechanicState }
+      : null
   };
 }
 
@@ -468,6 +487,32 @@ export function combatEnemyBlockAttackProjection(cardPreview = {}, incomingPrevi
   };
 }
 
+export function combatRivalInterruptProjection(cardPreview = {}, incomingPreview = {}, mechanicState = {}) {
+  if (mechanicState?.type !== "rivalInterrupt" || mechanicState.triggered) return null;
+  const value = Math.max(0, Math.floor(safeBattleValue(mechanicState.value)));
+  const cap = Math.max(1, Math.floor(safeBattleValue(mechanicState.cap) || 10));
+  const healthDamage = Math.max(0, safeBattleValue(cardPreview.healthDamage));
+  if (!healthDamage || value >= cap || value + healthDamage < cap) return null;
+  const attackReduction = Math.max(0, Math.floor(safeBattleValue(mechanicState.attackReduction) || 3));
+  const perHitBefore = Math.max(0, safeBattleValue(incomingPreview.perHit));
+  const hits = perHitBefore > 0
+    ? Math.max(1, Math.floor(safeBattleValue(incomingPreview.hits) || 1))
+    : 0;
+  if (!attackReduction || !hits) return null;
+  const perHitAfter = Math.max(0, perHitBefore - attackReduction);
+  return {
+    valueBefore: value,
+    valueAfter: cap,
+    cap,
+    healthDamage,
+    attackReduction,
+    perHitBefore,
+    perHitAfter,
+    hits,
+    attackTotalAfter: perHitAfter * hits
+  };
+}
+
 export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, options = {}) {
   if (options.playable === false) return null;
   const enemyHp = Math.max(0, safeBattleValue(options.enemyHp));
@@ -482,6 +527,7 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
       detail: `预计造成 ${healthDamage} 点生命伤害`
     };
   }
+  if (enemyHp > 0 && healthDamage >= enemyHp) return null;
 
   if (playerHp <= 0) return null;
   const block = Math.max(0, safeBattleValue(cardPreview.block));
@@ -493,6 +539,36 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
   const lethalBefore = Boolean(incomingPreview.lethal || currentTotalLoss >= playerHp);
 
   const mechanicState = options.mechanicState;
+  const rivalInterrupt = combatRivalInterruptProjection(cardPreview, incomingPreview, mechanicState);
+  if (rivalInterrupt) {
+    const { attackTotalAfter, cap, perHitBefore, perHitAfter } = rivalInterrupt;
+    const attackLossAfterCard = unavoidableLoss >= hpAfterCard
+      ? 0
+      : Math.max(0, attackTotalAfter - currentBlock - block);
+    const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
+    const projectedLoss = selfDamage + totalLossAfterCard;
+    const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
+    const label = `打断内卷 · 攻击 ${perHitBefore}→${perHitAfter}`;
+    const detailPrefix = `此牌会让本回合实际伤害达到 ${cap}，卷王攻击从 ${perHitBefore} 降至 ${perHitAfter}`;
+
+    if (lethalBefore && !lethalAfter) {
+      return {
+        tone: "rescue",
+        label: `${label} · 脱险`,
+        detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
+      };
+    }
+    if (projectedLoss === 0) {
+      return { tone: "guard", label: `${label} · 无伤`, detail: `${detailPrefix}，打出后无伤` };
+    }
+    return {
+      tone: lethalAfter ? "danger" : "counter",
+      label: lethalAfter ? `${label} · 仍致命` : `${label} · -${projectedLoss}生命`,
+      detail: lethalAfter
+        ? `${detailPrefix}，仍会致命，预计损失 ${projectedLoss} 生命`
+        : `${detailPrefix}，预计损失 ${projectedLoss} 生命`
+    };
+  }
   const mechanicStatusCleared = Math.max(0, Math.floor(safeBattleValue(options.mechanicStatusCleared)));
   if (mechanicState?.type === "statusHits" && mechanicStatusCleared > 0) {
     const sourceCount = Math.max(0, Math.floor(safeBattleValue(mechanicState.sourceCount)));

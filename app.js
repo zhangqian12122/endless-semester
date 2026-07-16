@@ -632,7 +632,8 @@ function enemyIntentTokenHtml(intent, resolution = null) {
   const enemyDefinition = ENEMY_DEFS[game.combat?.enemy?.id];
   const mechanicDescriptionId = enemyMechanicProgress(
     enemyDefinition?.id,
-    resolution ? Math.max(0, resolution.turn - 1) : game.combat?.enemy?.intentTurn
+    resolution ? Math.max(0, resolution.turn - 1) : game.combat?.enemy?.intentTurn,
+    resolution?.mechanicState || intent.mechanicState
   ) ? " enemy-mechanic-summary" : "";
   return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-controls="enemy-intent-details" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(name)}">
     <span class="enemy-intent-chips" aria-hidden="true">${chips.map((chip) => `<i class="intent-chip intent-${chip.kind}"><em>${chip.icon}</em><b>${escapeHtml(chip.value)}</b></i>`).join("")}</span>
@@ -647,9 +648,9 @@ function enemyIntentTokenHtml(intent, resolution = null) {
   </button>`;
 }
 
-function enemyMechanicProgressHtml(enemy, resolution = null) {
+function enemyMechanicProgressHtml(enemy, intent, resolution = null) {
   const intentTurn = resolution ? Math.max(0, resolution.turn - 1) : enemy?.intentTurn;
-  const progress = enemyMechanicProgress(enemy?.id, intentTurn);
+  const progress = enemyMechanicProgress(enemy?.id, intentTurn, resolution?.mechanicState || intent?.mechanicState);
   if (!progress) return "";
   const segments = progress.segments.map((state) => {
     const stateClass = state === "done"
@@ -1609,7 +1610,8 @@ function finishPlayerTurn() {
       name: intent.name,
       detail: enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id).join(" · "),
       incoming,
-      effects: actualEffects
+      effects: actualEffects,
+      mechanicState: intent.mechanicState
     }
   });
   recordCurrentCombat();
@@ -1767,7 +1769,7 @@ function renderCombat() {
       <section class="fighter enemy-fighter">
         <div class="fighter-label"><span>${combat.enemy.name}</span></div>
         ${enemyIntentTokenHtml(intent, enemyResolution)}
-        ${enemyMechanicProgressHtml(combat.enemy, enemyResolution)}
+        ${enemyMechanicProgressHtml(combat.enemy, intent, enemyResolution)}
         ${renderEnemyAvatar(combat.enemy)}
         <div class="combat-vitals enemy-vitals">
           <span class="block-shield ${combat.enemy.block > 0 ? "has-block" : "is-empty"}" aria-label="敌人当前护甲 ${combat.enemy.block}"><b>${combat.enemy.block}</b></span>
@@ -3364,6 +3366,7 @@ app.addEventListener("click", (event) => {
   } else if (action === "play-card") {
     const card = game.combat.hand.find((held) => held.uid === button.dataset.uid);
     const definition = card ? cardDefinition(card) : null;
+    const rivalInterruptBefore = game.getIntent().mechanicState;
     const wasDistracted = game.combat.distracted === true;
     const statusCardsBefore = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
     const motionOrigin = captureBattleMotionOrigin(button, "card");
@@ -3375,11 +3378,18 @@ app.addEventListener("click", (event) => {
       const distractedCleared = Boolean(definition?.effect.clearDistracted && wasDistracted && !game.combat.distracted);
       const cleanseApplied = Boolean(distractedCleared
         || (definition?.effect.exhaustStatuses && statusCardsAfter < statusCardsBefore));
+      const rivalInterruptAfter = game.getIntent().mechanicState;
+      const rivalInterrupted = rivalInterruptBefore?.type === "rivalInterrupt"
+        && !rivalInterruptBefore.triggered
+        && rivalInterruptAfter?.triggered;
       queueBattleFeedback("card", definition?.displayName || "卡牌生效", before, {
         cardPlayed: true,
         cardType: definition?.type || "skill",
         cleanseApplied,
-        effectParts: distractedCleared ? ["移除走神"] : [],
+        effectParts: [
+          ...(distractedCleared ? ["移除走神"] : []),
+          ...(rivalInterrupted ? [`打断内卷 · 敌方攻击 ${rivalInterruptAfter.attackBefore}→${rivalInterruptAfter.attackAfter}`] : [])
+        ],
         motionOrigin
       });
     }
@@ -3403,12 +3413,22 @@ app.addEventListener("click", (event) => {
     if (endTurnDecision(game.incomingDamagePreview(), true) === END_TURN_ACTION.end) finishPlayerTurn();
   } else if (action === "pet-skill") {
     const motionOrigin = captureBattleMotionOrigin(app.querySelector(".pet-companion-token"), "pet");
+    const rivalInterruptBefore = game.getIntent().mechanicState;
     const before = battleStateSnapshot();
     const result = game.usePetSkill();
     if (!result.ok) setToast(result.reason);
     else {
       const pet = currentPetDefinition();
-      queueBattleFeedback("pet", `${pet.name} · ${pet.skill.name}`, before, { motionOrigin });
+      const rivalInterruptAfter = game.getIntent().mechanicState;
+      const rivalInterrupted = rivalInterruptBefore?.type === "rivalInterrupt"
+        && !rivalInterruptBefore.triggered
+        && rivalInterruptAfter?.triggered;
+      queueBattleFeedback("pet", `${pet.name} · ${pet.skill.name}`, before, {
+        effectParts: rivalInterrupted
+          ? [`打断内卷 · 敌方攻击 ${rivalInterruptAfter.attackBefore}→${rivalInterruptAfter.attackAfter}`]
+          : [],
+        motionOrigin
+      });
     }
     recordCurrentCombat();
     render();
