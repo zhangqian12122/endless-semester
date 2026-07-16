@@ -33,6 +33,19 @@ test("动态应对建议只在玩家可操作的当前意图详情中显示", ()
   assert.match(appSource, /risk: turnRisk/);
   assert.match(appSource, /distracted: combat\.distracted/);
   assert.match(appSource, /enemy: combat\.enemy/);
+  assert.match(appSource, /const handModels = combat\.hand\.map/);
+  assert.match(appSource, /const immediatePlan = combatImmediateCounterplayPlan\(\[/);
+  assert.match(appSource, /preview: petActionPreview/);
+  assert.match(appSource, /playable: !petUnavailable/);
+  assert.match(appSource, /combat\.pendingDiscard\s*\? "请先完成弃牌"/);
+  assert.match(appSource, /combat\.energy < petCost\s*\? `还差 \$\{petCost - combat\.energy\} 点能量`/);
+  assert.match(appSource, /class="pet-skill \$\{!petUnavailable \? "ready" : ""\}"/);
+  assert.match(appSource, /plan: immediatePlan/);
+  assert.match(appSource, /const plannedCard = handModels\.find\(\(model\) => model\.card\.uid === immediatePlan\.finish\.action\.key\)/);
+  assert.match(appSource, /if \(plannedCard\) plannedCard\.tacticalCue = immediatePlan\.finish\.tacticalCue/);
+  assert.match(appSource, /actionsEvaluated: true/);
+  assert.match(appSource, /pendingDiscard: Boolean\(combat\.pendingDiscard\)/);
+  assert.match(appSource, /handModels\.map\(\(\{ card, index, playable, combatPreview, tacticalCue \}\)/);
   assert.match(
     appSource,
     /!resolution && counterplayCue \? `<span class="intent-counter-tip tone-\$\{escapeHtml\(counterplayCue\.tone\)\}"><b>\$\{escapeHtml\(counterplayCue\.label\)\}<\/b><span>\$\{escapeHtml\(counterplayCue\.detail\)\}<\/span><\/span>` : ""/

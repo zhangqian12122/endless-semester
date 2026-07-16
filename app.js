@@ -19,7 +19,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -1798,13 +1798,6 @@ function renderCombat() {
   const intent = game.getIntent();
   const incomingDamage = game.incomingDamagePreview();
   const turnRisk = endTurnRiskGuidance(incomingDamage, game.hp);
-  const intentCounterplayCue = enemyIntentCounterplayCue(combat.enemy.id, intent, {
-    intentTurn: combat.enemy.intentTurn,
-    risk: turnRisk,
-    distracted: combat.distracted,
-    enemy: combat.enemy,
-    fallback: ENEMY_DEFS[combat.enemy.id]?.tip
-  });
   const enemyHp = (combat.enemy.hp / combat.enemy.maxHp) * 100;
   const playerHp = (game.hp / game.maxHp) * 100;
   const petPreview = game.petSkillPreview();
@@ -1814,7 +1807,116 @@ function renderCombat() {
     petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
   ].filter(Boolean).join(" · ");
   const petReady = game.pet.charge >= game.pet.maxCharge && !combat.petUsed;
-  const petUnavailable = combatInputLocked || !petReady || combat.energy < 1 || combat.status !== "active";
+  const petCost = Math.max(0, Number(petPreview.skill?.energyCost) || 0);
+  const petUnavailable = combatInputLocked
+    || Boolean(combat.pendingDiscard)
+    || !petReady
+    || combat.energy < petCost
+    || combat.status !== "active";
+  const petAvailabilityText = combat.status !== "active"
+    ? "战斗已经结束"
+    : combat.petUsed
+      ? "本场已经出手"
+      : combatInputLocked
+        ? "敌方行动结算中，暂不可发动"
+        : combat.pendingDiscard
+          ? "请先完成弃牌"
+          : !petReady
+            ? "每回合首张攻击牌充能 +1"
+            : combat.energy < petCost
+              ? `还差 ${petCost - combat.energy} 点能量`
+              : "充能完成，可以发动";
+  const petButtonText = !petUnavailable
+    ? "发动技能"
+    : combat.status !== "active"
+      ? "战斗已结束"
+      : combat.petUsed
+        ? "本场已使用"
+        : combatInputLocked
+          ? "敌方行动中"
+          : combat.pendingDiscard
+            ? "先完成弃牌"
+            : !petReady
+              ? "尚未充满"
+              : "能量不足";
+  const mechanicStatusName = CARD_DEFS[intent.scaling?.statusId]?.name || "状态";
+  const handModels = combat.hand.map((card, index) => {
+    const actionable = !combatInputLocked && !combat.pendingDiscard && game.canPlay(card).ok;
+    const playable = combatInputLocked ? false : combat.pendingDiscard ? true : actionable;
+    const combatPreview = game.cardEffectPreview(card);
+    const distractedFollowup = game.clearDistractedFollowupPreview(card);
+    const mechanicStatusCleared = combatMechanicStatusCleared(combatPreview, intent, combat.hand);
+    const tacticalCue = combatInputLocked || combat.pendingDiscard ? null : combatCardTacticalCue(combatPreview, incomingDamage, {
+      enemyHp: combat.enemy.hp,
+      playerHp: game.hp,
+      playable: actionable,
+      mechanicState: intent.mechanicState,
+      mechanicStatusCleared,
+      mechanicStatusName,
+      distractedFollowup
+    });
+    return {
+      card,
+      index,
+      playable,
+      actionable,
+      combatPreview,
+      distractedFollowup,
+      mechanicStatusCleared,
+      tacticalCue
+    };
+  });
+  const petActionPreview = combatDirectActionPreview(petPreview, {
+    cost: petCost,
+    enemyBlock: combat.enemy.block,
+    enemyHp: combat.enemy.hp
+  });
+  const immediatePlan = combatImmediateCounterplayPlan([
+    ...handModels.map((model) => ({
+      key: model.card.uid,
+      source: "card",
+      name: cardDefinition(model.card).displayName,
+      playable: model.actionable,
+      cost: model.combatPreview.cost,
+      preview: model.combatPreview,
+      mechanicStatusCleared: model.mechanicStatusCleared,
+      mechanicStatusName,
+      distractedFollowup: model.distractedFollowup,
+      tacticalCue: model.tacticalCue,
+      unaffectedByDistracted: CARD_DEFS[model.card.id]?.type === "skill" && model.combatPreview.hasDamage
+    })),
+    {
+      key: `pet-${game.activePetId}`,
+      source: "pet",
+      name: `${petPreview.pet?.shortName || petPreview.pet?.name || "宠物"}·${petPreview.skill?.name || "技能"}`,
+      playable: !petUnavailable,
+      cost: petCost,
+      preview: petActionPreview,
+      mechanicStatusCleared: 0,
+      mechanicStatusName,
+      distractedFollowup: null,
+      unaffectedByDistracted: true
+    }
+  ], intent, incomingDamage, {
+    enemyHp: combat.enemy.hp,
+    playerHp: game.hp,
+    distracted: combat.distracted,
+    disabled: combatInputLocked || Boolean(combat.pendingDiscard) || combat.status !== "active"
+  });
+  if (immediatePlan.finish?.tacticalCue?.tone === "finish") {
+    const plannedCard = handModels.find((model) => model.card.uid === immediatePlan.finish.action.key);
+    if (plannedCard) plannedCard.tacticalCue = immediatePlan.finish.tacticalCue;
+  }
+  const intentCounterplayCue = enemyIntentCounterplayCue(combat.enemy.id, intent, {
+    intentTurn: combat.enemy.intentTurn,
+    risk: turnRisk,
+    distracted: combat.distracted,
+    enemy: combat.enemy,
+    plan: immediatePlan,
+    actionsEvaluated: true,
+    pendingDiscard: Boolean(combat.pendingDiscard),
+    fallback: ENEMY_DEFS[combat.enemy.id]?.tip
+  });
   const petChargePercent = Math.round((game.pet.charge / Math.max(1, game.pet.maxCharge)) * 100);
   const energy = combatEnergyState(combat);
   const visibleCombatLog = visibleCombatLogEntries(combat.log);
@@ -1867,9 +1969,9 @@ function renderCombat() {
           <div class="pet-companion-tooltip" role="tooltip">
             <small>战斗伙伴 · 当前充能 ${game.pet.charge}/${game.pet.maxCharge}</small>
             <strong>${currentPetDefinition().skill.name}${petPreview.talent ? ` · ${petPreview.talent.name}` : ""}</strong>
-            <p>1 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 每场一次</p>
-            <em>${combat.petUsed ? "本场已经出手" : petReady ? "充能完成，可以发动" : "每回合首张攻击牌充能 +1"}</em>
-            <button class="pet-skill ${petReady ? "ready" : ""}" data-action="pet-skill" aria-keyshortcuts="G" ${petUnavailable ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">G</kbd>${petReady ? "发动技能" : "尚未充满"}</button>
+            <p>${petCost} 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 每场一次</p>
+            <em>${petAvailabilityText}</em>
+            <button class="pet-skill ${!petUnavailable ? "ready" : ""}" data-action="pet-skill" aria-keyshortcuts="G" ${petUnavailable ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">G</kbd>${petButtonText}</button>
           </div>
         </article>
         <div class="energy-orb" aria-label="当前能量 ${energy.current}，本回合上限 ${energy.maximum}">
@@ -1890,21 +1992,7 @@ function renderCombat() {
 
     ${combat.pendingDiscard ? '<div class="discard-prompt">草稿纸：请选择一张手牌弃掉</div>' : ""}
     <div class="hand">
-      ${combat.hand.map((card, index) => {
-        const playable = combatInputLocked ? false : combat.pendingDiscard ? true : game.canPlay(card).ok;
-        const combatPreview = game.cardEffectPreview(card);
-        const distractedFollowup = game.clearDistractedFollowupPreview(card);
-        const mechanicStatusCleared = combatMechanicStatusCleared(combatPreview, intent, combat.hand);
-        const mechanicStatusName = CARD_DEFS[intent.scaling?.statusId]?.name || "状态";
-        const tacticalCue = combatInputLocked || combat.pendingDiscard ? null : combatCardTacticalCue(combatPreview, incomingDamage, {
-          enemyHp: combat.enemy.hp,
-          playerHp: game.hp,
-          playable,
-          mechanicState: intent.mechanicState,
-          mechanicStatusCleared,
-          mechanicStatusName,
-          distractedFollowup
-        });
+      ${handModels.map(({ card, index, playable, combatPreview, tacticalCue }) => {
         return cardHtml(card, {
           action: combat.pendingDiscard ? "discard-card" : "play-card",
           playable,

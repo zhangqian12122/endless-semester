@@ -544,6 +544,142 @@ function enemyDefenseCounterplayCue(intent = {}, risk = {}) {
   return makeEnemyCounterplayCue("window", "本回合 · 抢输出", "敌人本回合不攻击，优先输出。");
 }
 
+function enemyPlannedActionPhrase(plan) {
+  const action = plan?.action && typeof plan.action === "object" ? plan.action : {};
+  const name = typeof action.name === "string" && action.name ? action.name : action.source === "pet" ? "宠物技能" : "这张牌";
+  return `${action.source === "pet" ? "发动" : "打出"}「${name}」`;
+}
+
+function enemyPlannedCounterplayCue(plan, mode = "counter") {
+  if (!plan || typeof plan !== "object") return null;
+  const actionPhrase = enemyPlannedActionPhrase(plan);
+  const projection = plan.projection && typeof plan.projection === "object" ? plan.projection : {};
+  const preview = plan.preview && typeof plan.preview === "object" ? plan.preview : {};
+  const followup = plan.followup && typeof plan.followup === "object" ? plan.followup : null;
+
+  if (mode === "finish") {
+    if (plan.kind === "cleanse" && followup) {
+      return makeEnemyCounterplayCue(
+        "counter",
+        "本回合 · 可直接斩杀",
+        `${actionPhrase}，再接「${followup.cardName || "攻击牌"}」，伤害 ${counterplayInteger(followup.attackTotalBefore)}→${counterplayInteger(followup.attackTotalAfter)}，可结束战斗。`
+      );
+    }
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可直接斩杀",
+      `${actionPhrase}可造成 ${counterplayInteger(preview.healthDamage)} 点生命伤害，直接结束战斗。`
+    );
+  }
+
+  if (mode === "rescue") {
+    return makeEnemyCounterplayCue(
+      "guard",
+      "本回合 · 可直接脱险",
+      `${actionPhrase}：${String(plan.tacticalCue?.detail || "可解除当前致命风险").replace(/[。；\s]+$/u, "")}。`
+    );
+  }
+
+  if (plan.kind === "statusHits") {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可直接降段",
+      `${actionPhrase}可清理 ${counterplayInteger(projection.cleared)} 张状态，轰炸 ${counterplayInteger(projection.hitsBefore)}→${counterplayInteger(projection.hitsAfter)} 段。`
+    );
+  }
+  if (plan.kind === "enemyBlockAttack") {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可直接降压",
+      `${actionPhrase}可击破 ${counterplayInteger(projection.blockBroken)} 点护甲，重击 ${counterplayInteger(projection.perHitBefore)}→${counterplayInteger(projection.perHitAfter)}。`
+    );
+  }
+  if (plan.kind === "rivalInterrupt") {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可直接打断",
+      `${actionPhrase}可将内卷进度补到 ${counterplayInteger(projection.cap)}，攻击 ${counterplayInteger(projection.perHitBefore)}→${counterplayInteger(projection.perHitAfter)}。`
+    );
+  }
+  if (plan.kind === "examBlank") {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可直接破题",
+      `${actionPhrase}可击破剩余 ${counterplayInteger(projection.remainingBlock)} 点护甲，大题 ${counterplayInteger(projection.perHitBefore)}→${counterplayInteger(projection.perHitAfter)}。`
+    );
+  }
+  if (plan.kind === "guard") {
+    return makeEnemyCounterplayCue(
+      "guard",
+      "本回合 · 可直接无伤",
+      `${actionPhrase}：${String(plan.tacticalCue?.detail || "可挡住本次伤害").replace(/[。；\s]+$/u, "")}。`
+    );
+  }
+  if (plan.kind === "cleanse" && followup) {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 可恢复攻击",
+      `${actionPhrase}，再接「${followup.cardName || "攻击牌"}」；伤害 ${counterplayInteger(followup.attackTotalBefore)}→${counterplayInteger(followup.attackTotalAfter)}。`
+    );
+  }
+  if (plan.kind === "mitigate") {
+    return makeEnemyCounterplayCue(
+      "guard",
+      "本回合 · 先减损",
+      `${actionPhrase}可将预计损失 ${counterplayInteger(plan.currentLoss)}→${counterplayInteger(plan.projectedLoss)}。`
+    );
+  }
+  if (plan.kind === "unaffected") {
+    const healthDamage = counterplayInteger(preview.healthDamage);
+    const blockBroken = counterplayInteger(preview.enemyBlockAbsorbed);
+    const result = healthDamage > 0
+      ? `造成 ${healthDamage} 点生命伤害`
+      : `击破 ${blockBroken} 点护甲`;
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 走神替代路线",
+      `${actionPhrase}不受走神影响，可${result}。`
+    );
+  }
+  return null;
+}
+
+function unresolvedImmediateCounterplayDetail(mechanicState, distracted) {
+  if (mechanicState?.type === "statusHits" && counterplayInteger(mechanicState.value) > 0) {
+    return "当前没有单张牌或宠物能直接压低轰炸段数";
+  }
+  if (mechanicState?.type === "enemyBlockAttack" && counterplayInteger(mechanicState.sourceCount) > 0) {
+    return "当前没有单张牌或宠物能直接降低蓄压重击";
+  }
+  if (mechanicState?.type === "rivalInterrupt" && mechanicState.triggered !== true) {
+    const cap = Math.max(1, counterplayInteger(mechanicState.cap, 10));
+    if (counterplayInteger(mechanicState.value) < cap) return "当前没有单张牌或宠物能直接完成打断";
+  }
+  if (mechanicState?.type === "examBlank" && mechanicState.windowOpen === true && mechanicState.triggered !== true) {
+    if (counterplayInteger(mechanicState.remainingBlock) > 0) return "当前没有单张牌或宠物能直接完成破题";
+  }
+  if (distracted === true) return "当前没有可衔接攻击的清除牌或可用的不受走神动作";
+  return "";
+}
+
+function enemyUnavailableImmediateCue(defenseCue, risk = {}, detail = "") {
+  const totalHpLoss = counterplayInteger(risk.totalHpLoss);
+  const state = String(risk.state || "");
+  let consequence = "先按当前手牌重新组合路线";
+  if (state === "safe") {
+    consequence = counterplayInteger(risk.attackTotal) > 0
+      ? "当前护甲已经挡住本次攻击"
+      : "敌人本回合不会造成生命伤害";
+  } else if (totalHpLoss > 0) {
+    consequence = `结束回合预计损失 ${totalHpLoss} 生命，需要组合多张牌或承担结果`;
+  }
+  return makeEnemyCounterplayCue(
+    defenseCue?.tone === "danger" ? "danger" : state === "safe" ? "safe" : "guard",
+    "本回合 · 暂无直接路线",
+    `${detail || "当前没有单张牌或宠物能直接降低本回合损失"}；${consequence}。`
+  );
+}
+
 /**
  * 根据已经结算倍率的当前意图生成一句可执行建议。
  * 静态敌人 tip 仅作未知敌人的后备文案，正式敌人始终按当前行动与机制进度提示。
@@ -563,14 +699,40 @@ export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
     : attack * hits;
   const turn = normalizedIntentTurn(settings.intentTurn);
   const id = String(enemyId || "");
+  const immediatePlan = settings.plan && typeof settings.plan === "object"
+    ? settings.plan
+    : { finish: null, rescue: null, counter: null };
   const noAttackWindow = (label, detail) => (
     attackTotal === 0 && defenseCue.tone === "danger"
       ? appendEnemyCounterplayDetail(defenseCue, "敌人本回合不会攻击")
       : makeEnemyCounterplayCue("window", label, detail)
   );
 
-  // 任何机制反制都不能盖住致命信息；详细机制仍保留在同一意图浮层上方。
-  if (String(risk.state || "") === "lethal") return defenseCue;
+  if (settings.pendingDiscard === true) {
+    return makeEnemyCounterplayCue(
+      String(risk.state || "") === "lethal" ? "danger" : "guard",
+      "本回合 · 先完成弃牌",
+      "先选择一张手牌弃掉，再根据更新后的手牌安排应对。"
+    );
+  }
+
+  const finishCue = enemyPlannedCounterplayCue(immediatePlan.finish, "finish");
+  if (finishCue) return finishCue;
+
+  // 可安全斩杀和真实脱险优先于理论机制；仍无解时绝不能盖住致命信息。
+  if (String(risk.state || "") === "lethal") {
+    return enemyPlannedCounterplayCue(immediatePlan.rescue, "rescue") || defenseCue;
+  }
+
+  const plannedCounterCue = enemyPlannedCounterplayCue(immediatePlan.counter);
+  if (plannedCounterCue) return plannedCounterCue;
+
+  if (settings.actionsEvaluated === true) {
+    const unavailableDetail = unresolvedImmediateCounterplayDetail(mechanicState, settings.distracted);
+    if (unavailableDetail || String(risk.state || "") === "hit" || defenseCue.tone === "danger") {
+      return enemyUnavailableImmediateCue(defenseCue, risk, unavailableDetail);
+    }
+  }
 
   if (mechanicState?.type === "statusHits") {
     const sourceCount = counterplayInteger(mechanicState.sourceCount);
@@ -710,6 +872,64 @@ export function combatMechanicStatusCleared(cardPreview = {}, intent = {}, hand 
   const statusId = typeof intent.scaling.statusId === "string" ? intent.scaling.statusId : "";
   if (!statusId) return 0;
   return hand.filter((card) => card?.id === statusId).length;
+}
+
+export function combatStatusHitsProjection(statusCleared, incomingPreview = {}, mechanicState = {}) {
+  if (mechanicState?.type !== "statusHits") return null;
+  const sourceBefore = Math.max(0, Math.floor(safeBattleValue(mechanicState.sourceCount)));
+  const cap = Math.max(0, Math.floor(safeBattleValue(mechanicState.cap)));
+  const valueBefore = Math.min(
+    cap,
+    sourceBefore,
+    Math.max(0, Math.floor(safeBattleValue(mechanicState.value)))
+  );
+  const cleared = Math.min(
+    sourceBefore,
+    Math.max(0, Math.floor(safeBattleValue(statusCleared)))
+  );
+  const sourceAfter = Math.max(0, sourceBefore - cleared);
+  const valueAfter = Math.min(cap, sourceAfter);
+  const reducedHits = Math.max(0, valueBefore - valueAfter);
+  const perHit = Math.max(0, safeBattleValue(incomingPreview.perHit));
+  const hitsBefore = Math.max(0, Math.floor(safeBattleValue(incomingPreview.hits)));
+  const hitsAfter = Math.max(1, hitsBefore - reducedHits);
+
+  if (!cleared || !reducedHits || !perHit || hitsAfter >= hitsBefore) return null;
+  return {
+    cleared,
+    sourceBefore,
+    sourceAfter,
+    valueBefore,
+    valueAfter,
+    reducedHits,
+    perHit,
+    hitsBefore,
+    hitsAfter,
+    attackTotalAfter: perHit * hitsAfter
+  };
+}
+
+export function combatDirectActionPreview(rawPreview = {}, options = {}) {
+  const source = rawPreview && typeof rawPreview === "object" ? rawPreview : {};
+  const settings = options && typeof options === "object" ? options : {};
+  const damage = Math.max(0, safeBattleValue(source.damage));
+  const enemyBlock = Math.max(0, safeBattleValue(settings.enemyBlock));
+  const enemyHp = Math.max(0, safeBattleValue(settings.enemyHp));
+  const enemyBlockAbsorbed = Math.min(enemyBlock, damage);
+  const healthDamage = Math.min(enemyHp, Math.max(0, damage - enemyBlockAbsorbed));
+  return {
+    cost: Math.max(0, Math.floor(safeBattleValue(settings.cost ?? source.cost))),
+    hasDamage: damage > 0,
+    damagePerHit: damage,
+    hits: damage > 0 ? 1 : 0,
+    attackTotal: damage,
+    enemyBlockAbsorbed,
+    healthDamage,
+    block: Math.max(0, safeBattleValue(source.block)),
+    selfDamage: Math.max(0, safeBattleValue(source.selfDamage)),
+    statusCount: 0,
+    modifiers: []
+  };
 }
 
 export function combatEnemyBlockAttackProjection(cardPreview = {}, incomingPreview = {}, mechanicState = {}) {
@@ -894,57 +1114,45 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
     };
   }
   const mechanicStatusCleared = Math.max(0, Math.floor(safeBattleValue(options.mechanicStatusCleared)));
-  if (mechanicState?.type === "statusHits" && mechanicStatusCleared > 0) {
-    const sourceCount = Math.max(0, Math.floor(safeBattleValue(mechanicState.sourceCount)));
-    const cap = Math.max(0, Math.floor(safeBattleValue(mechanicState.cap)));
-    const currentValue = Math.min(
-      cap,
-      sourceCount,
-      Math.max(0, Math.floor(safeBattleValue(mechanicState.value)))
-    );
-    const cleared = Math.min(sourceCount, mechanicStatusCleared);
-    const nextSource = Math.max(0, sourceCount - cleared);
-    const nextValue = Math.min(cap, nextSource);
-    const reducedHits = Math.max(0, currentValue - nextValue);
-    const perHit = Math.max(0, safeBattleValue(incomingPreview.perHit));
-    const currentHits = Math.max(0, Math.floor(safeBattleValue(incomingPreview.hits)));
-    const nextHits = Math.max(1, currentHits - reducedHits);
+  const statusHitsProjection = combatStatusHitsProjection(
+    mechanicStatusCleared,
+    incomingPreview,
+    mechanicState
+  );
+  if (statusHitsProjection) {
+    const { cleared, hitsBefore: currentHits, hitsAfter: nextHits, attackTotalAfter: nextAttackTotal } = statusHitsProjection;
+    const attackLossAfterCard = unavoidableLoss >= hpAfterCard
+      ? 0
+      : Math.max(0, nextAttackTotal - currentBlock - block);
+    const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
+    const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
+    const statusName = typeof options.mechanicStatusName === "string" && options.mechanicStatusName
+      ? options.mechanicStatusName
+      : "状态";
+    const label = `轰炸 ${currentHits}→${nextHits}段`;
+    const detailPrefix = `清理 ${cleared} 张${statusName}：轰炸从 ${currentHits} 段降至 ${nextHits} 段`;
 
-    if (reducedHits > 0 && perHit > 0 && nextHits < currentHits) {
-      const nextAttackTotal = perHit * nextHits;
-      const attackLossAfterCard = unavoidableLoss >= hpAfterCard
-        ? 0
-        : Math.max(0, nextAttackTotal - currentBlock - block);
-      const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
-      const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
-      const statusName = typeof options.mechanicStatusName === "string" && options.mechanicStatusName
-        ? options.mechanicStatusName
-        : "状态";
-      const label = `轰炸 ${currentHits}→${nextHits}段`;
-      const detailPrefix = `清理 ${cleared} 张${statusName}：轰炸从 ${currentHits} 段降至 ${nextHits} 段`;
-
-      if (lethalBefore && !lethalAfter) {
-        return {
-          tone: "rescue",
-          label: `${label} · 脱险`,
-          detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
-        };
-      }
-      if (totalLossAfterCard === 0) {
-        return {
-          tone: "guard",
-          label: `${label} · 无伤`,
-          detail: `${detailPrefix}，打出后无伤`
-        };
-      }
+    if (lethalBefore && !lethalAfter) {
       return {
-        tone: lethalAfter ? "danger" : "counter",
-        label: lethalAfter ? `${label} · 仍致命` : `${label} · -${totalLossAfterCard}生命`,
-        detail: lethalAfter
-          ? `${detailPrefix}，仍会致命，预计损失 ${totalLossAfterCard} 生命`
-          : `${detailPrefix}，预计损失 ${totalLossAfterCard} 生命`
+        tone: "rescue",
+        label: `${label} · 脱险`,
+        detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
       };
     }
+    if (totalLossAfterCard === 0) {
+      return {
+        tone: "guard",
+        label: `${label} · 无伤`,
+        detail: `${detailPrefix}，打出后无伤`
+      };
+    }
+    return {
+      tone: lethalAfter ? "danger" : "counter",
+      label: lethalAfter ? `${label} · 仍致命` : `${label} · -${totalLossAfterCard}生命`,
+      detail: lethalAfter
+        ? `${detailPrefix}，仍会致命，预计损失 ${totalLossAfterCard} 生命`
+        : `${detailPrefix}，预计损失 ${totalLossAfterCard} 生命`
+    };
   }
 
   const blockAttackProjection = combatEnemyBlockAttackProjection(
@@ -1061,6 +1269,202 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
   };
 }
 
+function combatImmediateCurrentLoss(incomingPreview = {}) {
+  if (Object.prototype.hasOwnProperty.call(incomingPreview, "totalHpLoss")) {
+    return Math.max(0, safeBattleValue(incomingPreview.totalHpLoss));
+  }
+  const unavoidableLoss = Math.max(0, safeBattleValue(incomingPreview.endTurnHpLoss));
+  const attackTotal = Math.max(0, safeBattleValue(incomingPreview.attackTotal));
+  const currentBlock = Math.max(0, safeBattleValue(incomingPreview.currentBlock));
+  return unavoidableLoss + Math.max(0, attackTotal - currentBlock);
+}
+
+function combatImmediateProjectedLoss(preview = {}, incomingPreview = {}, playerHp = 0) {
+  const selfDamage = Math.max(0, safeBattleValue(preview.selfDamage));
+  const hpAfterAction = Math.max(0, playerHp - selfDamage);
+  const unavoidableLoss = Math.max(0, safeBattleValue(incomingPreview.endTurnHpLoss));
+  const attackTotal = Math.max(0, safeBattleValue(incomingPreview.attackTotal));
+  const currentBlock = Math.max(0, safeBattleValue(incomingPreview.currentBlock));
+  const block = Math.max(0, safeBattleValue(preview.block));
+  const attackLoss = unavoidableLoss >= hpAfterAction
+    ? 0
+    : Math.max(0, attackTotal - currentBlock - block);
+  const actionLoss = unavoidableLoss + attackLoss;
+  return {
+    hpAfterAction,
+    actionLoss,
+    projectedLoss: selfDamage + actionLoss,
+    survives: hpAfterAction > actionLoss
+  };
+}
+
+function combatImmediateMechanicProjection(action, incomingPreview, mechanicState) {
+  if (mechanicState?.type === "statusHits") {
+    return combatStatusHitsProjection(action.mechanicStatusCleared, incomingPreview, mechanicState);
+  }
+  if (mechanicState?.type === "enemyBlockAttack") {
+    return combatEnemyBlockAttackProjection(action.preview, incomingPreview, mechanicState);
+  }
+  if (mechanicState?.type === "rivalInterrupt") {
+    return combatRivalInterruptProjection(action.preview, incomingPreview, mechanicState);
+  }
+  if (mechanicState?.type === "examBlank") {
+    return combatFinalExamBlankProjection(action.preview, incomingPreview, mechanicState);
+  }
+  return null;
+}
+
+function combatImmediatePlanEntry(action, tacticalCue, projection, loss, currentLoss, index, kind) {
+  const cost = Math.max(0, Math.floor(safeBattleValue(action.cost ?? action.preview?.cost)));
+  return {
+    kind,
+    action: {
+      key: typeof action.key === "string" ? action.key : `${action.source === "pet" ? "pet" : "card"}-${index}`,
+      source: action.source === "pet" ? "pet" : "card",
+      name: typeof action.name === "string" && action.name ? action.name : action.source === "pet" ? "宠物技能" : "这张牌",
+      cost
+    },
+    tacticalCue,
+    projection,
+    preview: action.preview,
+    followup: action.distractedFollowup || null,
+    currentLoss,
+    projectedLoss: loss.projectedLoss,
+    _index: index,
+    _totalCost: cost + Math.max(0, Math.floor(safeBattleValue(action.distractedFollowup?.cardCost)))
+  };
+}
+
+function cleanCombatImmediatePlanEntry(entry) {
+  if (!entry) return null;
+  const { _index, _totalCost, ...clean } = entry;
+  return clean;
+}
+
+function combatImmediateCleanseFinish(entry, playerHp) {
+  const followup = entry?.followup;
+  if (
+    entry?.kind !== "cleanse"
+    || !followup
+    || followup.lethalAfter !== true
+    || followup.lethalBefore === true
+    || safeBattleValue(followup.attackGain) <= 0
+  ) return null;
+  const combinedSelfDamage = Math.max(0, safeBattleValue(entry.preview?.selfDamage))
+    + Math.max(0, safeBattleValue(followup.followupSelfDamage));
+  if (playerHp <= combinedSelfDamage) return null;
+  return {
+    ...entry,
+    tacticalCue: {
+      tone: "finish",
+      label: "解除走神 · 可接斩杀",
+      detail: `移除当前走神后接「${followup.cardName || "攻击牌"}」，可结束战斗`
+    }
+  };
+}
+
+/**
+ * 只评估一个当前可执行动作，以及引擎已经精确验证过的“清走神→攻击”衔接。
+ * 不叠加多张静态预览，避免重复计算护甲、首击加成与一次性物品。
+ */
+export function combatImmediateCounterplayPlan(actions = [], intent = {}, incomingPreview = {}, options = {}) {
+  const settings = options && typeof options === "object" ? options : {};
+  const emptyPlan = { finish: null, rescue: null, counter: null };
+  if (settings.disabled === true || !Array.isArray(actions)) return emptyPlan;
+
+  const resolvedIntent = intent && typeof intent === "object" ? intent : {};
+  const mechanicState = resolvedIntent.mechanicState && typeof resolvedIntent.mechanicState === "object"
+    ? resolvedIntent.mechanicState
+    : null;
+  const enemyHp = Math.max(0, safeBattleValue(settings.enemyHp));
+  const playerHp = Math.max(0, safeBattleValue(settings.playerHp));
+  if (playerHp <= 0) return emptyPlan;
+  const currentLoss = combatImmediateCurrentLoss(incomingPreview);
+  const lethal = Boolean(incomingPreview.lethal || currentLoss >= playerHp);
+  const evaluated = actions.flatMap((action, index) => {
+    if (!action || typeof action !== "object" || action.playable !== true) return [];
+    const preview = action.preview && typeof action.preview === "object" ? action.preview : {};
+    const tacticalCue = Object.prototype.hasOwnProperty.call(action, "tacticalCue")
+      ? action.tacticalCue
+      : combatCardTacticalCue(preview, incomingPreview, {
+        enemyHp,
+        playerHp,
+        playable: true,
+        mechanicState,
+        mechanicStatusCleared: action.mechanicStatusCleared,
+        mechanicStatusName: action.mechanicStatusName,
+        distractedFollowup: action.distractedFollowup
+      });
+    const projection = combatImmediateMechanicProjection(
+      { ...action, preview },
+      incomingPreview,
+      mechanicState
+    );
+    const loss = combatImmediateProjectedLoss(preview, incomingPreview, playerHp);
+    return [{ action: { ...action, preview }, tacticalCue, projection, loss, index }];
+  });
+
+  const byCostThenImpact = (left, right) => (
+    left._totalCost - right._totalCost
+    || left.projectedLoss - right.projectedLoss
+    || safeBattleValue(right.preview?.healthDamage) - safeBattleValue(left.preview?.healthDamage)
+    || left._index - right._index
+  );
+  const entries = evaluated.map(({ action, tacticalCue, projection, loss, index }) => {
+    let kind = "mitigate";
+    if (action.distractedFollowup) kind = "cleanse";
+    else if (projection && mechanicState?.type) kind = mechanicState.type;
+    else if (tacticalCue?.tone === "guard") kind = "guard";
+    else if (action.unaffectedByDistracted === true) kind = "unaffected";
+    return combatImmediatePlanEntry(action, tacticalCue, projection, loss, currentLoss, index, kind);
+  });
+
+  const finish = entries
+    .flatMap((entry) => {
+      if (entry.tacticalCue?.tone === "finish") return [entry];
+      const cleanseFinish = combatImmediateCleanseFinish(entry, playerHp);
+      return cleanseFinish ? [cleanseFinish] : [];
+    })
+    .sort(byCostThenImpact)[0] || null;
+  const rescue = lethal
+    ? entries.filter((entry) => entry.tacticalCue?.tone === "rescue").sort(byCostThenImpact)[0] || null
+    : null;
+
+  let counter = null;
+  if (!lethal) {
+    const mechanism = entries
+      .filter((entry) => entry.projection && entry.tacticalCue && entry.tacticalCue.tone !== "danger")
+      .sort(byCostThenImpact)[0];
+    const guard = entries
+      .filter((entry) => entry.tacticalCue?.tone === "guard")
+      .sort(byCostThenImpact)[0];
+    const cleanse = entries
+      .filter((entry) => entry.kind === "cleanse" && entry.tacticalCue && entry.tacticalCue.tone !== "danger")
+      .sort(byCostThenImpact)[0];
+    const mitigate = entries
+      .filter((entry) => (
+        entry.kind === "mitigate"
+        && entry.projectedLoss < currentLoss
+        && entry.preview
+        && combatImmediateProjectedLoss(entry.preview, incomingPreview, playerHp).survives
+      ))
+      .sort(byCostThenImpact)[0];
+    const unaffected = settings.distracted === true
+      ? entries.filter((entry) => (
+        entry.kind === "unaffected"
+        && (safeBattleValue(entry.preview?.healthDamage) > 0 || safeBattleValue(entry.preview?.enemyBlockAbsorbed) > 0)
+      )).sort(byCostThenImpact)[0]
+      : null;
+    counter = mechanism || guard || cleanse || mitigate || unaffected || null;
+  }
+
+  return {
+    finish: cleanCombatImmediatePlanEntry(finish),
+    rescue: cleanCombatImmediatePlanEntry(rescue),
+    counter: cleanCombatImmediatePlanEntry(counter)
+  };
+}
+
 export function shouldShowCombatCardPreview(preview) {
   if (!preview) return false;
   const modified = Array.isArray(preview.modifiers) && preview.modifiers.length > 0;
@@ -1070,8 +1474,12 @@ export function shouldShowCombatCardPreview(preview) {
 }
 
 function safeBattleValue(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+  try {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function combatEnergyState(combat = {}) {

@@ -2203,6 +2203,7 @@ export class SemesterGame {
     const pet = this.getPetDefinition();
     const { skill } = pet;
     if (combat.status !== "active") return { ok: false, reason: "战斗已经结束" };
+    if (combat.pendingDiscard) return { ok: false, reason: "请先选择一张牌弃掉" };
     if (combat.petUsed) return { ok: false, reason: "本场已经用过宠物技能" };
     if (this.pet.charge < this.pet.maxCharge) return { ok: false, reason: "宠物充能未满" };
     if (combat.energy < skill.energyCost) return { ok: false, reason: `需要 ${skill.energyCost} 点能量` };
