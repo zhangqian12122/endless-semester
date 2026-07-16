@@ -2826,7 +2826,7 @@ function eventChoices(id) {
       [`给${currentPetDefinition().shortName}加餐`, "接下来 3 场战斗初始充能 +1", "meal-pet"]
     ],
     campusRumor: [
-      ["进去调查", "与强化敌人战斗；胜利获得稀有物品", "rumor-fight"],
+      ["进去调查", "查看已锁定的对手、强化与真实奖励后开战", "rumor-fight"],
       ["做好准备再走", "获得 40 币；下个敌人初始 6 护甲", "rumor-gold"],
       ["撤退", "恢复 4 生命", "rumor-heal"]
     ],
@@ -2837,6 +2837,31 @@ function eventChoices(id) {
     ]
   };
   return choices[id];
+}
+
+function campusRumorRewardText(reward) {
+  if (!reward) return "胜利后结算调查奖励";
+  if (reward.type === "rareItem") {
+    return reward.choices > 1
+      ? `胜利后从 ${reward.choices} 件未拥有稀有物品中选 1 件`
+      : "胜利后获得最后 1 件未拥有稀有物品";
+  }
+  if (reward.type === "item") return "稀有物品已收齐；胜利后获得 1 件其他未拥有物品";
+  if (reward.type === "gold") return `随身物品已收齐；胜利后获得 ${reward.gold} 校园币`;
+  return "胜利后结算调查奖励";
+}
+
+function campusRumorIntelHtml(preview) {
+  if (!preview || !ENEMY_DEFS[preview.enemyId]) return "";
+  const enemy = ENEMY_DEFS[preview.enemyId];
+  const hpBonus = Math.round((preview.hpMultiplier - 1) * 100);
+  const hpBonusText = preview.hpMultiplier === 1.3 ? "生命 +30%" : `生命 +${hpBonus}%`;
+  const rewardText = campusRumorRewardText(preview.reward);
+  return `<section class="event-intel" aria-label="校园怪谈调查线索">
+    <div class="event-intel-heading"><small>调查线索 · 对手已锁定</small><strong>${escapeHtml(enemy.name)}</strong><span>${escapeHtml(enemy.mechanicName)}</span></div>
+    <p>${escapeHtml(enemy.mechanicText)}</p>
+    <div class="event-intel-facts"><b>强化：${hpBonusText}</b><b>${escapeHtml(rewardText)}</b></div>
+  </section>`;
 }
 
 const CONFIRMED_EVENT_CHOICES = new Set(["quiz-upgrade", "club-pet", "locker-open", "locker-remove"]);
@@ -2850,6 +2875,11 @@ const EVENT_CONFIRM_OUTCOMES = {
 
 function renderEvent() {
   const event = EVENT_DEFS[context.eventId];
+  const rumorPreview = event.id === "campusRumor" ? game.campusRumorPreview() : null;
+  const rumorRewardText = campusRumorRewardText(rumorPreview?.reward);
+  const rumorHpBonusText = rumorPreview?.hpMultiplier === 1.3
+    ? "生命 +30%"
+    : `生命 +${Math.round(((rumorPreview?.hpMultiplier || 1) - 1) * 100)}%`;
   const sceneOptions = {
     tone: event.tone || (event.safe ? "safe" : "risk"),
     mark: "?",
@@ -2857,11 +2887,14 @@ function renderEvent() {
   };
   const body = `
     ${sceneBannerHtml(event, sceneOptions)}
+    ${campusRumorIntelHtml(rumorPreview)}
     <div class="event-options">
       ${eventChoices(event.id).map(([name, detail, id]) => {
         const status = game.eventChoiceStatus(id);
         const currentDetail = id === "rumor-heal" && status.actualHeal !== null
           ? `恢复 ${status.actualHeal} 生命`
+          : id === "rumor-fight" && rumorPreview
+            ? `迎战 ${ENEMY_DEFS[rumorPreview.enemyId].name}（${rumorHpBonusText}）；${rumorRewardText}`
           : detail;
         const statusDetail = status.available ? currentDetail : `${currentDetail} · ${status.reason}`;
         return `<button data-action="event-choice" data-choice="${id}" ${status.available ? "" : "disabled"}><strong>${name}</strong><span>${statusDetail}</span></button>`;

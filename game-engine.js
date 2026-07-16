@@ -869,6 +869,31 @@ export class SemesterGame {
     return this.rng.pick(pool);
   }
 
+  previewRandomEnemy(options = {}) {
+    const rngState = this.rng.state;
+    try {
+      return this.randomEnemy(options);
+    } finally {
+      this.rng.state = rngState;
+    }
+  }
+
+  campusRumorPreview() {
+    if (this.pendingEventId !== "campusRumor") return null;
+    const rareItems = this.availableItemIds({ rarity: "rare" });
+    const remainingItems = this.availableItemIds();
+    const reward = rareItems.length
+      ? { type: "rareItem", choices: Math.min(2, rareItems.length), gold: 0 }
+      : remainingItems.length
+        ? { type: "item", choices: 1, gold: 0 }
+        : { type: "gold", choices: 0, gold: ITEM_REWARD_FALLBACK_GOLD.event };
+    return {
+      enemyId: this.previewRandomEnemy(),
+      hpMultiplier: 1.3,
+      reward
+    };
+  }
+
   generateSemesterPlan() {
     const plan = Array.from({ length: 17 }, () => []);
     plan[1] = [makeRouteNode("combat", 1, { enemy: "sleepyBug" })];
