@@ -48,5 +48,7 @@ test("飞行图形不参与布局或鼠标事件且只预热 transform 与 opaci
 });
 
 test("减少动态效果时继续彻底隐藏所有状态飞行图形", () => {
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.feedback-field, \.enemy-hit-pulse-layer \{ display: none !important; \}/);
+  assert.match(styles, /\.feedback-ribbon \{ visibility: visible !important; opacity: 1 !important;/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.played-card-ghost, \.pet-flight, \.battle-causal-ghost \{ display: none !important; \}/);
 });

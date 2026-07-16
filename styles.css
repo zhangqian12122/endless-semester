@@ -634,25 +634,30 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 @keyframes feedback-burst { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.22) rotate(-14deg); } 42% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.24) rotate(10deg); } }
 @keyframes feedback-shield { 0% { opacity: 0; transform: translate(-50%,-50%) scale(.65); } 34%,72% { opacity: 1; transform: translate(-50%,-50%) scale(1); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(1.08); } }
 @keyframes feedback-feathers { 0% { opacity: 0; transform: translate(-40px,30px) rotate(-12deg); } 35% { opacity: 1; } 100% { opacity: 0; transform: translate(90px,-18px) rotate(18deg); } }
-@keyframes feedback-number { 0% { opacity: 0; margin-top: 18px; transform: translateX(-50%) scale(.72); } 24%,68% { opacity: 1; transform: translateX(-50%) scale(1.06); } 100% { opacity: 0; margin-top: -28px; transform: translateX(-50%) scale(.96); } }
+@keyframes feedback-number { 0% { opacity: 0; transform: translate(-50%,18px) scale(.72); } 24%,68% { opacity: 1; transform: translate(-50%,-12px) scale(1.06); } 100% { opacity: 0; transform: translate(-50%,-35px) scale(.96); } }
 @keyframes feedback-enemy-hit { 0%,100% { transform: translateX(0); filter: drop-shadow(0 18px 16px rgba(0,0,0,.38)); } 34% { transform: translateX(12px) rotate(2deg); filter: drop-shadow(-8px 12px 5px rgba(227,88,67,.34)) brightness(1.24); } 58% { transform: translateX(-5px) rotate(-1deg); } }
 @keyframes feedback-player-hit { 0%,100% { transform: translateX(0); filter: drop-shadow(0 18px 16px rgba(0,0,0,.38)); } 34% { transform: translateX(-12px) rotate(-2deg); filter: drop-shadow(8px 12px 5px rgba(227,88,67,.34)) brightness(1.2); } 58% { transform: translateX(5px) rotate(1deg); } }
 @keyframes feedback-player-guard { 0%,100% { filter: drop-shadow(0 18px 16px rgba(0,0,0,.38)); } 42% { filter: drop-shadow(0 0 14px rgba(106,195,229,.7)) brightness(1.14); } }
-.battle-feedback.gsap-driven .feedback-ribbon,
-.battle-feedback.gsap-driven .feedback-streak,
-.battle-feedback.gsap-driven .feedback-burst,
-.battle-feedback.gsap-driven .feedback-shield,
-.battle-feedback.gsap-driven .feedback-feathers,
-.battle-feedback.gsap-driven .feedback-number,
-.battle-feedback.gsap-driven ~ .enemy-hit-pulse-layer .enemy-hit-pulse,
-.battle-feedback.gsap-driven ~ .fighter .student-avatar,
-.battle-feedback.gsap-driven ~ .fighter .enemy-avatar { animation: none !important; }
-.battle-feedback.gsap-driven .feedback-ribbon,
-.battle-feedback.gsap-driven .feedback-streak,
-.battle-feedback.gsap-driven .feedback-burst,
-.battle-feedback.gsap-driven .feedback-shield,
-.battle-feedback.gsap-driven .feedback-feathers,
-.battle-feedback.gsap-driven .feedback-number { opacity: 0; }
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-ribbon,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-streak,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-burst,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-shield,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-feathers,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-number,
+.battle-feedback:is(.gsap-driven, .motion-pending) ~ .enemy-hit-pulse-layer .enemy-hit-pulse,
+.battle-feedback:is(.gsap-driven, .motion-pending) ~ .fighter .student-avatar,
+.battle-feedback:is(.gsap-driven, .motion-pending) ~ .fighter .enemy-avatar { animation: none !important; }
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-ribbon,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-streak,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-burst,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-shield,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-feathers,
+.battle-feedback:is(.gsap-driven, .motion-pending) .feedback-number { opacity: 0; }
+.battle-feedback.motion-settled .feedback-ribbon { visibility: visible; opacity: 1; animation: none !important; transform: translateX(-50%); }
+.battle-feedback.motion-settled .feedback-field,
+.battle-feedback.motion-settled ~ .enemy-hit-pulse-layer { display: none; }
+.battle-feedback.motion-settled ~ .fighter .student-avatar,
+.battle-feedback.motion-settled ~ .fighter .enemy-avatar { animation: none !important; }
 .fighter { position: relative; z-index: 1; align-self: end; width: min(270px, 100%); min-width: 0; padding-bottom: 4px; text-align: center; }
 .player-fighter { justify-self: end; }
 .enemy-fighter { justify-self: start; }
@@ -943,9 +948,9 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .pet-companion-token .pet-face { width: 44px; height: 46px; border: 0; background: transparent; box-shadow: none; }
 .pet-icon-asset { box-sizing: border-box; padding: 2px; object-position: center; }
 .pet-icon-fallback { display: grid; place-items: center; }
-.pet-flight { position: fixed; z-index: 1001; left: 0; top: 0; isolation: isolate; display: grid; place-items: center; width: 54px; height: 56px; border: 1px solid rgba(218,190,112,.42); border-radius: 9px; background: radial-gradient(circle at 45% 38%, rgba(58,61,57,.96), rgba(17,20,21,.96) 72%); box-shadow: 0 8px 20px rgba(0,0,0,.42), 0 0 16px rgba(235,199,102,.18); contain: layout paint style; pointer-events: none; transform: translate3d(0,0,0); transform-origin: 50% 50%; will-change: transform, opacity; }
+.pet-flight { position: fixed; z-index: 45; left: 0; top: 0; isolation: isolate; display: grid; place-items: center; width: 54px; height: 56px; border: 1px solid rgba(218,190,112,.42); border-radius: 9px; background: radial-gradient(circle at 45% 38%, rgba(58,61,57,.96), rgba(17,20,21,.96) 72%); box-shadow: 0 8px 20px rgba(0,0,0,.42), 0 0 16px rgba(235,199,102,.18); contain: layout paint style; pointer-events: none; transform: translate3d(0,0,0); transform-origin: 50% 50%; will-change: transform, opacity; }
 .pet-flight .pet-face { flex: none; width: 44px; height: 46px; border: 0; background: transparent; box-shadow: none; pointer-events: none; }
-.battle-causal-ghost { position: fixed; z-index: 1002; left: 0; top: 0; display: block; box-sizing: border-box; width: 30px; height: 34px; margin: -17px 0 0 -15px; opacity: 0; color: #f4ecdc; border: 2px solid rgba(236,218,171,.82); background: #312d3c; box-shadow: 0 5px 12px rgba(0,0,0,.36); contain: layout paint style; pointer-events: none; transform: translate3d(0,0,0); transform-origin: 50% 50%; will-change: transform, opacity; }
+.battle-causal-ghost { position: fixed; z-index: 45; left: 0; top: 0; display: block; box-sizing: border-box; width: 30px; height: 34px; margin: -17px 0 0 -15px; opacity: 0; color: #f4ecdc; border: 2px solid rgba(236,218,171,.82); background: #312d3c; box-shadow: 0 5px 12px rgba(0,0,0,.36); contain: layout paint style; pointer-events: none; transform: translate3d(0,0,0); transform-origin: 50% 50%; will-change: transform, opacity; }
 .battle-causal-ghost > b { position: absolute; z-index: 2; inset: 4px; display: grid; place-items: center; overflow: hidden; color: inherit; background: transparent; font-family: "Songti SC", SimSun, serif; font-size: 12px; font-weight: 900; line-height: 1; text-shadow: 0 1px 2px rgba(0,0,0,.54); }
 .battle-causal-ghost > small { position: absolute; z-index: 4; top: -3px; right: -3px; display: none; place-items: center; min-width: 14px; height: 13px; padding: 0 2px; color: #fff8e8; border: 1px solid rgba(255,255,255,.42); border-radius: 7px; background: #5a384a; box-shadow: 0 2px 5px rgba(0,0,0,.38); font-size: 7px; font-weight: 900; line-height: 1; }
 .battle-causal-ghost.is-multiple { box-shadow: -3px 3px 0 -1px rgba(92,68,78,.78), 0 5px 12px rgba(0,0,0,.36); }
@@ -1099,11 +1104,11 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .hand .game-card:not(:disabled):is(:hover, :focus-visible) .card-art.has-image img { transform: scale(1.075); filter: saturate(1.05) contrast(1.04); }
 .game-card.disabled { filter: grayscale(.45) brightness(.68); }
 .played-card-ghost.game-card,
-.hand .played-card-ghost.game-card { position: fixed !important; z-index: 1000 !important; left: 0; top: 0; flex: none; margin: 0 !important; opacity: 1 !important; filter: none !important; cursor: default; pointer-events: none !important; user-select: none; transform: none; transform-origin: 50% 50%; transition: none !important; will-change: transform, opacity; }
+.hand .played-card-ghost.game-card { position: fixed !important; z-index: 45 !important; left: 0; top: 0; flex: none; margin: 0 !important; opacity: 1 !important; filter: none !important; cursor: default; pointer-events: none !important; user-select: none; transform: none; transform-origin: 50% 50%; transition: none !important; will-change: transform, opacity; }
 .played-card-ghost.game-card:disabled,
 .combat-page[aria-busy="true"] .hand .played-card-ghost.game-card:disabled { opacity: 1 !important; filter: none !important; }
 .played-card-ghost.game-card:hover,
-.hand .played-card-ghost.game-card:is(:hover, :focus-visible) { z-index: 1000 !important; transform: none; box-shadow: 0 15px 30px rgba(0,0,0,.38), inset 0 0 0 1px var(--card-frame-light), inset 0 -20px 34px rgba(58,48,36,.11); }
+.hand .played-card-ghost.game-card:is(:hover, :focus-visible) { z-index: 45 !important; transform: none; box-shadow: 0 15px 30px rgba(0,0,0,.38), inset 0 0 0 1px var(--card-frame-light), inset 0 -20px 34px rgba(58,48,36,.11); }
 
 .result-overlay { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(7,8,11,.78); backdrop-filter: blur(6px); }
 .result-card { width: min(440px, 100%); padding: 42px; text-align: center; border: 1px solid var(--line); border-top: 5px solid var(--yellow); border-radius: 12px; background: var(--panel); box-shadow: var(--shadow); }
@@ -1871,6 +1876,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
-  .enemy-hit-pulse-layer { display: none; }
+  .feedback-field, .enemy-hit-pulse-layer { display: none !important; }
+  .feedback-ribbon { visibility: visible !important; opacity: 1 !important; transform: translateX(-50%) !important; }
   .played-card-ghost, .pet-flight, .battle-causal-ghost { display: none !important; }
 }

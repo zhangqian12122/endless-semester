@@ -995,13 +995,16 @@ function addEnemyBattleMotion(timeline, attacker, feedback) {
 
 function runBattleMotion(feedback, origin = null) {
   if (!feedback || feedback.id === lastAnimatedFeedbackId || screen !== "combat") return;
-  lastAnimatedFeedbackId = feedback.id;
   clearBattleMotionArtifacts();
-  const gsap = window.gsap;
-  if (!gsap || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
-
   const feedbackRoot = app.querySelector(`[data-feedback-id="${feedback.id}"]`);
-  if (!feedbackRoot) return;
+  const gsap = window.gsap;
+  if (!feedbackRoot || !gsap || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+    feedbackRoot?.classList.remove("motion-pending", "gsap-driven");
+    return;
+  }
+
+  lastAnimatedFeedbackId = feedback.id;
+  feedbackRoot.classList.remove("motion-pending", "motion-settled");
   feedbackRoot.classList.add("gsap-driven");
   const media = gsap.matchMedia();
   battleMotionMedia = media;
@@ -1257,7 +1260,13 @@ function queueBattleFeedback(kind, label, before, options = {}) {
 
 function battleFeedbackHtml(feedback) {
   if (!feedback) return "";
-  const gsapDriven = window.gsap && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? " gsap-driven" : "";
+  const motionEnabled = Boolean(window.gsap)
+    && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const motionState = !motionEnabled
+    ? ""
+    : feedback.id === lastAnimatedFeedbackId
+    ? " motion-settled"
+    : " motion-pending";
   const enemyResult = feedback.enemyDamage
     ? `-${feedback.enemyDamage}`
     : feedback.enemyBlockLoss
@@ -1272,7 +1281,7 @@ function battleFeedbackHtml(feedback) {
     : feedback.playerBlockAbsorbed
     ? `挡下 ${feedback.playerBlockAbsorbed}`
     : "";
-  return `<div class="battle-feedback kind-${feedback.kind} tone-${feedback.tone} motion-${feedback.motionType}${gsapDriven}" data-feedback-id="${feedback.id}" role="status" aria-live="polite" aria-atomic="true">
+  return `<div class="battle-feedback kind-${feedback.kind} tone-${feedback.tone} motion-${feedback.motionType}${motionState}" data-feedback-id="${feedback.id}" role="status" aria-live="polite" aria-atomic="true">
     <div class="feedback-ribbon"><small>${escapeHtml(feedback.label)}</small><strong>${feedback.summaryParts.map(escapeHtml).join(" · ")}</strong></div>
     <div class="feedback-field" aria-hidden="true">
       <i class="feedback-streak"></i><i class="feedback-burst"></i>

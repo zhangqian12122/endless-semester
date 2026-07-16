@@ -684,9 +684,10 @@ function battleMotionType(kind, options, outcome) {
     return outcome.playerDamage > 0 || outcome.playerBlockAbsorbed > 0 ? "enemy-attack" : "enemy-skill";
   }
   if (options.cleanseApplied === true) return "cleanse";
+  if (outcome.enemyDamage > 0 || outcome.enemyBlockLoss > 0) return "attack";
+  if (outcome.playerBlockGain > 0) return "guard";
   if (options.cardType === "status") return "status";
   if (options.cardType === "attack") return "attack";
-  if (outcome.playerBlockGain > 0 && outcome.enemyDamage === 0 && outcome.enemyBlockLoss === 0) return "guard";
   return "skill";
 }
 
