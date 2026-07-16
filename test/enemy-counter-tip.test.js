@@ -28,13 +28,20 @@ test("八名正式敌人都有与真实机制对应的应对建议", () => {
   }
 });
 
-test("应对建议只在玩家可操作的当前意图详情中按需显示", () => {
+test("动态应对建议只在玩家可操作的当前意图详情中显示", () => {
+  assert.match(appSource, /enemyIntentCounterplayCue\(combat\.enemy\.id, intent, \{/);
+  assert.match(appSource, /risk: turnRisk/);
+  assert.match(appSource, /distracted: combat\.distracted/);
+  assert.match(appSource, /enemy: combat\.enemy/);
   assert.match(
     appSource,
-    /!resolution && enemyDefinition\?\.tip \? `<span class="intent-counter-tip"><b>应对建议<\/b><span>\$\{escapeHtml\(enemyDefinition\.tip\)\}<\/span><\/span>` : ""/
+    /!resolution && counterplayCue \? `<span class="intent-counter-tip tone-\$\{escapeHtml\(counterplayCue\.tone\)\}"><b>\$\{escapeHtml\(counterplayCue\.label\)\}<\/b><span>\$\{escapeHtml\(counterplayCue\.detail\)\}<\/span><\/span>` : ""/
   );
-  assert.match(styles, /\.intent-counter-tip \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)[^}]*border-left: 2px solid #75a98a/);
-  assert.match(styles, /\.intent-counter-tip b \{[^}]*white-space: nowrap/);
+  assert.doesNotMatch(appSource, /escapeHtml\(enemyDefinition\.tip\)/);
+  assert.match(styles, /\.intent-counter-tip \{[^}]*grid-template-columns: auto minmax\(0, 1fr\)[^}]*border-left: 2px solid var\(--counter-accent\)/);
+  assert.match(styles, /\.intent-counter-tip\.tone-danger/);
+  assert.match(styles, /\.intent-counter-tip\.tone-counter/);
+  assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.intent-counter-tip \{[^}]*grid-template-columns: 1fr;[^}]*font-size: 11px;/);
   assert.match(styles, /\.enemy-intent-detail \{[^}]*top: 8px;/);
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.combat-board:has\(\.enemy-intent-token:not\(\.is-dismissed\):is\(:hover, :focus-visible, \.is-pinned\)\) \{[^}]*z-index: 40;[^}]*overflow: visible;/);
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.player-fighter, \.enemy-fighter \{[^}]*translate: none;/);
@@ -45,5 +52,5 @@ test("应对建议只在玩家可操作的当前意图详情中按需显示", ()
   );
   assert.ok(combatLayer > 30, "展开说明的战场应高于移动端顶栏");
   assert.ok(modalLayers.every((layer) => layer > combatLayer), "牌堆、结果与教学模态层必须压住战场说明");
-  assert.match(readme, /应对建议只在当前行动可操作时出现，结算阶段不会误导玩家/);
+  assert.match(readme, /应对建议会按当前行动、真实伤害倍率与机制进度变化/);
 });

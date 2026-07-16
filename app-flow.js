@@ -482,6 +482,228 @@ export function endTurnRiskGuidance(preview = {}, currentHp = 0) {
   };
 }
 
+function counterplayInteger(value, fallback = 0) {
+  let number = fallback;
+  try {
+    number = Number(value);
+  } catch {
+    return Math.max(0, Math.floor(fallback));
+  }
+  return Number.isFinite(number)
+    ? Math.max(0, Math.floor(number))
+    : Math.max(0, Math.floor(fallback));
+}
+
+function makeEnemyCounterplayCue(tone, label, detail) {
+  return {
+    tone: String(tone || "safe"),
+    label: String(label || "本回合 · 应对"),
+    detail: String(detail || "按公开意图安排本回合。")
+  };
+}
+
+function appendEnemyCounterplayDetail(cue, suffix, overrides = {}) {
+  const first = String(cue?.detail || "").replace(/[。；\s]+$/u, "");
+  const second = String(suffix || "").replace(/[。；\s]+$/u, "");
+  return makeEnemyCounterplayCue(
+    overrides.tone || cue?.tone,
+    overrides.label || cue?.label,
+    [first, second].filter(Boolean).join("；") + "。"
+  );
+}
+
+function enemyDefenseCounterplayCue(intent = {}, risk = {}) {
+  const attack = counterplayInteger(intent?.attack);
+  const hits = attack > 0 ? Math.max(1, counterplayInteger(intent?.hits, 1)) : 0;
+  const attackTotal = Object.prototype.hasOwnProperty.call(risk || {}, "attackTotal")
+    ? counterplayInteger(risk.attackTotal)
+    : attack * hits;
+  const state = String(risk?.state || "");
+  const armorNeeded = counterplayInteger(risk?.armorNeeded);
+  const preventableHpLoss = counterplayInteger(risk?.preventableHpLoss);
+  const unavoidableHpLoss = counterplayInteger(risk?.unavoidableHpLoss);
+
+  if (state === "lethal") {
+    return armorNeeded > 0
+      ? makeEnemyCounterplayCue("danger", "本回合 · 保命", `至少再补 ${armorNeeded} 点护甲保命，或本回合击败敌人。`)
+      : makeEnemyCounterplayCue("danger", "本回合 · 必须结束", "护甲挡不住本次致命损失，必须本回合击败敌人。");
+  }
+  if (state === "hit") {
+    if (preventableHpLoss > 0) {
+      return makeEnemyCounterplayCue("guard", "本回合 · 补护甲", `再补 ${preventableHpLoss} 点护甲可挡住本次攻击。`);
+    }
+    if (unavoidableHpLoss > 0) {
+      return makeEnemyCounterplayCue("danger", "本回合 · 抢先结束", "护甲挡不住本次情绪内耗，优先结束战斗。");
+    }
+  }
+  if (attackTotal > 0) {
+    return state === "safe"
+      ? makeEnemyCounterplayCue("safe", "本回合 · 放心输出", "现有护甲足够，剩余能量可以输出。")
+      : makeEnemyCounterplayCue("guard", "本回合 · 先防守", "按头顶伤害补足护甲，剩余能量再输出。");
+  }
+  return makeEnemyCounterplayCue("window", "本回合 · 抢输出", "敌人本回合不攻击，优先输出。");
+}
+
+/**
+ * 根据已经结算倍率的当前意图生成一句可执行建议。
+ * 静态敌人 tip 仅作未知敌人的后备文案，正式敌人始终按当前行动与机制进度提示。
+ */
+export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
+  const resolvedIntent = intent && typeof intent === "object" ? intent : {};
+  const settings = options && typeof options === "object" ? options : {};
+  const mechanicState = resolvedIntent.mechanicState && typeof resolvedIntent.mechanicState === "object"
+    ? resolvedIntent.mechanicState
+    : null;
+  const risk = settings.risk && typeof settings.risk === "object" ? settings.risk : {};
+  const defenseCue = enemyDefenseCounterplayCue(resolvedIntent, risk);
+  const attack = counterplayInteger(resolvedIntent.attack);
+  const hits = attack > 0 ? Math.max(1, counterplayInteger(resolvedIntent.hits, 1)) : 0;
+  const attackTotal = Object.prototype.hasOwnProperty.call(risk, "attackTotal")
+    ? counterplayInteger(risk.attackTotal)
+    : attack * hits;
+  const turn = normalizedIntentTurn(settings.intentTurn);
+  const id = String(enemyId || "");
+  const noAttackWindow = (label, detail) => (
+    attackTotal === 0 && defenseCue.tone === "danger"
+      ? appendEnemyCounterplayDetail(defenseCue, "敌人本回合不会攻击")
+      : makeEnemyCounterplayCue("window", label, detail)
+  );
+
+  // 任何机制反制都不能盖住致命信息；详细机制仍保留在同一意图浮层上方。
+  if (String(risk.state || "") === "lethal") return defenseCue;
+
+  if (mechanicState?.type === "statusHits") {
+    const sourceCount = counterplayInteger(mechanicState.sourceCount);
+    const cap = counterplayInteger(mechanicState.cap);
+    const value = counterplayInteger(mechanicState.value);
+    if (value > 0) {
+      const clearNeeded = Math.max(1, sourceCount - cap + 1);
+      return makeEnemyCounterplayCue(
+        "counter",
+        "本回合 · 压低未读",
+        `主动清理 ${clearNeeded} 张紧张可少 1 段；自然消耗来不及。`
+      );
+    }
+    return appendEnemyCounterplayDetail(defenseCue, "当前没有紧张加段", {
+      label: "本回合 · 无未读加段"
+    });
+  }
+
+  if (mechanicState?.type === "enemyBlockAttack") {
+    const sourceCount = counterplayInteger(mechanicState.sourceCount);
+    const cap = counterplayInteger(mechanicState.cap);
+    if (sourceCount === 0) {
+      return appendEnemyCounterplayDetail(defenseCue, "蓄压已经清空，重击只有基础伤害", {
+        label: "本回合 · 蓄压已清"
+      });
+    }
+    if (sourceCount > cap) {
+      return makeEnemyCounterplayCue(
+        "counter",
+        "本回合 · 先破甲",
+        `先击破 ${sourceCount - cap + 1} 点护甲，重击才会降低 1 点。`
+      );
+    }
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 逐点降伤",
+      "每击破 1 点护甲，重击就降低 1 点。"
+    );
+  }
+
+  if (mechanicState?.type === "rivalInterrupt") {
+    const cap = Math.max(1, counterplayInteger(mechanicState.cap, 10));
+    const value = Math.min(cap, counterplayInteger(mechanicState.value));
+    const remaining = Math.max(0, cap - value);
+    const reduction = counterplayInteger(mechanicState.attackReduction, 3);
+    const enemyBlock = counterplayInteger(settings.enemy?.block ?? settings.enemyBlock);
+    if (mechanicState.triggered === true || remaining === 0) {
+      return appendEnemyCounterplayDetail(defenseCue, "打断已经生效", {
+        label: "本回合 · 已打断"
+      });
+    }
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 打断内卷",
+      enemyBlock > 0
+        ? `先击破 ${enemyBlock} 点护甲，再造成 ${remaining} 点生命伤害，可让本次攻击 -${reduction}。`
+        : `再造成 ${remaining} 点生命伤害，可让本次攻击 -${reduction}。`
+    );
+  }
+
+  if (mechanicState?.type === "examBlank") {
+    const before = counterplayInteger(mechanicState.attackBefore, attack);
+    const reduction = counterplayInteger(mechanicState.attackReduction, 6);
+    const after = counterplayInteger(mechanicState.attackAfter, Math.max(0, before - reduction));
+    const remainingBlock = counterplayInteger(mechanicState.remainingBlock);
+    if (mechanicState.triggered === true) {
+      return appendEnemyCounterplayDetail(defenseCue, `破题已生效，大题 ${before}→${after}`, {
+        label: "本回合 · 破题成功"
+      });
+    }
+    if (mechanicState.windowOpen === true) {
+      return makeEnemyCounterplayCue(
+        "counter",
+        "本回合 · 填空破题",
+        remainingBlock > 0
+          ? `再击破 ${remainingBlock} 点护甲，可把大题 ${before}→${Math.max(0, before - reduction)}。`
+          : `破题条件已经满足，可把大题 ${before}→${Math.max(0, before - reduction)}。`
+      );
+    }
+    return appendEnemyCounterplayDetail(defenseCue, "破题窗口尚未开启", {
+      label: "本回合 · 先防大题"
+    });
+  }
+
+  if (id === "phoneSpirit" && settings.distracted === true) {
+    return makeEnemyCounterplayCue(
+      "counter",
+      "本回合 · 先解走神",
+      "先清走神再出攻击；伤害技能与宠物不受影响。"
+    );
+  }
+
+  const step = turn % (id === "finalExam" ? 4 : 3);
+  if (id === "sleepyBug") {
+    if (step === 1) return noAttackWindow("本回合 · 抢输出", "敌人本回合不攻击；别叠下回合会清零的护甲，直接输出。");
+    return appendEnemyCounterplayDetail(defenseCue, step === 0 ? "撑过后是安全输出窗口" : "这是本轮最高伤害");
+  }
+  if (id === "homeworkBlob") {
+    if (step === 0) return appendEnemyCounterplayDetail(defenseCue, "待办会进入弃牌堆，抽到手后再清");
+    if (step === 2) return noAttackWindow("本回合 · 提前输出", `敌人本回合不攻击；结算后会获得 ${counterplayInteger(resolvedIntent.block)} 点护甲。`);
+    return defenseCue;
+  }
+  if (id === "alarmClock") {
+    if (step === 0) return noAttackWindow("本回合 · 直接输出", "敌人本回合不攻击；别叠下回合会清零的护甲。");
+    return appendEnemyCounterplayDetail(defenseCue, step === 1 ? "下一步是本轮最高伤害爆发" : "撑过后进入安全窗口");
+  }
+  if (id === "phoneSpirit") {
+    if (step === 0) return noAttackWindow("本回合 · 抢输出", "敌人本回合不攻击；走神会在下回合生效。");
+    if (step === 2) return appendEnemyCounterplayDetail(defenseCue, "走神会在下回合生效");
+    return defenseCue;
+  }
+  if (id === "groupChat") {
+    if (step === 1) return noAttackWindow("本回合 · 抢输出", "敌人本回合不攻击；紧张会进入弃牌堆。");
+    if (step === 2) return appendEnemyCounterplayDetail(defenseCue, "新紧张会强化下次消息轰炸");
+    return defenseCue;
+  }
+  if (id === "printerJam") {
+    if (step === 0) return noAttackWindow("本回合 · 提前输出", `敌人本回合不攻击；结算后会留下 ${counterplayInteger(resolvedIntent.block)} 点蓄压护甲。`);
+    return defenseCue;
+  }
+  if (id === "finalExam") {
+    if (step === 0) return noAttackWindow("本回合 · 抢输出", "发卷不会攻击；2 张紧张会洗入抽牌堆。");
+    if (step === 1) return appendEnemyCounterplayDetail(defenseCue, "撑过后会进入填空题");
+    if (step === 2) return appendEnemyCounterplayDetail(defenseCue, `结算后会留下 ${counterplayInteger(resolvedIntent.block)} 点护甲，下回合先破甲`);
+    return defenseCue;
+  }
+
+  const fallback = String(settings.fallback || "").trim();
+  return fallback
+    ? makeEnemyCounterplayCue(defenseCue.tone, defenseCue.label, fallback)
+    : defenseCue;
+}
+
 export function combatMechanicStatusCleared(cardPreview = {}, intent = {}, hand = []) {
   if (Math.max(0, Math.floor(safeBattleValue(cardPreview.statusCount))) === 0) return 0;
   if (intent.scaling?.type !== "statusHits" || !Array.isArray(hand)) return 0;

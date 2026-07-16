@@ -793,8 +793,12 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .intent-detail-list i { width: 5px; height: 5px; margin-top: 5px; border-radius: 50%; background: #d99a7f; box-shadow: 0 0 7px rgba(217,154,127,.48); }
 .intent-mechanic { display: grid; gap: 3px; padding: 7px 8px; color: #e1d8c7; border-left: 2px solid #d6a85d; background: linear-gradient(90deg, rgba(151,107,50,.18), transparent); font-size: 9px; line-height: 1.45; }
 .intent-mechanic b { color: #f0c97f; font-size: 9px; letter-spacing: .04em; }
-.intent-counter-tip { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; padding: 6px 8px; color: #d7e4da; border-left: 2px solid #75a98a; background: linear-gradient(90deg, rgba(75,132,94,.17), transparent); font-size: 9px; line-height: 1.45; }
-.intent-counter-tip b { color: #a8d6b5; white-space: nowrap; }
+.intent-counter-tip { --counter-accent: #75a98a; --counter-label: #a8d6b5; --counter-wash: rgba(75,132,94,.17); display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px; padding: 6px 8px; color: #d7e4da; border-left: 2px solid var(--counter-accent); background: linear-gradient(90deg, var(--counter-wash), transparent); font-size: 9px; line-height: 1.45; }
+.intent-counter-tip b { color: var(--counter-label); white-space: nowrap; }
+.intent-counter-tip.tone-danger { --counter-accent: #d77769; --counter-label: #ffb7a8; --counter-wash: rgba(156,62,51,.21); color: #f0d9d3; }
+.intent-counter-tip.tone-guard { --counter-accent: #6e9fbd; --counter-label: #abd6ee; --counter-wash: rgba(61,112,143,.2); color: #d5e5ed; }
+.intent-counter-tip.tone-counter { --counter-accent: #d2a04f; --counter-label: #f2cd87; --counter-wash: rgba(151,105,41,.21); color: #eee1c9; }
+.intent-counter-tip.tone-window { --counter-accent: #9a83c0; --counter-label: #d5c0f2; --counter-wash: rgba(102,76,145,.2); color: #e4dcef; }
 .intent-cycle { display: grid; gap: 3px; padding: 7px 8px; color: #bdc8cb; border-radius: 7px; background: rgba(100,125,131,.12); font-size: 9px; line-height: 1.45; }
 .intent-cycle b { color: #96b7bd; font-size: 8px; letter-spacing: .1em; }
 .intent-detail-hint { color: #8e9598; font-size: 8px; font-style: normal; text-align: right; }
@@ -1827,6 +1831,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .enemy-intent-detail { position: fixed; z-index: 80; top: auto; right: 10px; bottom: max(10px, env(safe-area-inset-bottom)); left: 10px; width: auto; max-height: calc(100dvh - 20px - env(safe-area-inset-bottom)); padding: 10px 11px 9px; overflow-y: auto; transform: translateY(8px) scale(.98); transform-origin: center bottom; }
   .enemy-intent-detail::after { display: none; }
   .enemy-intent-token:not(.is-dismissed):is(:hover, :focus-visible, .is-pinned) .enemy-intent-detail { transform: translateY(0) scale(1); }
+  .intent-counter-tip { grid-template-columns: 1fr; gap: 2px; font-size: 11px; }
+  .intent-counter-tip b { white-space: normal; }
   .combat-shortcut-guide, .card-shortcut, .control-shortcut { display: none; }
   .energy-orb { width: 58px; height: 58px; }
   .pet-companion-token { bottom: calc(100% + 7px); }

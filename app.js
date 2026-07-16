@@ -19,7 +19,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -648,7 +648,7 @@ function renderMap() {
   });
 }
 
-function enemyIntentTokenHtml(intent, resolution = null) {
+function enemyIntentTokenHtml(intent, resolution = null, counterplayCue = null) {
   const chips = [];
   if (resolution) {
     chips.push({ kind: resolution.tone === "danger" ? "attack" : "effect", icon: "结", value: "算" });
@@ -679,7 +679,7 @@ function enemyIntentTokenHtml(intent, resolution = null) {
       <span class="intent-detail-heading"><small>${resolution ? "刚刚结算" : "当前意图"}</small><strong>${escapeHtml(name)}</strong></span>
       <span class="intent-detail-list">${detailLines.map((line) => `<span><i aria-hidden="true"></i>${escapeHtml(line)}</span>`).join("")}</span>
       ${enemyDefinition?.mechanicName && enemyDefinition?.mechanicText ? `<span class="intent-mechanic"><b>特性 · ${escapeHtml(enemyDefinition.mechanicName)}</b><span>${escapeHtml(enemyDefinition.mechanicText)}</span></span>` : ""}
-      ${!resolution && enemyDefinition?.tip ? `<span class="intent-counter-tip"><b>应对建议</b><span>${escapeHtml(enemyDefinition.tip)}</span></span>` : ""}
+      ${!resolution && counterplayCue ? `<span class="intent-counter-tip tone-${escapeHtml(counterplayCue.tone)}"><b>${escapeHtml(counterplayCue.label)}</b><span>${escapeHtml(counterplayCue.detail)}</span></span>` : ""}
       ${enemyDefinition?.pattern ? `<span class="intent-cycle"><b>行动周期</b>${escapeHtml(enemyDefinition.pattern)}</span>` : ""}
       <em class="intent-detail-hint">${pinned ? "点击关闭 · Esc 也可关闭" : "点击可固定说明"}</em>
     </span>
@@ -1798,6 +1798,13 @@ function renderCombat() {
   const intent = game.getIntent();
   const incomingDamage = game.incomingDamagePreview();
   const turnRisk = endTurnRiskGuidance(incomingDamage, game.hp);
+  const intentCounterplayCue = enemyIntentCounterplayCue(combat.enemy.id, intent, {
+    intentTurn: combat.enemy.intentTurn,
+    risk: turnRisk,
+    distracted: combat.distracted,
+    enemy: combat.enemy,
+    fallback: ENEMY_DEFS[combat.enemy.id]?.tip
+  });
   const enemyHp = (combat.enemy.hp / combat.enemy.maxHp) * 100;
   const playerHp = (game.hp / game.maxHp) * 100;
   const petPreview = game.petSkillPreview();
@@ -1841,7 +1848,7 @@ function renderCombat() {
 
       <section class="fighter enemy-fighter">
         <div class="fighter-label"><span>${combat.enemy.name}</span></div>
-        ${enemyIntentTokenHtml(intent, enemyResolution)}
+        ${enemyIntentTokenHtml(intent, enemyResolution, intentCounterplayCue)}
         ${enemyMechanicProgressHtml(combat.enemy, intent, enemyResolution)}
         ${renderEnemyAvatar(combat.enemy)}
         <div class="combat-vitals enemy-vitals">
