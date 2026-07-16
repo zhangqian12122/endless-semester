@@ -1385,6 +1385,9 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .item-tile:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--yellow); }
 .item-tile.rarity-uncommon { border-left-color: var(--blue); }
 .item-tile.rarity-rare, .item-tile.rarity-boss { border-left-color: var(--purple); }
+.item-tile.needs-replacement { border-color: #8b7441; border-left-color: var(--yellow); background: linear-gradient(105deg, rgba(243,201,93,.07), var(--panel) 46%); }
+.replace-item-toolbar { display: flex; justify-content: center; margin: 8px 0 14px; }
+.replace-item-page h1:focus { outline: 0; }
 .item-icon { display: grid; place-items: center; flex: 0 0 auto; overflow: visible; width: 44px; height: 44px; border: 0; border-radius: 50%; color: #c8c1ae; background: transparent; font-size: 16px; font-weight: 900; }
 .item-icon img { display: block; width: 116%; height: 116%; object-fit: cover; mix-blend-mode: screen; filter: saturate(.82) contrast(1.2) brightness(1.24) drop-shadow(0 4px 4px rgba(0,0,0,.68)); opacity: .98; -webkit-mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0,0,0,.92) 66%, transparent 90%); mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0,0,0,.92) 66%, transparent 90%); }
 .item-tile small, .item-tile strong, .item-tile em { display: block; }
@@ -1480,6 +1483,13 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .event-intel-facts b { padding: 5px 9px; color: #e8d9ef; border: 1px solid rgba(193, 139, 221, .25); border-radius: 3px; background: rgba(193, 139, 221, .08); font-size: 11px; font-weight: 800; }
 .shopkeeper > span { background: var(--blue); }
 .shop-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); align-items: stretch; }
+.shop-backpack-status { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin-top: 16px; padding: 13px 16px; border: 1px solid #4f5964; border-left: 4px solid var(--blue); border-radius: 7px; background: rgba(36,42,49,.78); }
+.shop-backpack-status span { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; }
+.shop-backpack-status small { color: var(--muted); font-size: 8px; font-weight: 900; letter-spacing: .12em; }
+.shop-backpack-status strong { color: var(--blue); font-size: 18px; }
+.shop-backpack-status p { margin: 0; color: #c8cbd0; text-align: right; font-size: 10px; line-height: 1.5; }
+.shop-backpack-status.is-full { border-color: #776536; border-left-color: var(--yellow); background: rgba(76,62,28,.22); }
+.shop-backpack-status.is-full strong { color: var(--yellow); }
 .shop-stock { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); background: rgba(0,0,0,.12); }
 .shop-stock > button { width: 100%; color: var(--yellow); }
 .shop-stock.sold { opacity: .42; }
@@ -1825,6 +1835,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .calendar-dialog-close { grid-column: 2; grid-row: 1; }
   .calendar-legend { grid-column: 1 / -1; }
   .semester-calendar-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+  .shop-backpack-status { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .shop-backpack-status p { text-align: left; }
   .calendar-week { min-height: 70px; padding: 7px; }
   .calendar-week-date { width: 43px; height: 43px; }
   .calendar-week-date b { font-size: 15px; }

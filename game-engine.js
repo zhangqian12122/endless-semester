@@ -1051,6 +1051,8 @@ export class SemesterGame {
       && ["eliteChain", "challengeChain", "eventItem"].includes(combat.type)) return "combat";
     if (this.pendingSemesterReward?.stage === "bossItem"
       && (this.pendingSemesterReward.itemChoices || []).includes(id)) return "semester";
+    if (this.pendingShop?.items?.some((stock) => stock.id === id && !stock.sold)
+      && !this.hasItem(id)) return "shop";
     return null;
   }
 
@@ -1066,7 +1068,13 @@ export class SemesterGame {
     }
     const source = this.itemRewardSourceFor(incoming);
     if (!source || this.items.length < this.backpackCapacity || this.hasItem(incoming)) return null;
-    this.pendingItemReplacement = { incoming, source };
+    const price = source === "shop" ? this.shopPrice("item", incoming) : null;
+    if (source === "shop" && (!Number.isSafeInteger(price) || price <= 0 || this.gold < price)) return null;
+    this.pendingItemReplacement = {
+      incoming,
+      source,
+      ...(source === "shop" ? { price } : {})
+    };
     return this.copyPendingItemReplacement(true);
   }
 
@@ -1075,6 +1083,19 @@ export class SemesterGame {
     const oldIndex = this.items.indexOf(outgoing);
     if (!pending || oldIndex < 0 || this.items.length < this.backpackCapacity
       || this.hasItem(pending.incoming) || this.itemRewardSourceFor(pending.incoming) !== pending.source) return null;
+    if (pending.source === "shop") {
+      const stock = this.pendingShop?.items?.find((entry) => entry.id === pending.incoming);
+      const currentPrice = this.shopPrice("item", pending.incoming);
+      if (!stock || stock.sold || !Number.isSafeInteger(pending.price) || pending.price <= 0
+        || pending.price !== currentPrice || this.gold < pending.price) return null;
+      this.items.splice(oldIndex, 1, pending.incoming);
+      this.gold -= pending.price;
+      stock.sold = true;
+      this.flags.nextShopHalf = false;
+      this.stats.itemsTaken += 1;
+      this.pendingItemReplacement = null;
+      return { incoming: pending.incoming, outgoing, source: pending.source, price: pending.price };
+    }
     this.items.splice(oldIndex, 1, pending.incoming);
     this.stats.itemsTaken += 1;
     this.pendingItemReplacement = null;
@@ -1612,6 +1633,7 @@ export class SemesterGame {
   }
 
   buyShopCard(index) {
+    if (this.pendingItemReplacement?.source === "shop") return null;
     const stock = this.pendingShop?.cards?.[index];
     const price = stock ? this.shopPrice("card", stock.id) : null;
     if (!stock || stock.sold || price === null || this.gold < price) return null;
@@ -1625,6 +1647,7 @@ export class SemesterGame {
   }
 
   buyShopItem(id) {
+    if (this.pendingItemReplacement?.source === "shop") return null;
     const stock = this.pendingShop?.items?.find((entry) => entry.id === id);
     const price = stock ? this.shopPrice("item", stock.id) : null;
     if (!stock || stock.sold || price === null || this.gold < price
@@ -1638,6 +1661,7 @@ export class SemesterGame {
   }
 
   removeShopCard(uid) {
+    if (this.pendingItemReplacement?.source === "shop") return null;
     const shop = this.pendingShop;
     const price = this.shopRemovePrice();
     if (!shop || shop.removed || price === null || this.gold < price || !this.removeCard(uid)) return null;
@@ -1647,7 +1671,7 @@ export class SemesterGame {
   }
 
   completePendingShop() {
-    if (!this.pendingShop) return false;
+    if (!this.pendingShop || this.pendingItemReplacement?.source === "shop") return false;
     this.pendingShop = null;
     return true;
   }
@@ -3278,22 +3302,6 @@ export class SemesterGame {
         )
       };
     }
-    if (savedItemReplacement !== undefined && savedItemReplacement !== null) {
-      let restoredItemReplacement = null;
-      const incoming = savedItemReplacement?.incoming;
-      const source = savedItemReplacement?.source;
-      const sourceIsValid = ["combat", "event", "semester"].includes(source)
-        && game.itemRewardSourceFor(incoming) === source;
-      const canRestoreItemReplacement = sourceIsValid && ITEM_DEFS[incoming]
-        && !game.hasItem(incoming) && game.items.length >= game.backpackCapacity
-        && !game.pendingCombatStart && !game.pendingEventId && !game.pet.pendingMilestone
-        && (savedCombatStart === undefined || savedCombatStart === null)
-        && (savedShop === undefined || savedShop === null)
-        && (savedRest === undefined || savedRest === null);
-      if (canRestoreItemReplacement) restoredItemReplacement = { incoming, source };
-      game.pendingItemReplacement = restoredItemReplacement;
-      if (!restoredItemReplacement) loadRepairs.push("重置异常物品替换状态");
-    }
     if (savedShop !== undefined && savedShop !== null) {
       let restoredShop = null;
       const rawCards = Array.isArray(savedShop?.cards) ? savedShop.cards : [];
@@ -3310,7 +3318,7 @@ export class SemesterGame {
         && cards.filter((stock) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(stock.id)).length === 1
         && cards.filter((stock) => PUBLIC_REWARD_CARD_IDS.includes(stock.id)).length === 2;
       const itemPoolIsValid = items.length <= 2 && itemIds.size === items.length
-        && items.every((stock) => stock.sold ? game.hasItem(stock.id) : !game.hasItem(stock.id));
+        && items.every((stock) => stock.sold || !game.hasItem(stock.id));
       const canRestoreShop = !game.awaitingNextSemester && !game.pendingSemesterReward
         && !game.pendingCombatReward && !game.pendingEventReward && !game.pendingEventId
         && !game.pet.pendingMilestone && (savedCombatStart === undefined || savedCombatStart === null)
@@ -3328,6 +3336,35 @@ export class SemesterGame {
       }
       game.pendingShop = restoredShop;
       if (!restoredShop) loadRepairs.push("重置异常商店状态");
+    }
+    if (savedItemReplacement !== undefined && savedItemReplacement !== null) {
+      let restoredItemReplacement = null;
+      const incoming = savedItemReplacement?.incoming;
+      const source = savedItemReplacement?.source;
+      const frozenPrice = savedItemReplacement?.price;
+      const regularRewardSourceIsValid = ["combat", "event", "semester"].includes(source)
+        && game.itemRewardSourceFor(incoming) === source
+        && (savedShop === undefined || savedShop === null);
+      const shopSourceIsValid = source === "shop"
+        && game.itemRewardSourceFor(incoming) === "shop"
+        && Number.isSafeInteger(frozenPrice) && frozenPrice > 0
+        && frozenPrice === game.shopPrice("item", incoming)
+        && game.gold >= frozenPrice;
+      const canRestoreItemReplacement = (regularRewardSourceIsValid || shopSourceIsValid)
+        && ITEM_DEFS[incoming] && !game.hasItem(incoming)
+        && game.items.length >= game.backpackCapacity
+        && !game.pendingCombatStart && !game.pendingEventId && !game.pet.pendingMilestone
+        && (savedCombatStart === undefined || savedCombatStart === null)
+        && (savedRest === undefined || savedRest === null);
+      if (canRestoreItemReplacement) {
+        restoredItemReplacement = {
+          incoming,
+          source,
+          ...(source === "shop" ? { price: frozenPrice } : {})
+        };
+      }
+      game.pendingItemReplacement = restoredItemReplacement;
+      if (!restoredItemReplacement) loadRepairs.push("重置异常物品替换状态");
     }
     if (savedRest !== undefined && savedRest !== null) {
       let restoredRest = null;

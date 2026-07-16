@@ -441,7 +441,7 @@ function itemIconHtml(item, className = "item-icon") {
 function itemHtml(id, options = {}) {
   const item = ITEM_DEFS[id];
   return `
-    <button class="item-tile rarity-${item.rarity}" data-action="${options.action || "choose-item"}" data-id="${id}"
+    <button class="item-tile rarity-${item.rarity} ${options.className || ""}" data-action="${options.action || "choose-item"}" data-id="${id}"
       ${options.disabled ? "disabled" : ""}>
       ${itemIconHtml(item)}
       <span><small>${rarityName(item.rarity)}物品 · ${item.timing}${item.source ? ` · ${item.source}` : ""}</small><strong>${item.name}</strong><em>${item.text}</em></span>
@@ -463,7 +463,7 @@ function renderIntro() {
   const savedAtEventReward = Number(saved?.week) < 16
     && ["card", "upgrade", "remove", "item"].includes(saved?.pendingEventReward?.type);
   const savedAtPendingEvent = Number(saved?.week) < 16 && Boolean(EVENT_DEFS[saved?.pendingEventId]);
-  const savedAtItemReplacement = ["combat", "event", "semester"].includes(saved?.pendingItemReplacement?.source)
+  const savedAtItemReplacement = ["combat", "event", "semester", "shop"].includes(saved?.pendingItemReplacement?.source)
     && Boolean(ITEM_DEFS[saved?.pendingItemReplacement?.incoming]);
   const savedAtRest = Number(saved?.week) < 16
     && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond"].includes(saved?.pendingRest?.stage);
@@ -545,7 +545,7 @@ function renderNewGameConfirm() {
   const savedAtEventReward = Number(saved?.week) < 16
     && ["card", "upgrade", "remove", "item"].includes(saved?.pendingEventReward?.type);
   const savedAtPendingEvent = Number(saved?.week) < 16 && Boolean(EVENT_DEFS[saved?.pendingEventId]);
-  const savedAtItemReplacement = ["combat", "event", "semester"].includes(saved?.pendingItemReplacement?.source)
+  const savedAtItemReplacement = ["combat", "event", "semester", "shop"].includes(saved?.pendingItemReplacement?.source)
     && Boolean(ITEM_DEFS[saved?.pendingItemReplacement?.incoming]);
   const savedAtRest = Number(saved?.week) < 16
     && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond"].includes(saved?.pendingRest?.stage);
@@ -2323,16 +2323,21 @@ function renderItemReward() {
 }
 
 function renderReplaceItem() {
-  const incoming = ITEM_DEFS[game.pendingItemReplacement?.incoming];
+  const pending = game.pendingItemReplacement;
+  const incoming = ITEM_DEFS[pending?.incoming];
   if (!incoming) {
     return page("整理书包", "状态异常", '<div class="warning-box">待替换物品已经失效。</div>');
   }
+  const shopPurchase = pending.source === "shop";
   const body = `
-    <div class="incoming-item"><small>准备装入</small><strong>${incoming.name}</strong><p>${incoming.text}</p></div>
-    <p class="center-copy">选择一件旧物品丢弃：</p>
-    <div class="item-choice-list">${game.items.map((id) => itemHtml(id, { action: "replace-item" })).join("")}</div>
-    <button class="quiet-button centered" data-action="cancel-replace">取消</button>`;
-  return page("整理书包", "容量已满", body);
+    <div class="incoming-item"><small>${shopPurchase ? `商店待付款 · ${pending.price} 校园币` : "准备装入"}</small><strong>${incoming.name}</strong><p>${incoming.text}</p></div>
+    <p class="center-copy">${shopPurchase ? "点击一件旧物品即会将它放回柜台，并支付冻结价格完成购买。" : "选择一件旧物品丢弃："}</p>
+    <div class="replace-item-toolbar"><button class="quiet-button centered" data-action="cancel-replace">${shopPurchase ? "取消购买，返回商店" : "取消"}</button></div>
+    <div class="item-choice-list">${game.items.map((id) => itemHtml(id, {
+      action: "replace-item",
+      price: shopPurchase ? `换下并支付 ${pending.price} 币` : undefined
+    })).join("")}</div>`;
+  return page("整理书包", shopPurchase ? `容量 ${game.items.length}/${game.backpackCapacity} · 尚未扣款` : "容量已满", body, { className: "replace-item-page" });
 }
 
 function renderSelection() {
@@ -2785,9 +2790,14 @@ function resumePendingRest() {
 function renderShop() {
   const shop = game.pendingShop;
   const removePrice = game.shopRemovePrice();
+  const backpackFull = game.items.length >= game.backpackCapacity;
   const availableCardIds = shop.cards.filter((stock) => !stock.sold).map((stock) => stock.id);
   const body = `
     ${sceneBannerHtml(SHOP_SCENE)}
+    <div class="shop-backpack-status ${backpackFull ? "is-full" : ""}">
+      <span><small>随身物品容量</small><strong>${game.items.length}/${game.backpackCapacity}</strong></span>
+      <p>${backpackFull ? "书包已满；点选新物品后进入替换确认，取消不会扣款。" : `还可直接装入 ${game.backpackCapacity - game.items.length} 件物品。`}</p>
+    </div>
     <h2 class="subheading">卡牌</h2>
     ${availableCardIds.length ? choiceAdviceHtml(availableCardIds) : ""}
     <div class="shop-grid">
@@ -2800,7 +2810,13 @@ function renderShop() {
     <div class="item-choice-list">
       ${shop.items.map((stock) => {
         const price = game.shopPrice("item", stock.id);
-        return itemHtml(stock.id, { action: "buy-item", price: stock.sold ? "已售" : price, disabled: stock.sold || game.gold < price || game.items.length >= game.backpackCapacity });
+        const needsReplacement = backpackFull && !stock.sold;
+        return itemHtml(stock.id, {
+          action: "buy-item",
+          price: stock.sold ? "已售" : needsReplacement ? `${price} 币 · 购买后替换` : price,
+          disabled: stock.sold || game.gold < price,
+          className: needsReplacement ? "needs-replacement" : ""
+        });
       }).join("")}
     </div>
     <div class="shop-services">
@@ -3020,6 +3036,13 @@ function render() {
   clearBattleMotionArtifacts();
   app.innerHTML = (renderers[screen] || renderIntro)();
   focusActiveDialog();
+  if (screen === "replaceItem") {
+    const heading = app.querySelector(".replace-item-page h1");
+    if (heading instanceof HTMLElement) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+    }
+  }
   scheduleBattleMotion();
 }
 
@@ -3172,6 +3195,7 @@ function resumeItemRewardSource(source) {
   if (source === "semester") resumeSemesterRewards();
   else if (source === "event") resumePendingEventReward();
   else if (source === "combat") resumePendingCombatReward();
+  else if (source === "shop" && game.pendingShop) changeScreen("shop");
   else {
     changeScreen("map");
     setToast("物品奖励来源已经失效");
@@ -3193,6 +3217,8 @@ function completeItemRewardSource(source) {
       game.completePendingCombatReward();
       advanceWeek();
     }
+  } else if (source === "shop" && game.pendingShop) {
+    changeScreen("shop");
   }
 }
 
@@ -3847,7 +3873,8 @@ app.addEventListener("click", (event) => {
   } else if (action === "replace-item") {
     const result = game.replacePendingItem(button.dataset.id);
     if (result) {
-      setToast(`已用${ITEM_DEFS[result.incoming].name}替换${ITEM_DEFS[result.outgoing].name}`);
+      const payment = result.source === "shop" ? `，支付 ${result.price} 校园币` : "";
+      setToast(`已用${ITEM_DEFS[result.incoming].name}替换${ITEM_DEFS[result.outgoing].name}${payment}`);
       completeItemRewardSource(result.source);
     } else {
       setToast("这件旧物品当前无法替换");
@@ -3976,11 +4003,12 @@ app.addEventListener("click", (event) => {
       render();
     }
   } else if (action === "buy-item") {
-    if (game.buyShopItem(button.dataset.id)) {
+    if (game.items.length >= game.backpackCapacity) {
+      if (game.prepareItemReplacement(button.dataset.id)) resumePendingItemReplacement();
+      else setToast("这件物品当前无法进入购买替换流程");
+    } else if (game.buyShopItem(button.dataset.id)) {
       saveGame();
       render();
-    } else if (game.items.length >= game.backpackCapacity) {
-      setToast("书包已满，商店暂不提供替换服务");
     }
   } else if (action === "shop-remove") {
     const removePrice = game.shopRemovePrice();
