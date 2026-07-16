@@ -1841,9 +1841,14 @@ export class SemesterGame {
     const hits = perHit > 0 ? Math.max(1, nonNegativeInteger(intent.hits, 1)) : 0;
     const attackTotal = perHit * hits;
     const currentBlock = Math.max(0, nonNegativeInteger(combat.playerBlock));
-    const blocked = Math.min(currentBlock, attackTotal);
-    const endTurnHpLoss = Math.max(0, nonNegativeInteger(combat.endTurnHpLoss));
-    const attackHpLoss = endTurnHpLoss >= this.hp ? 0 : Math.max(0, attackTotal - blocked);
+    const currentHp = Math.max(0, nonNegativeInteger(this.hp));
+    const queuedEndTurnHpLoss = Math.max(0, nonNegativeInteger(combat.endTurnHpLoss));
+    const endTurnHpLoss = Math.min(currentHp, queuedEndTurnHpLoss);
+    const enemyCanAct = endTurnHpLoss < currentHp;
+    const blocked = enemyCanAct ? Math.min(currentBlock, attackTotal) : 0;
+    const attackHpLoss = enemyCanAct
+      ? Math.min(currentHp - endTurnHpLoss, Math.max(0, attackTotal - blocked))
+      : 0;
     const totalHpLoss = endTurnHpLoss + attackHpLoss;
     return {
       perHit,
@@ -2273,6 +2278,7 @@ export class SemesterGame {
     if (combat.status !== "active") return { ok: false, reason: "战斗已经结束" };
     if (combat.pendingDiscard) return { ok: false, reason: "请先完成弃牌" };
     const resolvedIntent = this.getIntent();
+    const endTurnResult = { hpLossApplied: 0, lethal: false };
 
     for (const card of combat.hand) {
       const effect = cardDefinition(card).effect;
@@ -2281,19 +2287,25 @@ export class SemesterGame {
     }
     combat.hand = [];
     if (combat.endTurnHpLoss) {
-      this.hp -= combat.endTurnHpLoss;
-      this.stats.combatHpLost += combat.endTurnHpLoss;
-      combat.log.push(`情绪内耗：失去 ${combat.endTurnHpLoss} 点生命。`);
+      const hpLossApplied = Math.min(
+        Math.max(0, nonNegativeInteger(this.hp)),
+        Math.max(0, nonNegativeInteger(combat.endTurnHpLoss))
+      );
+      this.hp -= hpLossApplied;
+      this.stats.combatHpLost += hpLossApplied;
+      endTurnResult.hpLossApplied = hpLossApplied;
+      combat.log.push(`情绪内耗：失去 ${hpLossApplied} 点生命。`);
       combat.endTurnHpLoss = 0;
     }
     if (this.hp <= 0) {
       this.checkCombatEnd();
-      return { ok: true };
+      endTurnResult.lethal = true;
+      return { ok: true, endTurnResult, enemyResult: null };
     }
     combat.distracted = false;
     const enemyResult = this.executeEnemyTurn(resolvedIntent);
     if (combat.status === "active") this.startPlayerTurn();
-    return { ok: true, enemyResult };
+    return { ok: true, endTurnResult, enemyResult };
   }
 
   executeEnemyTurn(resolvedIntent = null) {
@@ -2322,15 +2334,33 @@ export class SemesterGame {
       const hits = intent.hits || 1;
       let totalHealthDamage = 0;
       let totalBlocked = 0;
+      const segments = [];
       for (let index = 0; index < hits; index += 1) {
+        if (this.hp <= 0) break;
         const absorbed = Math.min(combat.playerBlock, intent.attack);
         combat.playerBlock -= absorbed;
         totalBlocked += absorbed;
-        const healthDamage = intent.attack - absorbed;
+        const healthDamage = Math.min(
+          Math.max(0, nonNegativeInteger(this.hp)),
+          intent.attack - absorbed
+        );
         this.hp -= healthDamage;
         totalHealthDamage += healthDamage;
+        segments.push({
+          index: index + 1,
+          blocked: absorbed,
+          hpLoss: healthDamage,
+          blockAfter: combat.playerBlock
+        });
       }
-      result.attack = { perHit: intent.attack, hits, blocked: totalBlocked, healthDamage: totalHealthDamage };
+      result.attack = {
+        perHit: intent.attack,
+        hits,
+        hitsResolved: segments.length,
+        blocked: totalBlocked,
+        healthDamage: totalHealthDamage,
+        segments
+      };
       notes.push(`攻击造成 ${totalHealthDamage} 点生命伤害`);
       this.stats.combatHpLost += totalHealthDamage;
       if (totalHealthDamage > 0 && this.hasItem("mistakeBook") && !combat.mistakeBookUsed) {

@@ -259,6 +259,16 @@ export function enemyHitBreakdown(preview = {}) {
   });
 }
 
+function normalizedResolvedHitBreakdown(steps) {
+  if (!Array.isArray(steps)) return [];
+  return steps.map((step, offset) => ({
+    index: Math.max(1, Math.floor(Number(step?.index) || offset + 1)),
+    blocked: Math.max(0, Math.floor(Number(step?.blocked) || 0)),
+    hpLoss: Math.max(0, Math.floor(Number(step?.hpLoss) || 0)),
+    blockAfter: Math.max(0, Math.floor(Number(step?.blockAfter) || 0))
+  }));
+}
+
 export function enemyHitPulseSequence(steps = []) {
   if (!Array.isArray(steps)) return [];
   return steps.map((step, offset) => {
@@ -286,13 +296,16 @@ export function enemyResolutionSnapshot(resolution, feedback = {}) {
     : [];
   const effectLabels = new Set(effects.map((effect) => effect.label));
   const mechanicalParts = summaryParts.filter((part) => part !== "效果已生效" && !effectLabels.has(part));
+  const hitBreakdown = Array.isArray(resolution.hitBreakdown)
+    ? normalizedResolvedHitBreakdown(resolution.hitBreakdown)
+    : enemyHitBreakdown(resolution.incoming);
   return {
     turn: Math.max(1, Math.floor(Number(resolution.turn) || 1)),
     name: String(resolution.name || "敌方行动"),
     detail: String(resolution.detail || "行动已执行"),
     result: mechanicalParts.join(" · ") || (effects.length ? "非伤害效果已结算" : "效果已生效"),
     tone: Number(feedback.playerDamage) > 0 ? "danger" : "safe",
-    hitBreakdown: enemyHitBreakdown(resolution.incoming),
+    hitBreakdown,
     effects,
     mechanicState: resolution.mechanicState && typeof resolution.mechanicState === "object"
       ? { ...resolution.mechanicState }
@@ -1518,6 +1531,7 @@ function battleMotionType(kind, options, outcome) {
   if (kind === "enemy") {
     return outcome.playerDamage > 0 || outcome.playerBlockAbsorbed > 0 ? "enemy-attack" : "enemy-skill";
   }
+  if (kind === "status") return "status";
   if (options.cleanseApplied === true) return "cleanse";
   if (outcome.enemyDamage > 0 || outcome.enemyBlockLoss > 0) return "attack";
   if (outcome.playerBlockGain > 0) return "guard";
@@ -1606,12 +1620,21 @@ export function enemyStatusCausalPlacements(beforeCardUids, combat, statusAdded)
 }
 
 export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
-  const kind = ["card", "pet", "enemy"].includes(options.kind) ? options.kind : "card";
+  const kind = ["card", "pet", "enemy", "status"].includes(options.kind) ? options.kind : "card";
   const enemyDamage = Math.max(0, safeBattleValue(before.enemyHp) - safeBattleValue(after.enemyHp));
   const enemyBlockLoss = kind === "enemy"
     ? 0
     : Math.max(0, safeBattleValue(before.enemyBlock) - safeBattleValue(after.enemyBlock));
-  const playerDamage = Math.max(0, safeBattleValue(before.playerHp) - safeBattleValue(after.playerHp));
+  const observedPlayerHpLoss = Math.max(0, safeBattleValue(before.playerHp) - safeBattleValue(after.playerHp));
+  const hasEndTurnHpLoss = Object.prototype.hasOwnProperty.call(options, "endTurnHpLoss");
+  const hasEnemyAttackHpLoss = Object.prototype.hasOwnProperty.call(options, "enemyAttackHpLoss");
+  const endTurnHpLoss = hasEndTurnHpLoss ? Math.max(0, safeBattleValue(options.endTurnHpLoss)) : 0;
+  const playerDamage = hasEnemyAttackHpLoss
+    ? Math.max(0, safeBattleValue(options.enemyAttackHpLoss))
+    : hasEndTurnHpLoss
+    ? Math.max(0, observedPlayerHpLoss - endTurnHpLoss)
+    : observedPlayerHpLoss;
+  const totalPlayerHpLoss = endTurnHpLoss + playerDamage;
   const playerBlockGain = Math.max(0, safeBattleValue(after.playerBlock) - safeBattleValue(before.playerBlock));
   const playerBlockAbsorbed = kind === "enemy" ? Math.max(0, safeBattleValue(options.playerBlockAbsorbed)) : 0;
   const enemyBlockGain = kind === "enemy" ? Math.max(0, safeBattleValue(options.enemyBlockGain)) : 0;
@@ -1630,6 +1653,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
 
   if (enemyDamage) summaryParts.push(`敌方生命 -${enemyDamage}`);
   if (enemyBlockLoss) summaryParts.push(`击破护甲 ${enemyBlockLoss}`);
+  if (endTurnHpLoss) summaryParts.push(`情绪内耗 -${endTurnHpLoss}`);
   if (playerDamage) summaryParts.push(`生命 -${playerDamage}`);
   if (playerBlockAbsorbed) summaryParts.push(`护甲挡下 ${playerBlockAbsorbed}`);
   if (playerBlockGain) summaryParts.push(`护甲 +${playerBlockGain}`);
@@ -1639,7 +1663,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
   summaryParts.push(...effectParts);
   if (!summaryParts.length) summaryParts.push("效果已生效");
 
-  const tone = playerDamage > 0
+  const tone = totalPlayerHpLoss > 0
     ? "danger"
     : enemyDamage > 0 || enemyBlockLoss > 0
     ? kind === "pet" ? "pet" : "attack"
@@ -1652,6 +1676,9 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     enemyDamage,
     enemyBlockLoss,
     playerDamage,
+    endTurnHpLoss,
+    totalPlayerHpLoss,
+    observedPlayerHpLoss,
     playerBlockGain,
     playerBlockAbsorbed
   });
@@ -1664,11 +1691,15 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     enemyDamage,
     enemyBlockLoss,
     playerDamage,
+    endTurnHpLoss,
+    totalPlayerHpLoss,
+    observedPlayerHpLoss,
     playerBlockGain,
     playerBlockAbsorbed,
     enemyBlockGain,
     cardsDrawn,
     petChargeGain,
+    hidePlayerDamageNumber: options.hidePlayerDamageNumber === true,
     motionType,
     causalEffects,
     summaryParts

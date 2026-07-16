@@ -1387,7 +1387,7 @@ function queueBattleFeedback(kind, label, before, options = {}) {
       intentName: String(options.intentName || "")
     }
     : feedbackDelta;
-  const locksCombatInput = kind === "enemy";
+  const locksCombatInput = kind === "enemy" && options.lockCombatInput !== false;
   const enemyResolution = locksCombatInput
     ? enemyResolutionSnapshot(options.enemyResolution, feedback)
     : null;
@@ -1438,8 +1438,10 @@ function battleFeedbackHtml(feedback) {
     : feedback.enemyBlockGain
     ? `护甲 +${feedback.enemyBlockGain}`
     : "";
-  const playerResult = feedback.playerDamage
+  const playerResult = feedback.playerDamage && !feedback.hidePlayerDamageNumber
     ? `-${feedback.playerDamage}`
+    : feedback.kind !== "enemy" && feedback.endTurnHpLoss
+    ? `内耗 -${feedback.endTurnHpLoss}`
     : feedback.playerBlockGain
     ? `护甲 +${feedback.playerBlockGain}`
     : feedback.playerBlockAbsorbed
@@ -1642,7 +1644,6 @@ function recordCurrentCombat() {
 function finishPlayerTurn() {
   context.confirmLethalEndTurn = false;
   const before = battleStateSnapshot();
-  const incoming = game.incomingDamagePreview();
   const intent = game.getIntent();
   const enemyId = game.combat.enemy.id;
   const resolvingTurn = game.combat.turn;
@@ -1651,24 +1652,46 @@ function finishPlayerTurn() {
     ? enemyStatusCausalPlacements(before.cardUids, game.combat, result.enemyResult?.statusAdded)
     : [];
   const actualEffects = enemyActionEffects(result.enemyResult, statusPlacements);
-  if (!result.ok) setToast(result.reason);
-  else queueBattleFeedback("enemy", `${game.combat.enemy.name} · ${intent.name}`, before, {
-    enemyId,
-    intentName: intent.name,
-    playerBlockAbsorbed: incoming.blocked,
-    enemyBlockGain: intent.block || 0,
-    effectParts: actualEffects.map((effect) => effect.label),
-    causalEffects: enemyActionCausalEffects(result.enemyResult, statusPlacements),
-    enemyResolution: {
-      turn: resolvingTurn,
-      name: intent.name,
-      detail: enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id).join(" · "),
-      intent: { attack: intent.attack, block: intent.block, hits: intent.hits },
-      incoming,
-      effects: actualEffects,
-      mechanicState: intent.mechanicState
+  if (!result.ok) {
+    setToast(result.reason);
+  } else {
+    const endTurnHpLoss = result.endTurnResult?.hpLossApplied || 0;
+    if (!result.enemyResult) {
+      queueBattleFeedback("status", "情绪内耗", before, {
+        cardType: "status",
+        endTurnHpLoss,
+        enemyAttackHpLoss: 0,
+        effectParts: endTurnHpLoss ? ["无视护甲"] : []
+      });
+    } else {
+      const enemyAttack = result.enemyResult.attack;
+      const hitBreakdown = enemyAttack?.segments || [];
+      const label = endTurnHpLoss
+        ? `情绪内耗 → ${game.combat.enemy.name} · ${intent.name}`
+        : `${game.combat.enemy.name} · ${intent.name}`;
+      queueBattleFeedback("enemy", label, before, {
+        enemyId,
+        intentName: intent.name,
+        endTurnHpLoss,
+        enemyAttackHpLoss: enemyAttack?.healthDamage || 0,
+        playerBlockAbsorbed: enemyAttack?.blocked || 0,
+        enemyBlockGain: result.enemyResult.block?.gained || 0,
+        hidePlayerDamageNumber: hitBreakdown.length > 0,
+        lockCombatInput: game.combat.status === "active",
+        effectParts: actualEffects.map((effect) => effect.label),
+        causalEffects: enemyActionCausalEffects(result.enemyResult, statusPlacements),
+        enemyResolution: {
+          turn: resolvingTurn,
+          name: intent.name,
+          detail: enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id).join(" · "),
+          intent: { attack: intent.attack, block: intent.block, hits: intent.hits },
+          hitBreakdown,
+          effects: actualEffects,
+          mechanicState: result.enemyResult.mechanicState || intent.mechanicState
+        }
+      });
     }
-  });
+  }
   recordCurrentCombat();
   render();
 }
