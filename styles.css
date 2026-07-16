@@ -32,6 +32,7 @@ button { font: inherit; }
 button:not(:disabled) { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .42; }
 button:focus-visible { outline: 3px solid #8fc9ff; outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; white-space: nowrap; border: 0; clip: rect(0, 0, 0, 0); clip-path: inset(50%); }
 
 .topbar {
   position: sticky;
@@ -1071,13 +1072,17 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .card-text { position: relative; z-index: 1; display: grid; place-items: center; flex: 1; width: 100%; min-height: 48px; padding: 7px 8px; color: #292824; border: 1px solid rgba(70,60,45,.34); border-radius: 2px; background: rgba(223,215,198,.82); box-shadow: inset 0 0 14px rgba(87,72,50,.08); font-family: "Songti SC", SimSun, serif; font-size: 11px; line-height: 1.45; }
 .card-live-preview { position: relative; z-index: 1; display: block; width: 100%; margin-top: 5px; padding: 4px 6px; overflow: hidden; color: #5a452c; text-align: center; text-overflow: ellipsis; white-space: nowrap; border: 1px solid rgba(123,91,48,.42); border-radius: 2px; background: rgba(188,153,91,.13); font-size: 8px; font-weight: 900; }
 .card-live-preview b { margin-right: 5px; color: #9a5a1d; font-size: 7px; letter-spacing: .08em; }
-.card-tactical-cue { position: absolute; z-index: 7; left: 50%; top: 116px; padding: 3px 8px; color: #f7ead5; border: 1px solid rgba(255,255,255,.24); border-radius: 2px; background: rgba(80,43,37,.94); box-shadow: 0 3px 9px rgba(0,0,0,.42); clip-path: polygon(7% 0, 93% 0, 100% 50%, 93% 100%, 7% 100%, 0 50%); transform: translateX(-50%); font-size: 8px; line-height: 1.15; letter-spacing: .05em; white-space: nowrap; }
+.card-tactical-cue { position: absolute; z-index: 7; left: 50%; top: 116px; box-sizing: border-box; max-width: calc(100% - 16px); padding: 3px 8px; overflow: hidden; color: #f7ead5; border: 1px solid rgba(255,255,255,.24); border-radius: 2px; background: rgba(80,43,37,.94); box-shadow: 0 3px 9px rgba(0,0,0,.42); clip-path: polygon(7% 0, 93% 0, 100% 50%, 93% 100%, 7% 100%, 0 50%); transform: translateX(-50%); text-overflow: ellipsis; font-size: 8px; line-height: 1.15; letter-spacing: .05em; white-space: nowrap; }
 .card-tactical-cue.cue-finish { color: #fff0c2; border-color: rgba(239,177,82,.62); background: rgba(111,45,32,.96); }
 .card-tactical-cue.cue-rescue { color: #d9f3ff; border-color: rgba(101,181,218,.62); background: rgba(35,70,91,.96); }
 .card-tactical-cue.cue-guard { color: #dbf3df; border-color: rgba(103,177,122,.58); background: rgba(42,79,53,.96); }
+.card-tactical-cue.cue-counter { color: #eee4ff; border-color: rgba(171,136,220,.62); background: rgba(71,50,96,.96); }
+.card-tactical-cue.cue-danger { color: #ffe2dc; border-color: rgba(224,103,83,.74); background: rgba(111,40,36,.97); }
 .hand .game-card.tactical-finish { outline: 2px solid rgba(225,126,74,.78); outline-offset: -1px; }
 .hand .game-card.tactical-rescue { outline: 2px solid rgba(95,176,215,.76); outline-offset: -1px; }
 .hand .game-card.tactical-guard { outline: 2px solid rgba(92,164,111,.72); outline-offset: -1px; }
+.hand .game-card.tactical-counter { outline: 2px solid rgba(151,115,201,.72); outline-offset: -1px; }
+.hand .game-card.tactical-danger { outline: 2px solid rgba(212,82,65,.82); outline-offset: -1px; }
 .card-fit { display: block; width: 100%; margin-top: 9px; padding: 7px 8px; text-align: left; border: 1px solid rgba(0,0,0,.16); border-radius: 5px; background: rgba(255,255,255,.3); }
 .card-fit b, .card-fit em { display: block; }
 .card-fit b { color: #2d6547; font-size: 9px; }
@@ -1450,7 +1455,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-action-dock .hand .card-type-banner b { min-width: 58px; padding: 2px 8px; font-size: 7px; }
   .combat-action-dock .hand .card-text { min-height: 40px; padding: 5px 6px; font-size: 9px; line-height: 1.35; }
   .combat-action-dock .hand .card-live-preview { margin-top: 3px; padding: 3px 4px; font-size: 7px; }
-  .combat-action-dock .hand .card-tactical-cue { top: 91px; }
+  .combat-action-dock .hand .card-tactical-cue { top: 88px; }
 }
 
 @media (min-width: 820px) and (min-height: 680px) and (max-height: 759px) {
@@ -1806,7 +1811,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-page .hand .card-type-banner b { min-width: 56px; padding: 2px 7px; font-size: 7px; }
   .combat-page .hand .card-text { min-height: 38px; padding: 4px 5px; font-size: 9px; line-height: 1.35; }
   .combat-page .hand .card-live-preview { margin-top: 3px; padding: 3px 4px; font-size: 7px; }
-  .combat-page .hand .card-tactical-cue { top: 79px; }
+  .combat-page .hand .card-tactical-cue { top: 77px; }
   .combat-page .hand .game-card:not(:disabled):is(:hover, :focus-visible) { transform: translateY(-3px) scale(1.02); }
 
   .combat-page .pet-companion-tooltip {
@@ -1854,7 +1859,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-page .hand .card-type-banner { min-height: 16px; margin-top: -14px; margin-bottom: 2px; }
   .combat-page .hand .card-text { min-height: 32px; padding: 3px 4px; font-size: 8px; line-height: 1.3; }
   .combat-page .hand .card-live-preview { margin-top: 2px; padding: 2px 3px; }
-  .combat-page .hand .card-tactical-cue { top: 67px; }
+  .combat-page .hand .card-tactical-cue { top: 64px; }
   .combat-page:has(.challenge-contract),
   .combat-page:has(.challenge-trial-progress),
   .combat-page:has(.combat-relic-row.has-items) {

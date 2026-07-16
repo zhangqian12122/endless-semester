@@ -1754,6 +1754,11 @@ export class SemesterGame {
     const allowed = this.canPlay(card);
     if (!allowed.ok) return allowed;
     const resolved = this.cardEffectPreview(card);
+    const effect = definition.effect;
+    const statusesToExhaust = new Set(effect.exhaustStatuses
+      ? combat.hand
+        .filter((held) => CARD_DEFS[held.id]?.type === "status")
+      : []);
 
     combat.hand.splice(index, 1);
     combat.energy -= definition.cost;
@@ -1763,7 +1768,6 @@ export class SemesterGame {
     combat.maxCardsPlayedInTurn = Math.max(combat.maxCardsPlayedInTurn, combat.cardsPlayedThisTurn);
     this.stats.cardsPlayed += 1;
     this.stats.cardPlays[card.id] = (this.stats.cardPlays[card.id] || 0) + 1;
-    const effect = definition.effect;
     const notes = [];
 
     if (definition.cost === 0 && this.archetypeId === "gemini" && !combat.archetypeZeroUsed) {
@@ -1836,8 +1840,8 @@ export class SemesterGame {
       notes.push(`宠物充能 +${this.pet.charge - previous}`);
     }
     if (effect.exhaustStatuses) {
-      const statuses = combat.hand.filter((held) => CARD_DEFS[held.id].type === "status");
-      combat.hand = combat.hand.filter((held) => CARD_DEFS[held.id].type !== "status");
+      const statuses = combat.hand.filter((held) => statusesToExhaust.has(held));
+      combat.hand = combat.hand.filter((held) => !statusesToExhaust.has(held));
       combat.exhaustPile.push(...statuses);
       const extra = resolved.statusBlock;
       combat.playerBlock += extra;

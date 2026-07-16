@@ -18,7 +18,7 @@ import {
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatEnergyState, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
   achievementProgress,
   createCareerProfile,
@@ -280,7 +280,7 @@ function cardHtml(card, options = {}) {
       <span class="card-name"><strong>${definition.displayName}</strong></span>
       ${cardArtHtml(instance, definition)}
       <span class="card-type-banner"><i aria-hidden="true"></i><b>${owner ? `${owner.sign} · ` : ""}${typeLabel}</b><i aria-hidden="true"></i></span>
-      ${tacticalCue ? `<span class="card-tactical-cue cue-${escapeHtml(tacticalCue.tone)}" title="${escapeHtml(tacticalCue.detail)}"><b>${escapeHtml(tacticalCue.label)}</b></span>` : ""}
+      ${tacticalCue ? `<span class="card-tactical-cue cue-${escapeHtml(tacticalCue.tone)}" title="${escapeHtml(tacticalCue.detail)}" aria-hidden="true"><b>${escapeHtml(tacticalCue.label)}</b></span><span class="sr-only card-tactical-description">${escapeHtml(tacticalCue.detail)}</span>` : ""}
       <span class="card-text">${definition.displayText}</span>
       ${combatCardPreviewHtml(options.combatPreview)}
       ${fit ? `<span class="card-fit fit-${fit.id}"><b>${fit.label}</b><em>${fit.reason}</em></span>` : ""}
@@ -1667,10 +1667,15 @@ function renderCombat() {
       ${combat.hand.map((card, index) => {
         const playable = combatInputLocked ? false : combat.pendingDiscard ? true : game.canPlay(card).ok;
         const combatPreview = game.cardEffectPreview(card);
+        const mechanicStatusCleared = combatMechanicStatusCleared(combatPreview, intent, combat.hand);
+        const mechanicStatusName = CARD_DEFS[intent.scaling?.statusId]?.name || "状态";
         const tacticalCue = combatInputLocked || combat.pendingDiscard ? null : combatCardTacticalCue(combatPreview, incomingDamage, {
           enemyHp: combat.enemy.hp,
           playerHp: game.hp,
-          playable
+          playable,
+          mechanicState: intent.mechanicState,
+          mechanicStatusCleared,
+          mechanicStatusName
         });
         return cardHtml(card, {
           action: combat.pendingDiscard ? "discard-card" : "play-card",

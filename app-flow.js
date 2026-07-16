@@ -421,6 +421,14 @@ export function endTurnRiskGuidance(preview = {}, currentHp = 0) {
   };
 }
 
+export function combatMechanicStatusCleared(cardPreview = {}, intent = {}, hand = []) {
+  if (Math.max(0, Math.floor(safeBattleValue(cardPreview.statusCount))) === 0) return 0;
+  if (intent.scaling?.type !== "statusHits" || !Array.isArray(hand)) return 0;
+  const statusId = typeof intent.scaling.statusId === "string" ? intent.scaling.statusId : "";
+  if (!statusId) return 0;
+  return hand.filter((card) => card?.id === statusId).length;
+}
+
 export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, options = {}) {
   if (options.playable === false) return null;
   const enemyHp = Math.max(0, safeBattleValue(options.enemyHp));
@@ -435,20 +443,75 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
     };
   }
 
+  if (playerHp <= 0) return null;
   const block = Math.max(0, safeBattleValue(cardPreview.block));
-  if (!block || playerHp <= 0) return null;
   const currentTotalLoss = Math.max(0, safeBattleValue(incomingPreview.totalHpLoss));
-  if (!currentTotalLoss) return null;
-
   const hpAfterCard = Math.max(0, playerHp - Math.max(0, safeBattleValue(cardPreview.selfDamage)));
   const unavoidableLoss = Math.max(0, safeBattleValue(incomingPreview.endTurnHpLoss));
   const attackTotal = Math.max(0, safeBattleValue(incomingPreview.attackTotal));
   const currentBlock = Math.max(0, safeBattleValue(incomingPreview.currentBlock));
+  const lethalBefore = Boolean(incomingPreview.lethal || currentTotalLoss >= playerHp);
+
+  const mechanicState = options.mechanicState;
+  const mechanicStatusCleared = Math.max(0, Math.floor(safeBattleValue(options.mechanicStatusCleared)));
+  if (mechanicState?.type === "statusHits" && mechanicStatusCleared > 0) {
+    const sourceCount = Math.max(0, Math.floor(safeBattleValue(mechanicState.sourceCount)));
+    const cap = Math.max(0, Math.floor(safeBattleValue(mechanicState.cap)));
+    const currentValue = Math.min(
+      cap,
+      sourceCount,
+      Math.max(0, Math.floor(safeBattleValue(mechanicState.value)))
+    );
+    const cleared = Math.min(sourceCount, mechanicStatusCleared);
+    const nextSource = Math.max(0, sourceCount - cleared);
+    const nextValue = Math.min(cap, nextSource);
+    const reducedHits = Math.max(0, currentValue - nextValue);
+    const perHit = Math.max(0, safeBattleValue(incomingPreview.perHit));
+    const currentHits = Math.max(0, Math.floor(safeBattleValue(incomingPreview.hits)));
+    const nextHits = Math.max(1, currentHits - reducedHits);
+
+    if (reducedHits > 0 && perHit > 0 && nextHits < currentHits) {
+      const nextAttackTotal = perHit * nextHits;
+      const attackLossAfterCard = unavoidableLoss >= hpAfterCard
+        ? 0
+        : Math.max(0, nextAttackTotal - currentBlock - block);
+      const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
+      const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
+      const statusName = typeof options.mechanicStatusName === "string" && options.mechanicStatusName
+        ? options.mechanicStatusName
+        : "状态";
+      const label = `轰炸 ${currentHits}→${nextHits}段`;
+      const detailPrefix = `清理 ${cleared} 张${statusName}：轰炸从 ${currentHits} 段降至 ${nextHits} 段`;
+
+      if (lethalBefore && !lethalAfter) {
+        return {
+          tone: "rescue",
+          label: `${label} · 脱险`,
+          detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
+        };
+      }
+      if (totalLossAfterCard === 0) {
+        return {
+          tone: "guard",
+          label: `${label} · 无伤`,
+          detail: `${detailPrefix}，打出后无伤`
+        };
+      }
+      return {
+        tone: lethalAfter ? "danger" : "counter",
+        label: lethalAfter ? `${label} · 仍致命` : `${label} · -${totalLossAfterCard}生命`,
+        detail: lethalAfter
+          ? `${detailPrefix}，仍会致命，预计损失 ${totalLossAfterCard} 生命`
+          : `${detailPrefix}，预计损失 ${totalLossAfterCard} 生命`
+      };
+    }
+  }
+
+  if (!block || !currentTotalLoss) return null;
   const attackLossAfterCard = unavoidableLoss >= hpAfterCard
     ? 0
     : Math.max(0, attackTotal - currentBlock - block);
   const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
-  const lethalBefore = Boolean(incomingPreview.lethal || currentTotalLoss >= playerHp);
   const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
 
   if (lethalBefore && !lethalAfter) {
