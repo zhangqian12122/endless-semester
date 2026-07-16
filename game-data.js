@@ -776,13 +776,30 @@ export const ACHIEVEMENT_DEFS = {
 };
 
 export const EVENT_DEFS = {
-  hallwayBox: { id: "hallwayBox", name: "走廊纸箱", text: "纸箱里传来窸窸窣窣的声音。", safe: false },
+  hallwayBox: {
+    id: "hallwayBox",
+    name: "走廊纸箱",
+    text: "纸箱里传来窸窸窣窣的声音。",
+    safe: false,
+    scene: "assets/scenes/event-hallway-box-v1.webp",
+    sceneAlt: "放学后的校园走廊里，一只半开的纸箱静静放在窗边",
+    tone: "risk"
+  },
   popQuiz: { id: "popQuiz", name: "突击测验", text: "老师突然把试卷拍在桌上。", safe: false },
   clubRecruitment: { id: "clubRecruitment", name: "社团招新", text: "三个社团同时向你递来传单。", safe: true },
   mealCard: { id: "mealCard", name: "捡到饭卡", text: "余额还不少，宠物也盯着它看。", safe: true },
   campusRumor: { id: "campusRumor", name: "校园怪谈", text: "废弃教室里传出了奇怪的响声。", safe: false },
   oldLocker: { id: "oldLocker", name: "旧储物柜", text: "柜门锈住了，里面似乎还有东西。", safe: true }
 };
+
+export const SHOP_SCENE = Object.freeze({
+  scene: "assets/scenes/campus-shop-v1.webp",
+  sceneAlt: "暖色灯光下的校园小卖部，货架上摆着文具、零食和卡牌",
+  tone: "shop",
+  mark: "店",
+  eyebrow: "本周进货",
+  text: "“别问进货渠道。学生证确实能打折。”"
+});
 
 export const SAFE_EVENT_IDS = Object.values(EVENT_DEFS).filter((event) => event.safe).map((event) => event.id);
 export const ALL_EVENT_IDS = Object.keys(EVENT_DEFS);

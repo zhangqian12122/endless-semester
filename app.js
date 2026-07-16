@@ -15,7 +15,8 @@ import {
   PET_TALENT_DEFS,
   RARITY_LABELS,
   PUBLIC_REWARD_CARD_IDS,
-  SAFE_EVENT_IDS
+  SAFE_EVENT_IDS,
+  SHOP_SCENE
 } from "./game-data.js";
 import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
@@ -194,6 +195,28 @@ function escapeHtml(value) {
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
+}
+
+function sceneBannerHtml(scene = {}, options = {}) {
+  const content = { ...scene, ...options };
+  const toneMap = { risk: "risk", safe: "safe", shop: "shop", neutral: "neutral", 紧张: "risk", 日常: "safe", 温暖: "shop" };
+  const tone = toneMap[content.tone] || "neutral";
+  const mark = content.mark || (tone === "shop" ? "店" : "?");
+  const image = content.scene
+    ? `<img class="scene-banner-image" src="${escapeHtml(content.scene)}" alt="${escapeHtml(content.sceneAlt || "")}" draggable="false" decoding="async"
+        onload="this.closest('.scene-banner').classList.add('asset-ready')" onerror="this.remove()">`
+    : "";
+  return `<section class="scene-banner tone-${tone}">
+    <div class="scene-banner-visual">
+      <div class="scene-banner-fallback" aria-hidden="true"><span>${escapeHtml(mark)}</span><i></i><i></i></div>
+      ${image}
+      <div class="scene-banner-vignette" aria-hidden="true"></div>
+    </div>
+    <div class="scene-banner-copy">
+      <small>${escapeHtml(content.eyebrow || "校园事件")}</small>
+      <p>${escapeHtml(content.text || "前方似乎发生了什么。")}</p>
+    </div>
+  </section>`;
 }
 
 function setToast(message) {
@@ -2749,7 +2772,7 @@ function renderShop() {
   const removePrice = game.shopRemovePrice();
   const availableCardIds = shop.cards.filter((stock) => !stock.sold).map((stock) => stock.id);
   const body = `
-    <div class="shopkeeper"><span>店</span><p>“别问进货渠道。学生证确实能打折。”</p></div>
+    ${sceneBannerHtml(SHOP_SCENE)}
     <h2 class="subheading">卡牌</h2>
     ${availableCardIds.length ? choiceAdviceHtml(availableCardIds) : ""}
     <div class="shop-grid">
@@ -2820,8 +2843,13 @@ const EVENT_CONFIRM_OUTCOMES = {
 
 function renderEvent() {
   const event = EVENT_DEFS[context.eventId];
+  const sceneOptions = {
+    tone: event.tone || (event.safe ? "safe" : "risk"),
+    mark: "?",
+    eyebrow: event.safe ? "校园日常" : "风险事件"
+  };
   const body = `
-    <div class="event-scene"><span>?</span><div><small>${event.safe ? "校园日常" : "风险事件"}</small><p>${event.text}</p></div></div>
+    ${sceneBannerHtml(event, sceneOptions)}
     <div class="event-options">
       ${eventChoices(event.id).map(([name, detail, id]) => {
         const status = game.eventChoiceStatus(id);
