@@ -853,6 +853,26 @@ function createBattleCausalGhost(effect) {
   return ghost;
 }
 
+function createPileShuffleGhosts(movedCards) {
+  const source = app.querySelector('.pile-button[data-zone="discardPile"]');
+  const destination = app.querySelector('.pile-button[data-zone="drawPile"]');
+  if (!(source instanceof HTMLElement) || !(destination instanceof HTMLElement)) return null;
+  const sourceRect = source.getBoundingClientRect();
+  const destinationRect = destination.getBoundingClientRect();
+  if (!sourceRect.width || !sourceRect.height || !destinationRect.width || !destinationRect.height) return null;
+  const moved = Math.max(1, Math.floor(Number(movedCards) || 1));
+  const ghosts = Array.from({ length: Math.min(4, moved) }, (_, index) => {
+    const ghost = document.createElement("i");
+    ghost.className = "pile-shuffle-ghost";
+    ghost.dataset.layer = String(index);
+    ghost.setAttribute("aria-hidden", "true");
+    if (index === 0) ghost.innerHTML = `<b>×${moved}</b>`;
+    document.body.append(ghost);
+    return ghost;
+  });
+  return { source, destination, sourceRect, destinationRect, ghosts };
+}
+
 function battleCausalRoute(startX, startY, endX, endY, options = {}) {
   const viewportWidth = Math.max(320, Number(options.viewport?.width) || 1280);
   const viewportHeight = Math.max(480, Number(options.viewport?.height) || 720);
@@ -944,7 +964,7 @@ function clearBattleMotionArtifacts() {
   const activeMedia = battleMotionMedia;
   battleMotionMedia = null;
   activeMedia?.revert();
-  document.querySelectorAll(".played-card-ghost, .pet-flight, .battle-causal-ghost").forEach((element) => element.remove());
+  document.querySelectorAll(".played-card-ghost, .pet-flight, .battle-causal-ghost, .pile-shuffle-ghost").forEach((element) => element.remove());
 }
 
 function enemyBattleMotionProfile(feedback) {
@@ -1174,6 +1194,9 @@ function runBattleMotion(feedback, origin = null) {
       effect,
       element: createBattleCausalGhost(effect)
     })).filter((entry) => entry.element);
+    const shuffleMotion = feedback.pileReshuffles
+      ? createPileShuffleGhosts(feedback.reshuffledCards)
+      : null;
     const targetRect = target?.getBoundingClientRect();
     const attackerRect = attacker?.getBoundingClientRect();
     const routeBlockers = [...app.querySelectorAll([
@@ -1228,6 +1251,7 @@ function runBattleMotion(feedback, origin = null) {
     const removeGhosts = () => {
       ghost?.remove();
       causalGhosts.forEach(({ element }) => element.remove());
+      shuffleMotion?.ghosts.forEach((element) => element.remove());
     };
     const finish = () => {
       removeGhosts();
@@ -1323,6 +1347,60 @@ function runBattleMotion(feedback, origin = null) {
     if (feedback.petChargeGain) {
       const petToken = app.querySelector(".pet-companion-token");
       if (petToken) timeline.fromTo(petToken, { scale: .82 }, { scale: 1.14, duration: .14, ease: "back.out(2)" }, "impact+=.08").to(petToken, { scale: 1, duration: .12, clearProps: "transform" });
+    }
+    if (shuffleMotion?.ghosts.length) {
+      const sourceX = shuffleMotion.sourceRect.left + shuffleMotion.sourceRect.width / 2;
+      const sourceY = shuffleMotion.sourceRect.top + shuffleMotion.sourceRect.height / 2;
+      const destinationX = shuffleMotion.destinationRect.left + shuffleMotion.destinationRect.width / 2;
+      const destinationY = shuffleMotion.destinationRect.top + shuffleMotion.destinationRect.height / 2;
+      const travelX = destinationX - sourceX;
+      const travelY = destinationY - sourceY;
+      const startAt = "pileShuffle";
+      timeline.addLabel(startAt, feedback.kind === "enemy" ? "impact+=.1" : "impact+=.04");
+      timeline.fromTo(
+        shuffleMotion.source,
+        { scale: 1, filter: "brightness(1)" },
+        { scale: .88, filter: "brightness(1.35)", duration: .09, ease: "power2.in", immediateRender: false },
+        startAt
+      );
+      timeline.to(shuffleMotion.source, { scale: 1, filter: "brightness(1)", duration: .12, clearProps: "transform,filter" }, `${startAt}+=.1`);
+      shuffleMotion.ghosts.forEach((shuffleGhost, index) => {
+        const stagger = index * .025;
+        gsap.set(shuffleGhost, {
+          left: sourceX - 13 + index * 2,
+          top: sourceY - 19 - index * 2,
+          x: 0,
+          y: 0,
+          rotation: 8 + index * 3,
+          scale: .82,
+          autoAlpha: 0
+        });
+        timeline.to(shuffleGhost, { autoAlpha: 1, scale: .96, duration: .06 }, `${startAt}+=${stagger}`);
+        timeline.to(shuffleGhost, {
+          x: travelX * .55,
+          y: travelY * .5 - 30 - index * 2,
+          rotation: -9 + index * 4,
+          scale: 1.04,
+          duration: .15,
+          ease: "power2.out"
+        }, `${startAt}+=${stagger + .04}`);
+        timeline.to(shuffleGhost, {
+          x: travelX,
+          y: travelY,
+          rotation: -4 + index * 2,
+          scale: .82,
+          duration: .14,
+          ease: "power2.in"
+        }, `${startAt}+=${stagger + .19}`);
+        timeline.to(shuffleGhost, { autoAlpha: 0, scale: .62, duration: .06 }, `${startAt}+=${stagger + .31}`);
+      });
+      timeline.fromTo(
+        shuffleMotion.destination,
+        { scale: .9, filter: "brightness(1.4)" },
+        { scale: 1.08, filter: "brightness(1.15)", duration: .1, ease: "back.out(2)", immediateRender: false },
+        `${startAt}+=.3`
+      );
+      timeline.to(shuffleMotion.destination, { scale: 1, filter: "brightness(1)", duration: .1, clearProps: "transform,filter" }, `${startAt}+=.4`);
     }
     timeline.to(ribbon, { autoAlpha: 0, y: -4, duration: .18 }, ">-.12");
     return () => {
@@ -1661,6 +1739,7 @@ function finishPlayerTurn() {
         cardType: "status",
         endTurnHpLoss,
         enemyAttackHpLoss: 0,
+        drawResult: result.drawResult,
         effectParts: endTurnHpLoss ? ["无视护甲"] : []
       });
     } else {
@@ -1678,6 +1757,7 @@ function finishPlayerTurn() {
         enemyBlockGain: result.enemyResult.block?.gained || 0,
         hidePlayerDamageNumber: hitBreakdown.length > 0,
         lockCombatInput: game.combat.status === "active",
+        drawResult: result.drawResult,
         effectParts: actualEffects.map((effect) => effect.label),
         causalEffects: enemyActionCausalEffects(result.enemyResult, statusPlacements),
         enemyResolution: {
@@ -3617,6 +3697,7 @@ app.addEventListener("click", (event) => {
           ...(distractedCleared ? ["移除走神"] : []),
           ...counterplayFeedbackParts(counterplayBefore, counterplayAfter)
         ],
+        drawResult: result.drawResult,
         motionOrigin
       });
     }
@@ -3649,6 +3730,7 @@ app.addEventListener("click", (event) => {
       const counterplayAfter = game.getIntent().mechanicState;
       queueBattleFeedback("pet", `${pet.name} · ${pet.skill.name}`, before, {
         effectParts: counterplayFeedbackParts(counterplayBefore, counterplayAfter),
+        drawResult: result.drawResult,
         motionOrigin
       });
     }

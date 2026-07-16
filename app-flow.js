@@ -1638,6 +1638,13 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
   const playerBlockGain = Math.max(0, safeBattleValue(after.playerBlock) - safeBattleValue(before.playerBlock));
   const playerBlockAbsorbed = kind === "enemy" ? Math.max(0, safeBattleValue(options.playerBlockAbsorbed)) : 0;
   const enemyBlockGain = kind === "enemy" ? Math.max(0, safeBattleValue(options.enemyBlockGain)) : 0;
+  const reshuffleMoves = Array.isArray(options.drawResult?.reshuffles)
+    ? options.drawResult.reshuffles
+      .map((entry) => Math.max(0, Math.floor(safeBattleValue(entry?.moved))))
+      .filter((moved) => moved > 0)
+    : [];
+  const pileReshuffles = reshuffleMoves.length;
+  const reshuffledCards = reshuffleMoves.reduce((total, moved) => total + moved, 0);
   const cardsDrawn = kind === "enemy"
     ? 0
     : Math.max(
@@ -1658,6 +1665,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
   if (playerBlockAbsorbed) summaryParts.push(`护甲挡下 ${playerBlockAbsorbed}`);
   if (playerBlockGain) summaryParts.push(`护甲 +${playerBlockGain}`);
   if (enemyBlockGain) summaryParts.push(`敌方护甲 +${enemyBlockGain}`);
+  if (pileReshuffles) summaryParts.push(`弃牌洗回抽牌堆 ${reshuffledCards} 张`);
   if (cardsDrawn) summaryParts.push(`抽牌 +${cardsDrawn}`);
   if (petChargeGain) summaryParts.push(`宠物充能 +${petChargeGain}`);
   summaryParts.push(...effectParts);
@@ -1699,6 +1707,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     enemyBlockGain,
     cardsDrawn,
     petChargeGain,
+    ...(pileReshuffles ? { pileReshuffles, reshuffledCards } : {}),
     hidePlayerDamageNumber: options.hidePlayerDamageNumber === true,
     motionType,
     causalEffects,

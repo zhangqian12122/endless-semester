@@ -216,6 +216,25 @@ function nonNegativeInteger(value, fallback = 0) {
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : fallback;
 }
 
+function mergeDrawResults(results = []) {
+  return results.reduce((merged, result) => ({
+    requested: merged.requested + nonNegativeInteger(result?.requested),
+    drawn: merged.drawn + nonNegativeInteger(result?.drawn),
+    reshuffles: [
+      ...merged.reshuffles,
+      ...(Array.isArray(result?.reshuffles)
+        ? result.reshuffles
+          .map((entry) => ({ moved: nonNegativeInteger(entry?.moved) }))
+          .filter((entry) => entry.moved > 0)
+        : [])
+    ]
+  }), { requested: 0, drawn: 0, reshuffles: [] });
+}
+
+function withVisibleDrawResult(result, drawResult) {
+  return drawResult?.reshuffles?.length ? { ...result, drawResult } : result;
+}
+
 export const CHALLENGE_AFFIX_DEFS = Object.freeze({
   deadline: {
     id: "deadline",
@@ -1889,7 +1908,7 @@ export class SemesterGame {
     );
     combat.nextDrawBonus = 0;
     combat.nextDrawPenalty = 0;
-    this.drawCards(drawCount);
+    const drawResult = this.drawCards(drawCount);
 
     if (combat.turn === 1 && this.hasItem("bandage") && this.hp * 2 <= this.maxHp) {
       combat.playerBlock += 6;
@@ -1909,19 +1928,25 @@ export class SemesterGame {
       combat.log.push(`塔罗·${this.tarot.name}生效：${this.tarot.boon}`);
     }
     combat.log.push(`第 ${combat.turn} 回合：抽 ${drawCount} 张牌，获得 ${combat.energy} 点能量。`);
+    return drawResult;
   }
 
   drawCards(count) {
     const combat = this.requireCombat();
-    for (let index = 0; index < count; index += 1) {
+    const requested = nonNegativeInteger(count);
+    const result = { requested, drawn: 0, reshuffles: [] };
+    for (let index = 0; index < requested; index += 1) {
       if (!combat.drawPile.length) {
         if (!combat.discardPile.length) break;
+        result.reshuffles.push({ moved: combat.discardPile.length });
         combat.drawPile = this.rng.shuffle(combat.discardPile);
         combat.discardPile = [];
         combat.log.push("弃牌堆洗回抽牌堆。");
       }
       combat.hand.push(combat.drawPile.pop());
+      result.drawn += 1;
     }
+    return result;
   }
 
   canPlay(card) {
@@ -2104,10 +2129,11 @@ export class SemesterGame {
     this.stats.cardsPlayed += 1;
     this.stats.cardPlays[card.id] = (this.stats.cardPlays[card.id] || 0) + 1;
     const notes = [];
+    const drawResults = [];
 
     if (definition.cost === 0 && this.archetypeId === "gemini" && !combat.archetypeZeroUsed) {
       combat.archetypeZeroUsed = true;
-      this.drawCards(1);
+      drawResults.push(this.drawCards(1));
       notes.push("双子座命盘：抽 1 张牌");
     }
 
@@ -2162,7 +2188,7 @@ export class SemesterGame {
       this.stats.combatHpLost += effect.selfDamage;
       notes.push(`自己失去 ${effect.selfDamage} 生命`);
     }
-    if (effect.draw) this.drawCards(effect.draw);
+    if (effect.draw) drawResults.push(this.drawCards(effect.draw));
     if (effect.nextDrawBonus) combat.nextDrawBonus += effect.nextDrawBonus;
     if (effect.nextDrawPenalty) combat.nextDrawPenalty += effect.nextDrawPenalty;
     if (effect.clearDistracted && combat.distracted) {
@@ -2182,13 +2208,18 @@ export class SemesterGame {
       combat.playerBlock += extra;
       notes.push(`清理 ${statuses.length} 张状态牌，护甲 +${extra}`);
     }
-    if (effect.discard) combat.pendingDiscard += effect.discard;
+    if (effect.discard) {
+      // A draw-then-discard card may be the only card left in hand while both
+      // piles are empty.  Only queue choices the player can actually make, or
+      // pendingDiscard would permanently block every combat action.
+      combat.pendingDiscard += Math.min(effect.discard, combat.hand.length);
+    }
 
     if (effect.exhaust) combat.exhaustPile.push(card);
     else combat.discardPile.push(card);
     combat.log.push(`${definition.displayName}：${notes.length ? notes.join("，") : "效果生效"}。`);
     this.checkCombatEnd();
-    return { ok: true };
+    return withVisibleDrawResult({ ok: true }, mergeDrawResults(drawResults));
   }
 
   discardCard(uid) {
@@ -2220,12 +2251,13 @@ export class SemesterGame {
     const preview = this.petSkillPreview();
     const dealt = this.damageEnemy(preview.damage, 1);
     const notes = [`造成 ${dealt} 伤害`];
+    let drawResult = null;
     if (preview.block) {
       combat.playerBlock += preview.block;
       notes.push(`获得 ${preview.block} 护甲`);
     }
     if (preview.draw) {
-      this.drawCards(preview.draw);
+      drawResult = this.drawCards(preview.draw);
       notes.push(`抽 ${preview.draw} 张牌`);
     }
     if (preview.nextDrawBonus) {
@@ -2234,7 +2266,7 @@ export class SemesterGame {
     }
     combat.log.push(`${pet.name}·${skill.name}：${notes.join("，")}。`);
     this.checkCombatEnd();
-    return { ok: true };
+    return withVisibleDrawResult({ ok: true }, drawResult);
   }
 
   damageEnemy(perHit, hits) {
@@ -2304,8 +2336,8 @@ export class SemesterGame {
     }
     combat.distracted = false;
     const enemyResult = this.executeEnemyTurn(resolvedIntent);
-    if (combat.status === "active") this.startPlayerTurn();
-    return { ok: true, endTurnResult, enemyResult };
+    const drawResult = combat.status === "active" ? this.startPlayerTurn() : null;
+    return withVisibleDrawResult({ ok: true, endTurnResult, enemyResult }, drawResult);
   }
 
   executeEnemyTurn(resolvedIntent = null) {
