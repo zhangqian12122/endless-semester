@@ -18,7 +18,7 @@ import {
   SAFE_EVENT_IDS,
   SHOP_SCENE
 } from "./game-data.js";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.47";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.48";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
@@ -375,10 +375,13 @@ function cardHtml(card, options = {}) {
   const handStyle = options.handPose
     ? `style="--hand-angle:${options.handPose.angle}deg;--hand-drop:${options.handPose.drop}px;--hand-layer:${options.handPose.layer}"`
     : "";
+  const rewardAttributes = options.rewardSource && options.rewardToken
+    ? ` data-reward-source="${escapeHtml(options.rewardSource)}" data-reward-token="${escapeHtml(options.rewardToken)}"`
+    : "";
   return `
     <button type="button" class="game-card type-${definition.type} rarity-${definition.rarity} ${owner ? `exclusive-card exclusive-${owner.id}` : ""} ${playable ? "" : "disabled"}${extraClass}${tacticalClass}"
       title="${owner ? `${owner.name}专属 · ` : ""}${rarityName(definition.rarity)}${definition.enchantment ? ` · ${definition.enchantment.name}` : ""}"
-      data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}"${pressed} ${handStyle} ${options.shortcut ? `aria-keyshortcuts="${options.shortcut}"` : ""} ${playable ? "" : "disabled"}>
+      data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}"${rewardAttributes}${pressed} ${handStyle} ${options.shortcut ? `aria-keyshortcuts="${options.shortcut}"` : ""} ${playable ? "" : "disabled"}>
       <span class="card-cost" aria-label="费用 ${cost}"><b>${cost}</b></span>
       ${options.shortcut ? `<kbd class="card-shortcut" aria-hidden="true">${options.shortcut}</kbd>` : ""}
       ${definition.enchantment ? `<span class="card-enchantment" title="${definition.enchantment.text}">${definition.enchantment.sign}</span>` : ""}
@@ -2291,10 +2294,15 @@ function renderCardReward() {
     <div class="choice-copy"><p>${context.message || "选一张加入构筑，也可以跳过。"}</p></div>
     <div class="pool-composition"><b>${game.archetype.sign} 当前奖励构成</b><span>${exclusiveCount} 张本星座专属</span><span>${publicCount} 张普池</span><em>不会出现其他星座专属牌</em></div>
     ${choiceAdviceHtml(context.choices)}
-    <div class="card-choice-row">${context.choices.map((id) => cardHtml(id, { action: "take-reward-card", fit: evaluateCardFit(game, id) })).join("")}</div>
+    <div class="card-choice-row">${context.choices.map((id) => cardHtml(id, {
+      action: "take-reward-card",
+      fit: evaluateCardFit(game, id),
+      rewardSource: context.rewardSource,
+      rewardToken: context.rewardToken
+    })).join("")}</div>
     <div class="choice-actions">
       ${game.hasItem("eraser") && !game.flags.eraserUsed && context.allowReroll !== false ? '<button class="secondary" data-action="reroll-reward">橡皮擦：本学期重抽一次</button>' : ""}
-      <button class="quiet-button" data-action="skip-reward">跳过，不让卡组变厚</button>
+      <button class="quiet-button" data-action="skip-reward" data-reward-source="${escapeHtml(context.rewardSource || "")}" data-reward-token="${escapeHtml(context.rewardToken || "")}">跳过，不让卡组变厚</button>
     </div>`;
   return page(context.title || "选择一张新牌", context.eyebrow || "战斗奖励", body, {
     description: "强牌不一定适合当前构筑；能稳定抽到核心牌同样重要。",
@@ -3142,9 +3150,18 @@ function openShop() {
   }
 }
 
+function cardRewardToken(source, choices) {
+  return `${game.semester}:${game.week}:${source || "unknown"}:${choices.join(",")}`;
+}
+
 function showCardReward(options = {}) {
+  const choices = [...(options.choices || game.rewardCards(3, options.rarity))];
+  const rewardSource = options.rewardSource || null;
   changeScreen("cardReward", {
-    choices: options.choices || game.rewardCards(3, options.rarity),
+    choices,
+    rewardSource,
+    rewardToken: cardRewardToken(rewardSource, choices),
+    settling: false,
     title: options.title,
     eyebrow: options.eyebrow,
     message: options.message,
@@ -3164,18 +3181,44 @@ function showItemReward(choices, onDone = advanceWeek, title) {
   return true;
 }
 
-function finishCardReward(id) {
-  game.stats.rewardsSeen += 1;
-  if (id) {
-    game.addCard(id);
-    game.stats.cardsTaken += 1;
-    if (CARD_DEFS[id].archetype === game.archetypeId) game.stats.exclusiveTaken += 1;
-    else game.stats.publicTaken += 1;
-  } else {
-    game.stats.rewardsSkipped += 1;
+function finishCardReward(id, source, token) {
+  const rewardContext = context;
+  if (screen !== "cardReward" || rewardContext.settling === true) return false;
+
+  const inferredSource = game.pendingCombatReward?.type === "normalCard"
+    ? "normal"
+    : game.pendingCombatReward?.type === "eliteChain" && game.pendingCombatReward.stage === "card"
+      ? "elite"
+      : game.pendingCombatReward?.type === "challengeChain"
+        && game.pendingCombatReward.stage === "card"
+        && game.pendingCombatReward.route === "cards"
+        ? "challenge"
+        : game.pendingEventReward?.type === "card"
+          ? "event"
+          : null;
+  const rewardSource = source || rewardContext.rewardSource || inferredSource;
+  if (!rewardSource || (rewardContext.rewardSource && rewardSource !== rewardContext.rewardSource)) return false;
+  if (rewardContext.rewardToken && token !== rewardContext.rewardToken) return false;
+
+  const pending = rewardSource === "event" ? game.pendingEventReward : game.pendingCombatReward;
+  const authoritativeChoices = Array.isArray(pending?.choices) ? pending.choices : [];
+  const contextMatchesPending = authoritativeChoices.length > 0
+    && authoritativeChoices.length === rewardContext.choices?.length
+    && authoritativeChoices.every((choice, index) => rewardContext.choices[index] === choice);
+  if (!contextMatchesPending || id === undefined
+    || (id !== null && (!CARD_DEFS[id] || !authoritativeChoices.includes(id)))) return false;
+
+  const next = rewardContext.onDone;
+  if (typeof next !== "function") return false;
+  const result = game.resolvePendingCardReward({ source: rewardSource, choice: id });
+  if (!result) {
+    setToast("这份卡牌奖励已经失效，请按当前奖励状态重新选择");
+    render();
+    return false;
   }
-  const next = context.onDone;
-  if (typeof next === "function") next();
+  rewardContext.settling = true;
+  next(result);
+  return true;
 }
 
 function grantItem(id) {
@@ -3328,13 +3371,13 @@ function resumeNormalCombatReward() {
   }
   showCardReward({
     choices: pending.choices,
+    rewardSource: "normal",
     title: "战斗奖励",
     eyebrow: pending.bonusGold ? "高压加练奖励" : "战斗奖励",
     message: pending.bonusGold
       ? `${pending.gold} 校园币已到账（基础 ${NORMAL_COMBAT_REWARD_GOLD} + 高压加练 ${pending.bonusGold}）。再选一张加入构筑，也可以跳过。`
       : `${pending.gold || NORMAL_COMBAT_REWARD_GOLD} 校园币已到账。选一张加入构筑，也可以跳过。`,
     onDone() {
-      game.completePendingCombatReward();
       advanceWeek();
     }
   });
@@ -3355,9 +3398,9 @@ function resumeEliteCombatReward() {
   if (pending.stage === "card") {
     showCardReward({
       choices: pending.choices,
+      rewardSource: "elite",
       title: "精英战奖励",
       onDone() {
-        game.advanceEliteCombatRewardFromCard();
         resumeEliteCombatReward();
       }
     });
@@ -3418,12 +3461,12 @@ function resumeChallengeCombatReward() {
     const reward = CHALLENGE_REWARD_DEFS.cards;
     showCardReward({
       choices: pending.choices,
+      rewardSource: "challenge",
       title: reward.name,
       eyebrow: "挑战奖励 · 本星座专属池",
       message: `${reward.gold} 校园币已到账。从三张本星座专属牌中选一张，也可以跳过。`,
       allowReroll: false,
       onDone() {
-        game.completePendingCombatReward();
         advanceWeek();
       }
     });
@@ -3524,10 +3567,11 @@ function resumePendingEventReward() {
   if (pending.type === "card") {
     showCardReward({
       choices: pending.choices,
+      rewardSource: "event",
       title: pending.source === "quiz-card" ? "借来的答案" : "社团赠礼",
       eyebrow: pending.source === "quiz-card" ? "下场战斗初始紧张 +2" : "校园社团 · 选一张加入卡组",
       allowReroll: false,
-      onDone: finish
+      onDone: advanceWeek
     });
     return;
   }
@@ -3855,16 +3899,27 @@ app.addEventListener("click", (event) => {
   } else if (action === "choose-challenge-reward") {
     resolveChallengeReward(button.dataset.id);
   } else if (action === "take-reward-card") {
-    finishCardReward(button.dataset.id);
+    finishCardReward(button.dataset.id, button.dataset.rewardSource, button.dataset.rewardToken);
   } else if (action === "skip-reward") {
-    finishCardReward(null);
+    finishCardReward(null, button.dataset.rewardSource, button.dataset.rewardToken);
   } else if (action === "reroll-reward") {
+    const pending = game.pendingCombatReward;
+    const canReroll = screen === "cardReward"
+      && context.settling !== true
+      && ["normal", "elite"].includes(context.rewardSource)
+      && !game.flags.eraserUsed
+      && game.hasItem("eraser")
+      && context.allowReroll !== false
+      && Array.isArray(pending?.choices)
+      && pending.choices.length === context.choices?.length
+      && pending.choices.every((choice, index) => context.choices[index] === choice);
+    if (!canReroll) return;
+    const rerolled = game.rewardCards(3);
+    if (!game.replacePendingCombatRewardChoices(rerolled)) return;
     game.flags.eraserUsed = true;
-    context.choices = game.rewardCards(3);
-    if (game.pendingCombatReward) {
-      game.replacePendingCombatRewardChoices(context.choices);
-      saveGame();
-    }
+    context.choices = [...game.pendingCombatReward.choices];
+    context.rewardToken = cardRewardToken(context.rewardSource, context.choices);
+    saveGame();
     render();
   } else if (action === "choose-item") {
     grantItem(button.dataset.id);

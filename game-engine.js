@@ -1422,6 +1422,79 @@ export class SemesterGame {
     return true;
   }
 
+  resolvePendingCardReward(request) {
+    if (!request || typeof request !== "object" || Array.isArray(request)
+      || !Object.prototype.hasOwnProperty.call(request, "choice")) return null;
+    const source = request.source;
+    const choice = request.choice;
+    let pending = null;
+
+    if (source === "normal" && !this.pendingEventReward
+      && this.pendingCombatReward?.type === "normalCard") {
+      pending = this.pendingCombatReward;
+    } else if (source === "elite" && !this.pendingEventReward
+      && this.pendingCombatReward?.type === "eliteChain"
+      && this.pendingCombatReward.stage === "card") {
+      pending = this.pendingCombatReward;
+    } else if (source === "challenge" && !this.pendingEventReward
+      && this.pendingCombatReward?.type === "challengeChain"
+      && this.pendingCombatReward.stage === "card"
+      && this.pendingCombatReward.route === "cards") {
+      pending = this.pendingCombatReward;
+    } else if (source === "event" && !this.pendingCombatReward
+      && this.pendingEventReward?.type === "card") {
+      pending = this.pendingEventReward;
+    }
+
+    if (!pending || !Array.isArray(pending.choices) || !pending.choices.length) return null;
+    const skipped = choice === null;
+    let definition = null;
+    if (!skipped) {
+      if (typeof choice !== "string" || !pending.choices.includes(choice)) return null;
+      definition = CARD_DEFS[choice];
+      if (!definition || definition.type === "status"
+        || (definition.archetype && definition.archetype !== this.archetypeId)) return null;
+      if (source === "challenge" && definition.archetype !== this.archetypeId) return null;
+      if (source === "event") {
+        const filter = EVENT_CARD_REWARD_SOURCES[pending.source];
+        const matchesEventPool = filter === "uncommon"
+          ? definition.rarity === "uncommon"
+          : filter === "attack"
+            ? definition.type === "attack"
+            : filter === "skill"
+              ? definition.type !== "attack" && definition.type !== "status"
+              : false;
+        if (!matchesEventPool) return null;
+      }
+    }
+
+    const card = skipped ? null : this.addCard(choice);
+    if (source === "normal" || source === "challenge") {
+      this.pendingCombatReward = null;
+    } else if (source === "elite") {
+      this.advanceEliteCombatRewardFromCard();
+    } else {
+      this.pendingEventReward = null;
+    }
+
+    this.stats.rewardsSeen += 1;
+    if (skipped) {
+      this.stats.rewardsSkipped += 1;
+    } else {
+      this.stats.cardsTaken += 1;
+      if (definition.archetype === this.archetypeId) this.stats.exclusiveTaken += 1;
+      else this.stats.publicTaken += 1;
+    }
+
+    return {
+      source,
+      choice,
+      skipped,
+      card: card ? { ...card } : null,
+      nextStage: source === "elite" ? this.pendingCombatReward?.stage || null : null
+    };
+  }
+
   completePendingCombatReward() {
     if (!this.pendingCombatReward || this.pendingItemReplacement?.source === "combat") return false;
     this.pendingCombatReward = null;
