@@ -761,16 +761,22 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .enemy-mechanic-progress.kind-finalExam .mechanic-progress-track > b { border-radius: 1px; }
 .combat-board.enemy-resolving .enemy-mechanic-progress { will-change: transform; }
 .combat-board.enemy-resolving .enemy-avatar { will-change: transform, filter; }
-.enemy-intent-token { position: absolute; z-index: 8; top: 40px; left: 31%; display: grid; justify-items: center; gap: 3px; min-width: 74px; padding: 0; color: #eee8dc; border: 0; outline: 0; background: transparent; box-shadow: none; font: inherit; text-align: center; cursor: help; appearance: none; transform: translateX(-50%); }
-.enemy-intent-chips { display: flex; justify-content: center; gap: 4px; }
-.intent-chip { display: grid; grid-template-columns: 18px auto; align-items: center; min-height: 24px; overflow: hidden; color: #f0c7bc; border: 1px solid rgba(220,111,94,.42); border-radius: 12px; background: rgba(116,48,42,.36); font-style: normal; }
-.intent-chip em { display: grid; place-items: center; width: 18px; height: 22px; color: #e9a193; border-right: 1px solid rgba(255,255,255,.09); font-size: 8px; font-style: normal; }
-.intent-chip b { min-width: 22px; padding: 0 6px 0 4px; color: inherit; font-family: Georgia, serif; font-size: 13px; line-height: 1; }
-.intent-chip.intent-block { color: #c9e9f5; border-color: rgba(104,179,207,.46); background: rgba(43,91,111,.42); }
-.intent-chip.intent-block em { color: #aaddf0; }
-.intent-chip.intent-debuff, .intent-chip.intent-status { color: #dfd0f5; border-color: rgba(164,127,212,.42); background: rgba(86,60,116,.4); }
-.intent-chip.intent-effect { color: #cbd8cf; border-color: rgba(105,188,139,.36); background: rgba(45,91,59,.34); }
-.enemy-intent-token > small { overflow: hidden; max-width: 116px; color: #f2e9da; text-overflow: ellipsis; text-shadow: 0 2px 3px rgba(0,0,0,.86), 0 0 5px rgba(0,0,0,.52); white-space: nowrap; font-size: 8px; font-weight: 900; letter-spacing: .05em; }
+.enemy-intent-token { position: absolute; z-index: 8; top: -56px; left: 31%; display: grid; justify-items: center; gap: 5px; min-width: 104px; max-width: 184px; padding: 0; color: #eee8dc; border: 0; outline: 0; background: transparent; box-shadow: none; font: inherit; text-align: center; cursor: help; appearance: none; transform: translateX(-50%); }
+.enemy-intent-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 5px 6px; max-width: 184px; }
+.enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -56px; max-width: 204px; }
+.enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) .enemy-intent-chips { flex-wrap: nowrap; max-width: 204px; }
+.intent-chip { display: grid; grid-template-columns: 28px auto; align-items: center; flex: 0 0 auto; min-width: 62px; min-height: 36px; overflow: hidden; color: #ffd4ca; border: 1px solid rgba(255,151,130,.68); border-radius: 999px; background: linear-gradient(145deg, rgba(132,54,47,.84), rgba(78,34,31,.72)); box-shadow: 0 5px 14px rgba(70,31,27,.24), inset 0 1px rgba(255,235,222,.13); backdrop-filter: blur(5px); font-style: normal; }
+.intent-chip em { display: grid; place-items: center; width: 28px; height: 34px; color: #ffaf9e; border-right: 1px solid rgba(255,239,229,.15); font-size: 13px; font-style: normal; font-weight: 900; text-shadow: 0 1px 5px rgba(92,31,25,.5); }
+.intent-chip b { min-width: 32px; padding: 0 9px 0 7px; color: inherit; font-family: Georgia, serif; font-size: 20px; line-height: 1; text-shadow: 0 2px 7px rgba(54,23,21,.56); }
+.intent-chip.intent-attack { color: #ffd4ca; border-color: rgba(255,151,130,.68); background: linear-gradient(145deg, rgba(132,54,47,.84), rgba(78,34,31,.72)); }
+.intent-chip.intent-block { color: #d9f5ff; border-color: rgba(127,211,240,.68); background: linear-gradient(145deg, rgba(43,105,128,.84), rgba(27,65,80,.74)); box-shadow: 0 5px 14px rgba(22,68,85,.24), inset 0 1px rgba(225,248,255,.14); }
+.intent-chip.intent-block em { color: #aee8fb; }
+.intent-chip.intent-debuff { color: #f0dcff; border-color: rgba(206,157,241,.68); background: linear-gradient(145deg, rgba(103,62,132,.84), rgba(57,37,75,.74)); box-shadow: 0 5px 14px rgba(60,34,79,.24), inset 0 1px rgba(246,229,255,.13); }
+.intent-chip.intent-debuff em { color: #dab5f3; }
+.intent-chip.intent-status { color: #fff0bd; border-color: rgba(238,198,105,.7); background: linear-gradient(145deg, rgba(127,91,39,.86), rgba(73,54,28,.76)); box-shadow: 0 5px 14px rgba(80,54,24,.24), inset 0 1px rgba(255,245,208,.14); }
+.intent-chip.intent-status em { color: #f4ce78; }
+.intent-chip.intent-effect { color: #d8f2df; border-color: rgba(123,204,151,.62); background: linear-gradient(145deg, rgba(48,108,70,.82), rgba(30,67,45,.72)); box-shadow: 0 5px 14px rgba(28,68,42,.22), inset 0 1px rgba(226,255,235,.12); }
+.enemy-intent-token > small { overflow: hidden; max-width: 156px; color: #fff5e7; text-overflow: ellipsis; text-shadow: 0 2px 4px rgba(20,15,13,.88), 0 0 8px rgba(20,15,13,.64); white-space: nowrap; font-size: 10px; font-weight: 900; letter-spacing: .05em; }
 .enemy-intent-token.state-block > small { color: #c9e9f5; }
 .enemy-intent-token.state-safe > small { color: #d2eadb; }
 .enemy-intent-token:focus-visible .enemy-intent-chips { border-radius: 14px; outline: 2px solid rgba(241,215,164,.92); outline-offset: 3px; }
@@ -1568,6 +1574,16 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-log { max-height: 108px; }
 }
 
+@media (min-width: 701px) and (max-width: 1366px) and (max-height: 768px) {
+  .enemy-intent-token { top: -56px; min-width: 96px; max-width: 172px; }
+  .enemy-intent-chips { max-width: 172px; gap: 4px 5px; }
+  .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -56px; max-width: 190px; }
+  .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) .enemy-intent-chips { max-width: 190px; }
+  .intent-chip { grid-template-columns: 26px auto; min-width: 58px; min-height: 34px; }
+  .intent-chip em { width: 26px; height: 32px; font-size: 12px; }
+  .intent-chip b { min-width: 30px; padding-right: 8px; padding-left: 6px; font-size: 19px; }
+}
+
 @media (max-width: 1320px) {
   .topbar .pet-resource { display: none; }
 }
@@ -1712,6 +1728,16 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .battle-pet { right: -36px; bottom: 19px; width: 76px; height: 90px; }
   .enemy-finalExam { width: 132px; }
   .fighter-label { flex-direction: column; gap: 2px; }
+  .enemy-intent-token { top: -44px; min-width: 78px; max-width: 132px; gap: 3px; }
+  .enemy-intent-chips { max-width: 132px; gap: 4px; }
+  .intent-chip { grid-template-columns: 22px auto; min-width: 52px; min-height: 30px; }
+  .intent-chip em { width: 22px; height: 28px; font-size: 10px; }
+  .intent-chip b { min-width: 28px; padding-right: 7px; padding-left: 5px; font-size: 17px; }
+  .enemy-intent-token > small { max-width: 124px; font-size: 8px; }
+  .enemy-fighter:has(.enemy-mechanic-progress) .enemy-intent-token { left: 4px; justify-items: start; max-width: 58px; transform: none; }
+  .enemy-fighter:has(.enemy-mechanic-progress) .enemy-intent-chips { max-width: 58px; }
+  .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -44px; max-width: 168px; }
+  .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) .enemy-intent-chips { flex-wrap: nowrap; max-width: 168px; }
   .enemy-fighter:has(.enemy-mechanic-progress) .fighter-label { transform: translateX(-58px); }
   .enemy-mechanic-progress { top: 0; right: 0; gap: 4px; width: 96px; padding: 5px 6px; border-radius: 6px; }
   .enemy-mechanic-progress > span b { font-size: 9px; }
@@ -1932,6 +1958,12 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   }
   .combat-page .student-avatar,
   .combat-page .enemy-avatar { width: 96px; height: 120px; margin-bottom: 4px; }
+  .combat-page .enemy-fighter > .fighter-label { width: auto; height: 24px; margin-bottom: 6px; padding: 2px 7px; }
+  .combat-page .enemy-fighter > .fighter-label span { font-size: 12px; line-height: 1; }
+  .combat-page .enemy-intent-token { top: -30px; }
+  .combat-page .enemy-intent-token > small { display: none; }
+  .combat-page .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -30px; max-width: 168px; }
+  .combat-page .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) .enemy-intent-chips { flex-wrap: nowrap; max-width: 168px; }
   .combat-page .battle-pet { right: -28px; bottom: 15px; width: 62px; height: 74px; }
   .combat-page .combat-vitals { margin-top: -5px; }
   .combat-page .combat-action-dock { flex: 0 0 260px; min-height: 260px; }

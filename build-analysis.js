@@ -195,15 +195,23 @@ export function challengeRewardGuidance(game, availableItemCount = 0) {
   }
   options.push({ id: "cards", score: cardScore, reason: cardReason });
 
-  const pendingEgg = game.pendingCombatReward?.type === "challengeChain"
+  const pendingChallenge = game.pendingCombatReward?.type === "challengeChain"
     && game.pendingCombatReward.stage === "route"
-    ? PET_EGG_DEFS[game.pendingCombatReward.eggId]
+    ? game.pendingCombatReward
     : null;
-  let petScore = pendingEgg ? 68 : 38;
+  const pendingEgg = pendingChallenge?.rewardVariant === "egg"
+    ? PET_EGG_DEFS[pendingChallenge.eggId]
+    : null;
+  const masteryFallback = pendingChallenge
+    ? pendingChallenge.rewardVariant === "mastery"
+    : game.activePetIsMastered?.() === true;
+  let petScore = pendingEgg ? 68 : masteryFallback ? 24 : 38;
   let petReason;
   if (pendingEgg) {
     const hatchling = PET_DEFS[pendingEgg.petId];
     petReason = `本场可确定获得${pendingEgg.name}，不占书包；再赢 ${pendingEgg.requiredCombats} 场可孵化${hatchling?.name || "新幼崽"}。`;
+  } else if (masteryFallback) {
+    petReason = "当前宠物路线已经精通；本路线改为共 45 校园币，不再增加无效羁绊。";
   } else {
     const [chooseAt, upgradeAt, masterAt] = activePetDefinition(game).bondMilestones;
     const nextMilestone = !game.pet.talent
@@ -225,7 +233,7 @@ export function challengeRewardGuidance(game, availableItemCount = 0) {
       petReason = `羁绊 ${game.pet.bond} → ${nextBond}，距离 ${nextMilestone} 里程碑还 ${Math.max(0, nextMilestone - nextBond)}。`;
     } else {
       petScore -= 10;
-      petReason = "当前宠物路线已经精通；羁绊仍会增加，但不会立即解锁新效果。";
+      petReason = "当前宠物暂无可用成长节点；本路线不会被参谋作为强化项。";
     }
   }
   options.push({ id: "pet", score: petScore, reason: petReason });

@@ -1896,6 +1896,7 @@ function renderChallengeReward() {
   const rewardEgg = rewardSource.egg;
   const rewardSignatureItem = rewardSource.signatureItem;
   const hasEggRoute = pending?.rewardVariant === "egg" && Boolean(rewardEgg);
+  const hasMasteryFallback = pending?.rewardVariant === "mastery";
   const hasSignatureItemRoute = Boolean(rewardSignatureItem);
   const availableItems = availableChallengeItems(pending);
   const hasNewItems = availableItems.length > 0;
@@ -1917,9 +1918,12 @@ function renderChallengeReward() {
       ${Object.values(CHALLENGE_REWARD_DEFS).map((reward) => {
         const guide = advice.options[reward.id];
         const isEggReward = reward.id === "pet" && hasEggRoute;
+        const isMasteryFallback = reward.id === "pet" && hasMasteryFallback;
         const isSignatureItemReward = reward.id === "item" && hasSignatureItemRoute;
         const text = isEggReward
           ? `获得 ${reward.gold} 校园币与${rewardEgg.name}。宠物蛋进入独立孵化位，不占书包。`
+          : isMasteryFallback
+          ? `当前宠物已经精通，本路线改为共 ${reward.masteryFallbackGold} 校园币，不再增加无效羁绊。`
           : isSignatureItemReward
           ? `获得 ${reward.gold} 校园币，并确定领取${rewardSignatureItem.name}。只占本次物品路线，不增加奖励份数。`
           : reward.id === "item" && !hasNewItems
@@ -1930,7 +1934,9 @@ function renderChallengeReward() {
           : reward.id === "pet"
             ? isEggReward
               ? `结算后 ${game.gold + reward.gold} 币 · 孵化 0/${eggRequiredCombats(rewardEgg)}`
-              : `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
+              : isMasteryFallback
+                ? `结算后 ${game.gold + reward.masteryFallbackGold} 币 · 羁绊保持 ${game.pet.bond}`
+                : `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
             : isSignatureItemReward
               ? `结算后 ${game.gold + reward.gold} 币 · 确定 1 件招牌物品`
             : hasNewItems
@@ -3035,6 +3041,8 @@ function resumeChallengeCombatReward() {
       const required = eggRequiredCombats(rewardEgg);
       const battles = game.incubator?.eggId === rewardEgg.id ? game.incubator.battles : 0;
       setToast(`${CHALLENGE_REWARD_DEFS.pet.gold} 校园币已到账，${rewardEgg.name}已放入孵化位 · ${battles}/${required}`);
+    } else if (route === "pet" && rewardVariant === "mastery") {
+      setToast(`${fallbackGold} 校园币已到账，${currentPetDefinition().name}已精通，羁绊保持不变`);
     } else if (route === "pet") {
       const reward = CHALLENGE_REWARD_DEFS.pet;
       setToast(`${reward.gold} 校园币已到账，${currentPetDefinition().name}羁绊 +${reward.bond}`);

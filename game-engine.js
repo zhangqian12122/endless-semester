@@ -114,7 +114,8 @@ export const CHALLENGE_REWARD_DEFS = Object.freeze({
     name: "伙伴特训",
     gold: 25,
     bond: 2,
-    text: "获得 25 校园币；符合条件时获得对应怪物蛋，否则当前宠物羁绊 +2。"
+    masteryFallbackGold: 45,
+    text: "获得 25 校园币；符合条件时获得对应怪物蛋，否则当前宠物羁绊 +2；宠物已精通时改为共 45 校园币。"
   },
   item: {
     id: "item",
@@ -504,6 +505,15 @@ export class SemesterGame {
     return Object.keys(this.pets || {}).filter((id) => PET_DEFS[id]);
   }
 
+  activePetIsMastered() {
+    const definition = this.getPetDefinition();
+    return Boolean(
+      this.pet?.talent
+      && definition.talentIds.includes(this.pet.talent)
+      && Number(this.pet.talentLevel) >= 3
+    );
+  }
+
   challengePetRewardState(enemyId = this.combat?.enemy?.id) {
     const canonicalEnemyId = ENEMY_DEFS[enemyId] ? enemyId : null;
     const egg = canonicalEnemyId ? eggDefinitionForEnemy(canonicalEnemyId) : null;
@@ -511,7 +521,7 @@ export class SemesterGame {
     return {
       enemyId: canonicalEnemyId,
       eggId: egg?.id || null,
-      rewardVariant: canClaimEgg ? "egg" : "bond"
+      rewardVariant: canClaimEgg ? "egg" : this.activePetIsMastered() ? "mastery" : "bond"
     };
   }
 
@@ -1014,6 +1024,13 @@ export class SemesterGame {
       return false;
     }
     this.pet.pendingMilestone = null;
+    const pendingChallenge = this.pendingCombatReward;
+    if (pendingChallenge?.type === "challengeChain" && pendingChallenge.stage === "route") {
+      const petReward = this.challengePetRewardState(pendingChallenge.enemyId);
+      pendingChallenge.enemyId = petReward.enemyId;
+      pendingChallenge.eggId = petReward.eggId;
+      pendingChallenge.rewardVariant = petReward.rewardVariant;
+    }
     return true;
   }
 
@@ -1177,7 +1194,11 @@ export class SemesterGame {
       const claimedEgg = pending.rewardVariant === "egg" && pending.eggId
         ? this.claimEgg(pending.eggId)
         : null;
-      if (!claimedEgg) {
+      if (!claimedEgg && this.activePetIsMastered()) {
+        pending.rewardVariant = "mastery";
+        this.gold += reward.masteryFallbackGold - reward.gold;
+        pending.fallbackGold = reward.masteryFallbackGold;
+      } else if (!claimedEgg) {
         pending.rewardVariant = "bond";
         this.pet.bond += reward.bond;
         this.updatePetMilestone();
@@ -2552,18 +2573,25 @@ export class SemesterGame {
             .filter((id) => allowedChallengeItems.has(id) && ITEM_DEFS[id])
             .slice(0, CHALLENGE_REWARD_DEFS.item.itemChoices)
           : [];
+        const challengeEgg = enemyId ? eggDefinitionForEnemy(enemyId) : null;
+        const eggId = challengeEgg?.id === savedCombatReward.eggId ? challengeEgg.id : null;
+        const rewardVariant = savedCombatReward.rewardVariant === "egg" && eggId
+          ? "egg"
+          : savedCombatReward.rewardVariant === "mastery"
+            ? "mastery"
+            : "bond";
+        const savedFallbackGold = nonNegativeInteger(savedCombatReward.fallbackGold);
         const stageIsValid = (savedCombatReward.stage === "route"
           && (savedCombatReward.route === null || savedCombatReward.route === undefined))
           || (savedCombatReward.stage === "card" && route === "cards" && savedExclusiveChoices.length)
           || (savedCombatReward.stage === "item" && route === "item" && itemChoices.length)
-          || (savedCombatReward.stage === "complete" && (route === "pet"
+          || (savedCombatReward.stage === "complete" && ((route === "pet"
+              && (rewardVariant !== "mastery"
+                || savedFallbackGold === CHALLENGE_REWARD_DEFS.pet.masteryFallbackGold))
             || (route === "item"
-              && nonNegativeInteger(savedCombatReward.fallbackGold) === CHALLENGE_REWARD_DEFS.item.fallbackGold)));
+              && savedFallbackGold === CHALLENGE_REWARD_DEFS.item.fallbackGold)));
         if (stageIsValid) {
           const trialCompleted = savedCombatReward.trialCompleted === true;
-          const challengeEgg = enemyId ? eggDefinitionForEnemy(enemyId) : null;
-          const eggId = challengeEgg?.id === savedCombatReward.eggId ? challengeEgg.id : null;
-          const rewardVariant = savedCombatReward.rewardVariant === "egg" && eggId ? "egg" : "bond";
           game.pendingCombatReward = {
             type: "challengeChain",
             stage: savedCombatReward.stage,
@@ -2578,8 +2606,12 @@ export class SemesterGame {
             choices: savedCombatReward.stage === "card" ? savedExclusiveChoices : [],
             itemChoices: savedCombatReward.stage === "item" ? itemChoices : [],
             usedCardUids: [],
-            fallbackGold: savedCombatReward.stage === "complete" && route === "item"
-              ? CHALLENGE_REWARD_DEFS.item.fallbackGold
+            fallbackGold: savedCombatReward.stage === "complete"
+              ? route === "item"
+                ? CHALLENGE_REWARD_DEFS.item.fallbackGold
+                : route === "pet" && rewardVariant === "mastery"
+                  ? CHALLENGE_REWARD_DEFS.pet.masteryFallbackGold
+                  : 0
               : 0
           };
         }
@@ -2743,11 +2775,13 @@ export class SemesterGame {
     const pendingChallenge = game.pendingCombatReward?.type === "challengeChain"
       ? game.pendingCombatReward
       : null;
-    if (pendingChallenge?.stage === "route" && pendingChallenge.rewardVariant === "egg") {
-      const egg = PET_EGG_DEFS[pendingChallenge.eggId];
-      if (!egg || game.incubator || game.hasPet(egg.petId)) {
-        pendingChallenge.rewardVariant = "bond";
-        loadRepairs.push("修正不可领取的挑战宠物蛋奖励");
+    if (pendingChallenge?.stage === "route") {
+      const expectedPetReward = game.challengePetRewardState(pendingChallenge.enemyId);
+      if (pendingChallenge.rewardVariant !== expectedPetReward.rewardVariant
+        || pendingChallenge.eggId !== expectedPetReward.eggId) {
+        pendingChallenge.rewardVariant = expectedPetReward.rewardVariant;
+        pendingChallenge.eggId = expectedPetReward.eggId;
+        loadRepairs.push("修正挑战伙伴奖励状态");
       }
     }
     if (pendingChallenge?.signatureItemId && game.hasItem(pendingChallenge.signatureItemId)) {
