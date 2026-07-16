@@ -471,8 +471,9 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
   const enemyHp = Math.max(0, safeBattleValue(options.enemyHp));
   const playerHp = Math.max(0, safeBattleValue(options.playerHp));
   const healthDamage = Math.max(0, safeBattleValue(cardPreview.healthDamage));
+  const selfDamage = Math.max(0, safeBattleValue(cardPreview.selfDamage));
 
-  if (enemyHp > 0 && healthDamage >= enemyHp) {
+  if (enemyHp > 0 && healthDamage >= enemyHp && playerHp > selfDamage) {
     return {
       tone: "finish",
       label: "可结束战斗",
@@ -483,7 +484,7 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
   if (playerHp <= 0) return null;
   const block = Math.max(0, safeBattleValue(cardPreview.block));
   const currentTotalLoss = Math.max(0, safeBattleValue(incomingPreview.totalHpLoss));
-  const hpAfterCard = Math.max(0, playerHp - Math.max(0, safeBattleValue(cardPreview.selfDamage)));
+  const hpAfterCard = Math.max(0, playerHp - selfDamage);
   const unavoidableLoss = Math.max(0, safeBattleValue(incomingPreview.endTurnHpLoss));
   const attackTotal = Math.max(0, safeBattleValue(incomingPreview.attackTotal));
   const currentBlock = Math.max(0, safeBattleValue(incomingPreview.currentBlock));
@@ -596,28 +597,66 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
     };
   }
 
-  if (!block || !currentTotalLoss) return null;
   const attackLossAfterCard = unavoidableLoss >= hpAfterCard
     ? 0
     : Math.max(0, attackTotal - currentBlock - block);
   const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
   const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
 
-  if (lethalBefore && !lethalAfter) {
-    return {
-      tone: "rescue",
-      label: "解除致命",
-      detail: `打出后预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
-    };
+  if (block && currentTotalLoss) {
+    if (lethalBefore && !lethalAfter) {
+      return {
+        tone: "rescue",
+        label: "解除致命",
+        detail: `打出后预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
+      };
+    }
+    if (totalLossAfterCard === 0) {
+      return {
+        tone: "guard",
+        label: "打出后无伤",
+        detail: `本回合护甲 +${block}`
+      };
+    }
   }
-  if (totalLossAfterCard === 0) {
-    return {
-      tone: "guard",
-      label: "打出后无伤",
-      detail: `本回合护甲 +${block}`
-    };
-  }
-  return null;
+
+  const followup = options.distractedFollowup;
+  const attackGain = Math.max(0, safeBattleValue(followup?.attackGain));
+  const attackTotalBefore = Math.max(0, safeBattleValue(followup?.attackTotalBefore));
+  const attackTotalAfter = Math.max(0, safeBattleValue(followup?.attackTotalAfter));
+  const followupSelfDamage = Math.max(0, safeBattleValue(followup?.followupSelfDamage));
+  const hpAfterFollowup = hpAfterCard - followupSelfDamage;
+  const followupFinishes = followup?.lethalAfter === true && followup?.lethalBefore !== true;
+  const lethalAfterFollowup = hpAfterFollowup <= 0 || totalLossAfterCard >= hpAfterFollowup;
+  if (!followup || !attackGain || attackTotalAfter <= attackTotalBefore || hpAfterCard <= 0 || hpAfterFollowup <= 0) return null;
+  if (lethalAfterFollowup && !followupFinishes) return null;
+  const cardName = typeof followup.cardName === "string" && followup.cardName ? followup.cardName : "攻击牌";
+  const cardCost = Math.max(0, Math.floor(safeBattleValue(followup.cardCost)));
+  const remainingEnergy = Math.max(0, Math.floor(safeBattleValue(followup.remainingEnergy)));
+  const hits = Math.max(1, Math.floor(safeBattleValue(followup.hits) || 1));
+  const damagePerHitBefore = Math.max(0, safeBattleValue(followup.damagePerHitBefore));
+  const damagePerHitAfter = Math.max(0, safeBattleValue(followup.damagePerHitAfter));
+  const enemyBlockAbsorbedBefore = Math.max(0, safeBattleValue(followup.enemyBlockAbsorbedBefore));
+  const enemyBlockAbsorbedAfter = Math.max(0, safeBattleValue(followup.enemyBlockAbsorbedAfter));
+  const healthDamageBefore = Math.max(0, safeBattleValue(followup.healthDamageBefore));
+  const healthDamageAfter = Math.max(0, safeBattleValue(followup.healthDamageAfter));
+  const damageDetail = hits > 1
+    ? `每段 ${damagePerHitBefore}→${damagePerHitAfter}，${hits} 段共 ${attackTotalBefore}→${attackTotalAfter}`
+    : `伤害 ${attackTotalBefore}→${attackTotalAfter}`;
+  const healthDetail = healthDamageBefore !== attackTotalBefore || healthDamageAfter !== attackTotalAfter
+    ? `，敌人掉血 ${healthDamageBefore}→${healthDamageAfter}`
+    : "";
+  const armorDetail = enemyBlockAbsorbedBefore !== enemyBlockAbsorbedAfter
+    ? `，击破护甲 ${enemyBlockAbsorbedBefore}→${enemyBlockAbsorbedAfter}`
+    : "";
+  const selfDamageDetail = followupSelfDamage > 0 ? `，自身失去 ${followupSelfDamage} 生命` : "";
+  const detail = `移除当前走神；打出后剩余 ${remainingEnergy} 能量，可接「${cardName}」（${cardCost}费）：${damageDetail}${armorDetail}${healthDetail}${selfDamageDetail}`;
+
+  return {
+    tone: followupFinishes ? "finish" : "counter",
+    label: followupFinishes ? "解除走神 · 可接斩杀" : "解除走神 · 可接攻击",
+    detail: followupFinishes ? `${detail}，可结束战斗` : detail
+  };
 }
 
 export function shouldShowCombatCardPreview(preview) {
@@ -748,7 +787,7 @@ export function battleFeedbackFromDelta(before = {}, after = {}, options = {}) {
     );
   const petChargeGain = Math.max(0, safeBattleValue(after.petCharge) - safeBattleValue(before.petCharge));
   const causalEffects = kind === "enemy" ? normalizedCausalEffects(options.causalEffects) : [];
-  const effectParts = kind === "enemy" && Array.isArray(options.effectParts)
+  const effectParts = Array.isArray(options.effectParts)
     ? options.effectParts.map((part) => String(part).trim()).filter(Boolean)
     : [];
   const summaryParts = [];

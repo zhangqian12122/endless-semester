@@ -1664,11 +1664,12 @@ export class SemesterGame {
     return { ok: true };
   }
 
-  cardEffectPreview(card) {
+  cardEffectPreview(card, options = {}) {
     const combat = this.requireCombat();
     const definition = cardDefinition(card);
     const effect = definition.effect;
     const isAttackCard = definition.type === "attack";
+    const distracted = typeof options.distracted === "boolean" ? options.distracted : combat.distracted;
     const damageModifiers = [];
     const blockModifiers = [];
     let baseDamage = effect.damage || 0;
@@ -1679,10 +1680,10 @@ export class SemesterGame {
     }
     let damagePerHit = Math.max(
       0,
-      baseDamage + (isAttackCard ? combat.attackBonus : 0) - (isAttackCard && combat.distracted ? 2 : 0)
+      baseDamage + (isAttackCard ? combat.attackBonus : 0) - (isAttackCard && distracted ? 2 : 0)
     );
     if (isAttackCard && combat.attackBonus) damageModifiers.push(`攻击加成 +${combat.attackBonus}`);
-    if (isAttackCard && combat.distracted) damageModifiers.push("走神 -2");
+    if (isAttackCard && distracted) damageModifiers.push("走神 -2");
 
     const ariesBonus = Boolean(effect.damage && isAttackCard && this.archetypeId === "aries" && !combat.archetypeAttackUsed);
     if (ariesBonus) {
@@ -1743,6 +1744,70 @@ export class SemesterGame {
       statusCount,
       modifiers: [...damageModifiers, ...blockModifiers]
     };
+  }
+
+  clearDistractedFollowupPreview(card) {
+    const combat = this.requireCombat();
+    if (!combat.distracted || !combat.hand.includes(card)) return null;
+
+    const clearDefinition = cardDefinition(card);
+    if (!clearDefinition.effect.clearDistracted || clearDefinition.type === "attack" || !this.canPlay(card).ok) return null;
+    const remainingEnergy = combat.energy - clearDefinition.cost;
+    const enemyHp = Math.max(0, combat.enemy.hp);
+    const hpAfterClear = this.hp - this.cardEffectPreview(card).selfDamage;
+    if (hpAfterClear <= 0) return null;
+
+    const candidates = combat.hand.flatMap((candidate, index) => {
+      if (candidate === card) return [];
+      const definition = cardDefinition(candidate);
+      if (
+        definition.type !== "attack"
+        || !definition.effect.damage
+        || definition.effect.unplayable
+        || typeof definition.cost !== "number"
+        || definition.cost > remainingEnergy
+      ) return [];
+
+      const before = this.cardEffectPreview(candidate, { distracted: true });
+      const after = this.cardEffectPreview(candidate, { distracted: false });
+      const attackGain = Math.max(0, after.attackTotal - before.attackTotal);
+      const lethalBefore = enemyHp > 0 && before.healthDamage >= enemyHp;
+      const lethalAfter = enemyHp > 0 && after.healthDamage >= enemyHp;
+      if (!attackGain || lethalBefore || hpAfterClear - after.selfDamage <= 0) return [];
+
+      return [{
+        index,
+        cardUid: candidate.uid,
+        cardId: candidate.id,
+        cardName: definition.displayName,
+        cardCost: definition.cost,
+        remainingEnergy,
+        damagePerHitBefore: before.damagePerHit,
+        damagePerHitAfter: after.damagePerHit,
+        hits: after.hits,
+        attackTotalBefore: before.attackTotal,
+        attackTotalAfter: after.attackTotal,
+        enemyBlockAbsorbedBefore: before.enemyBlockAbsorbed,
+        enemyBlockAbsorbedAfter: after.enemyBlockAbsorbed,
+        healthDamageBefore: before.healthDamage,
+        healthDamageAfter: after.healthDamage,
+        followupSelfDamage: after.selfDamage,
+        attackGain,
+        lethalBefore,
+        lethalAfter
+      }];
+    });
+
+    candidates.sort((left, right) => (
+      Number(right.lethalAfter) - Number(left.lethalAfter)
+      || Number(left.followupSelfDamage > 0) - Number(right.followupSelfDamage > 0)
+      || right.attackGain - left.attackGain
+      || right.attackTotalAfter - left.attackTotalAfter
+      || left.index - right.index
+    ));
+    if (!candidates.length) return null;
+    const [{ index: _index, ...best }] = candidates;
+    return { ...best, attackCount: candidates.length };
   }
 
   playCard(uid) {
@@ -2022,7 +2087,14 @@ export class SemesterGame {
 
   checkCombatEnd() {
     const combat = this.requireCombat();
-    if (combat.enemy.hp <= 0 && combat.status === "active") {
+    if (this.hp <= 0 && combat.status === "active") {
+      this.hp = 0;
+      combat.status = "lost";
+      combat.result = "lost";
+      this.stats.combatsCompleted += 1;
+      this.stats.combatTurns += combat.turn;
+      combat.log.push("体力耗尽，本次挑战结束。");
+    } else if (combat.enemy.hp <= 0 && combat.status === "active") {
       combat.status = "won";
       combat.result = "won";
       this.stats.combatsCompleted += 1;
@@ -2045,13 +2117,6 @@ export class SemesterGame {
         }
       }
       combat.log.push(`胜利！${pet.name}羁绊 +${pet.victoryBond}（当前 ${this.pet.bond}）。`);
-    } else if (this.hp <= 0 && combat.status === "active") {
-      this.hp = 0;
-      combat.status = "lost";
-      combat.result = "lost";
-      this.stats.combatsCompleted += 1;
-      this.stats.combatTurns += combat.turn;
-      combat.log.push("体力耗尽，本次挑战结束。");
     }
     return combat.status;
   }

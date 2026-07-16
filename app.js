@@ -1667,6 +1667,7 @@ function renderCombat() {
       ${combat.hand.map((card, index) => {
         const playable = combatInputLocked ? false : combat.pendingDiscard ? true : game.canPlay(card).ok;
         const combatPreview = game.cardEffectPreview(card);
+        const distractedFollowup = game.clearDistractedFollowupPreview(card);
         const mechanicStatusCleared = combatMechanicStatusCleared(combatPreview, intent, combat.hand);
         const mechanicStatusName = CARD_DEFS[intent.scaling?.statusId]?.name || "状态";
         const tacticalCue = combatInputLocked || combat.pendingDiscard ? null : combatCardTacticalCue(combatPreview, incomingDamage, {
@@ -1675,7 +1676,8 @@ function renderCombat() {
           playable,
           mechanicState: intent.mechanicState,
           mechanicStatusCleared,
-          mechanicStatusName
+          mechanicStatusName,
+          distractedFollowup
         });
         return cardHtml(card, {
           action: combat.pendingDiscard ? "discard-card" : "play-card",
@@ -3150,14 +3152,14 @@ app.addEventListener("click", (event) => {
     if (!result.ok) setToast(result.reason);
     else {
       const statusCardsAfter = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
-      const cleanseApplied = Boolean(definition && (
-        (definition.effect.clearDistracted && wasDistracted && !game.combat.distracted)
-        || (definition.effect.exhaustStatuses && statusCardsAfter < statusCardsBefore)
-      ));
+      const distractedCleared = Boolean(definition?.effect.clearDistracted && wasDistracted && !game.combat.distracted);
+      const cleanseApplied = Boolean(distractedCleared
+        || (definition?.effect.exhaustStatuses && statusCardsAfter < statusCardsBefore));
       queueBattleFeedback("card", definition?.displayName || "卡牌生效", before, {
         cardPlayed: true,
         cardType: definition?.type || "skill",
         cleanseApplied,
+        effectParts: distractedCleared ? ["移除走神"] : [],
         motionOrigin
       });
     }
