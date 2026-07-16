@@ -679,6 +679,7 @@ function enemyIntentTokenHtml(intent, resolution = null) {
       <span class="intent-detail-heading"><small>${resolution ? "刚刚结算" : "当前意图"}</small><strong>${escapeHtml(name)}</strong></span>
       <span class="intent-detail-list">${detailLines.map((line) => `<span><i aria-hidden="true"></i>${escapeHtml(line)}</span>`).join("")}</span>
       ${enemyDefinition?.mechanicName && enemyDefinition?.mechanicText ? `<span class="intent-mechanic"><b>特性 · ${escapeHtml(enemyDefinition.mechanicName)}</b><span>${escapeHtml(enemyDefinition.mechanicText)}</span></span>` : ""}
+      ${!resolution && enemyDefinition?.tip ? `<span class="intent-counter-tip"><b>应对建议</b><span>${escapeHtml(enemyDefinition.tip)}</span></span>` : ""}
       ${enemyDefinition?.pattern ? `<span class="intent-cycle"><b>行动周期</b>${escapeHtml(enemyDefinition.pattern)}</span>` : ""}
       <em class="intent-detail-hint">${pinned ? "点击关闭 · Esc 也可关闭" : "点击可固定说明"}</em>
     </span>

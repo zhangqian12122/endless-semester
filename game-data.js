@@ -624,7 +624,7 @@ export const ENEMY_DEFS = {
     mechanicName: "张弛节拍",
     mechanicText: "两次攻击之间会蜷起防御，惊醒时再打出更高伤害。",
     pattern: "攻击 5 → 护甲 5 → 攻击 7",
-    tip: "它蜷起来时不会攻击，适合补状态；惊醒前至少准备 7 点护甲。",
+    tip: "蜷起回合不会攻击，适合破甲、补状态或输出；惊醒前按头顶公开伤害准备护甲。",
     intents: [
       { name: "迷糊拍击", attack: 5 },
       { name: "蜷成一团", block: 5 },
@@ -650,7 +650,7 @@ export const ENEMY_DEFS = {
     mechanicName: "公开倒计时",
     mechanicText: "先蓄响防御，再连续攻击并在第三次行动打出 14 点爆发。",
     pattern: "护甲 5 → 攻击 7 → 攻击 14",
-    tip: "前两步是明确倒计时。不要把所有防御牌花在蓄响回合。",
+    tip: "蓄响回合不会攻击，别花能量叠下回合会清零的护甲；重点应对随后两次攻击，尤其是第三步爆发。",
     intents: [
       { name: "蓄响", block: 5 },
       { name: "铃声", attack: 7 },
@@ -663,7 +663,7 @@ export const ENEMY_DEFS = {
     mechanicName: "分心护屏",
     mechanicText: "发动带走神的推送行动时同步获得护甲 4 或 3，逼你错开爆发回合。",
     pattern: "护甲 4 并施加走神 → 攻击 8 → 攻击 5、护甲 3 并走神",
-    tip: "走神让攻击每段 -2，它还会在走神回合护屏。先防御，等状态消失再爆发。",
+    tip: "走神只让攻击牌每段 -2；伤害技能与宠物不受影响。按公开意图防守，或用清除走神的卡提前恢复爆发。",
     intents: [
       { name: "推送轰炸", block: 4, debuff: "distracted" },
       { name: "震动撞击", attack: 8 },
@@ -676,7 +676,7 @@ export const ENEMY_DEFS = {
     mechanicName: "未读压力",
     mechanicText: "战斗区每有 1 张紧张，消息轰炸就多攻击 1 段，最多额外 2 段；清理紧张会立刻降压。",
     pattern: "攻击 3×(2+未读压力，最多 4 段) → 塞入 1 张紧张 → 攻击 5 并塞紧张",
-    tip: "它会先制造紧张，再借未读压力刷屏。轰炸前把手中的紧张消耗掉，可以立即减少攻击段数。",
+    tip: "未读统计手牌、抽牌堆和弃牌堆中的紧张；轰炸前主动清到 2 张以下才会减段，回合结束时的自然消耗来不及。",
     intents: [
       {
         name: "消息轰炸", attack: 3, hits: 2,
@@ -721,7 +721,7 @@ export const ENEMY_DEFS = {
     mechanicName: "四步破题",
     mechanicText: "每 4 次行动固定轮转；填空题留下 8 点护甲，下一回合击破全部护甲可使本次大题最终伤害 -6。大题仍会每轮 +2。",
     pattern: "塞入 2 张紧张 → 攻击 8 → 攻击 10 并留下 8 甲 → 大题 16（破题 -6，每轮 +2）",
-    tip: "填空题后会出现破题窗口。先击破 8 点护甲削弱大题，再用剩余能量防守。",
+    tip: "填空题后会打开破题窗口。大题前打穿它新获得的 8 点护甲，可使本次大题伤害 -6；余下能量再用于防守。",
     blankArmor: 8,
     blankBreakAttackReduction: 6,
     intentAt(turn) {
