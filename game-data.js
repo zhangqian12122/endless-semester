@@ -92,6 +92,39 @@ export const PET_TALENT_DEFS = {
       { draw: 1, nextDrawBonus: 1, text: "重启猛啄后抽 1 张牌，下回合多抽 1 张。" },
       { draw: 2, nextDrawBonus: 1, text: "重启猛啄后抽 2 张牌，下回合多抽 1 张。" }
     ]
+  },
+  sleepyPounce: {
+    id: "sleepyPounce",
+    icon: "扑",
+    name: "梦游猛扑",
+    tagline: "睡眼惺忪，也能越扑越准",
+    levels: [
+      { damageBonus: 1, text: "蜷睡扑击额外造成 1 点伤害。" },
+      { damageBonus: 2, text: "蜷睡扑击额外造成 2 点伤害。" },
+      { damageBonus: 3, text: "蜷睡扑击额外造成 3 点伤害。" }
+    ]
+  },
+  sleepyPillow: {
+    id: "sleepyPillow",
+    icon: "枕",
+    name: "抱枕护体",
+    tagline: "把蜷成一团的姿势变成额外防护",
+    levels: [
+      { block: 2, text: "蜷睡扑击额外获得 2 点护甲。" },
+      { block: 4, text: "蜷睡扑击额外获得 4 点护甲。" },
+      { block: 6, text: "蜷睡扑击额外获得 6 点护甲。" }
+    ]
+  },
+  sleepyRhythm: {
+    id: "sleepyRhythm",
+    icon: "梦",
+    name: "回笼节拍",
+    tagline: "在半梦半醒之间整理下一步",
+    levels: [
+      { draw: 1, text: "蜷睡扑击后抽 1 张牌。" },
+      { draw: 1, nextDrawBonus: 1, text: "蜷睡扑击后抽 1 张牌，下回合多抽 1 张。" },
+      { draw: 2, nextDrawBonus: 1, text: "蜷睡扑击后抽 2 张牌，下回合多抽 1 张。" }
+    ]
   }
 };
 
@@ -119,6 +152,43 @@ export const PET_DEFS = Object.freeze({
       baseDamage: 7,
       energyCost: 1,
       maxUsesPerCombat: 1
+    })
+  }),
+  sleepyBugCub: Object.freeze({
+    id: "sleepyBugCub",
+    name: "困困虫幼崽",
+    shortName: "小睡虫",
+    icon: "眠",
+    assets: Object.freeze({
+      battle: null,
+      icon: null
+    }),
+    visual: "sleepyBugCub",
+    maxCharge: 3,
+    chargePerFirstAttack: 1,
+    victoryBond: 1,
+    bondMilestones: Object.freeze([3, 10, 25]),
+    talentIds: Object.freeze(["sleepyPounce", "sleepyPillow", "sleepyRhythm"]),
+    skill: Object.freeze({
+      id: "curledSleepPounce",
+      name: "蜷睡扑击",
+      baseDamage: 5,
+      baseBlock: 3,
+      energyCost: 1,
+      maxUsesPerCombat: 1
+    })
+  })
+});
+
+export const PET_EGG_DEFS = Object.freeze({
+  sleepyBugEgg: Object.freeze({
+    id: "sleepyBugEgg",
+    name: "困困虫蛋",
+    petId: "sleepyBugCub",
+    sourceEnemyIds: Object.freeze(["sleepyBug"]),
+    requiredCombats: 3,
+    assets: Object.freeze({
+      egg: null
     })
   })
 });
@@ -685,7 +755,7 @@ export const ACHIEVEMENT_DEFS = {
   firstWin: { id: "firstWin", icon: "✓", name: "顺利下课", text: "赢得第一场战斗。", metric: "combatsWon", target: 1 },
   cleanWin: { id: "cleanWin", icon: "♥", name: "一滴没掉", text: "无伤赢得一场战斗。", metric: "cleanWins", target: 1 },
   quickWin: { id: "quickWin", icon: "3", name: "三回合下课", text: "在 3 回合内赢得一场战斗。", metric: "quickWins", target: 1 },
-  gooseCall: { id: "gooseCall", icon: "鸭", name: "鸭来！", text: "累计让宕机鸭出手 5 次。", metric: "petUses", target: 5 },
+  gooseCall: { id: "gooseCall", icon: "伴", name: "伙伴来！", text: "累计让任意宠物出手 5 次。", metric: "petUses", target: 5 },
   campusArchive: { id: "campusArchive", icon: "?", name: "怪事见多了", text: "发现任意 4 种普通敌人。", metric: "normalEnemies", target: 4 },
   challengeWon: { id: "challengeWon", icon: "难", name: "主动加练", text: "赢得一次可选挑战战。", metric: "challengeWins", target: 1 },
   firstTrial: { id: "firstTrial", icon: "印", name: "试炼盖章", text: "完成任意一次星座试炼。", metric: "trialCompletions", target: 1 },

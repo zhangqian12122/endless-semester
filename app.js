@@ -10,6 +10,7 @@ import {
   ENCHANTMENT_DEFS,
   EVENT_DEFS,
   ITEM_DEFS,
+  PET_EGG_DEFS,
   PET_DEFS,
   PET_TALENT_DEFS,
   RARITY_LABELS,
@@ -46,6 +47,7 @@ let screen = "intro";
 let context = {};
 let toast = "";
 let selectedArchetype = "cancer";
+let selectedPetId = "offlineDuck";
 let tutorialStep = -1;
 let pileView = null;
 let battleFeedbackTimer = null;
@@ -104,7 +106,55 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
 });
 
 function currentPetDefinition() {
-  return PET_DEFS[game.pet?.id] || PET_DEFS.offlineDuck;
+  return PET_DEFS[game.activePetId] || PET_DEFS[game.pet?.id] || PET_DEFS.offlineDuck;
+}
+
+function unlockedPetIds() {
+  return [...new Set(["offlineDuck", ...(career.unlockedPetIds || [])])]
+    .filter((id) => PET_DEFS[id]);
+}
+
+function selectedPetDefinition() {
+  const available = unlockedPetIds();
+  if (!available.includes(selectedPetId)) selectedPetId = "offlineDuck";
+  return PET_DEFS[selectedPetId] || PET_DEFS.offlineDuck;
+}
+
+function petEggDefinition(eggId) {
+  return PET_EGG_DEFS?.[eggId] || null;
+}
+
+function eggRequiredCombats(egg) {
+  return Math.max(1, Number(egg?.requiredCombats) || 3);
+}
+
+function eggVisualId(egg) {
+  return egg?.visual || egg?.enemyId || egg?.sourceEnemyId || egg?.id || "unknown";
+}
+
+function petVisualId(pet) {
+  return pet?.visual || pet?.id || "offlineDuck";
+}
+
+function petEggHtml(eggId, className = "pet-egg") {
+  const egg = petEggDefinition(eggId);
+  if (!egg) return "";
+  return `<span class="${escapeHtml(className)} egg-${escapeHtml(eggVisualId(egg))}" aria-hidden="true"><i></i><b></b></span>`;
+}
+
+function incubatorStatusHtml(location = "map") {
+  const incubator = game.incubator;
+  const egg = petEggDefinition(incubator?.eggId);
+  if (!incubator || !egg) return "";
+  const required = eggRequiredCombats(egg);
+  const battles = Math.min(required, Math.max(0, Number(incubator.battles) || 0));
+  const hatchling = PET_DEFS[egg.petId];
+  const percent = Math.round((battles / required) * 100);
+  return `<section class="incubator-status location-${escapeHtml(location)}" aria-label="${escapeHtml(`${egg.name}孵化进度 ${battles}/${required}`)}">
+    ${petEggHtml(egg.id)}
+    <div><small>随身孵化位 · 不占书包</small><strong>${escapeHtml(egg.name)}</strong><p>再完成 ${required - battles} 场有效战斗，孵化为${escapeHtml(hatchling?.name || "动物幼崽")}。</p></div>
+    <span><b>${battles}/${required}</b><i aria-hidden="true"><em style="width:${percent}%"></em></i></span>
+  </section>`;
 }
 
 function escapeHtml(value) {
@@ -310,7 +360,8 @@ function itemHtml(id, options = {}) {
 
 function renderIntro() {
   const saved = readSave();
-  const pet = currentPetDefinition();
+  const pet = selectedPetDefinition();
+  const availablePets = unlockedPetIds();
   const savedAtSemesterEnd = saved?.awaitingNextSemester === true && Number(saved.week) === 16;
   const savedAtSemesterReward = Number(saved?.week) === 16
     && ["bossItem", "summaryUpgrade"].includes(saved?.pendingSemesterReward?.stage);
@@ -364,6 +415,18 @@ function renderIntro() {
               <span>${archetype.sign}</span><strong>${archetype.name}</strong><small>${archetype.label}</small><em>${archetype.text}</em><b>特性牌：${archetype.specialCardLabel}</b>
             </button>`).join("")}
         </div>
+        <div class="starting-pet-heading"><div><small>开局伙伴</small><strong>选择本局参战宠物</strong></div><span>开始后锁定，直到下一局才能更换</span></div>
+        <div class="starting-pet-picker" role="group" aria-label="选择本局参战宠物">
+          ${availablePets.map((petId) => {
+            const option = PET_DEFS[petId];
+            const selected = selectedPetId === petId;
+            return `<button class="starting-pet-option ${selected ? "selected" : ""}" data-action="select-starting-pet" data-id="${escapeHtml(petId)}" aria-pressed="${selected}">
+              ${renderPetFaceFor(petId)}
+              <span><small>${selected ? "本局已选择" : "已解锁"}</small><strong>${escapeHtml(option.name)}</strong><em>${escapeHtml(option.skill.name)} · ${option.maxCharge} 点充能</em></span>
+              <b>${selected ? "同行中" : "选择"}</b>
+            </button>`;
+          }).join("")}
+        </div>
         <button class="primary big" data-action="new-game">${saved ? "开始新游戏（覆盖当前进度）" : "开始第一学期"}</button>
         ${saved ? `<button class="continue-button" data-action="continue-game">${continueProgress}<br><small>${ARCHETYPE_DEFS[saved.archetypeId].name} · ${saved.deck.length} 张牌</small></button>` : ""}
         <button class="continue-button" data-action="open-archive">生涯档案 · ${career.unlockedAchievements.length}/${Object.keys(ACHIEVEMENT_DEFS).length} 成就</button>
@@ -374,7 +437,7 @@ function renderIntro() {
       <aside class="intro-card-stack">
         <div class="poster-card poster-a"><span>1</span><strong>课本拍击</strong><b>5</b><small>造成 5 点伤害</small></div>
         <div class="poster-card poster-b"><span>1</span><strong>书包护身</strong><b>5</b><small>获得 5 点护甲</small></div>
-        <div class="intro-pet" role="img" aria-label="${pet.name}">${renderPetFace()}<b>${pet.name}</b></div>
+        <div class="intro-pet" role="img" aria-label="${pet.name}">${renderPetFaceFor(pet.id)}<b>${pet.name}</b></div>
       </aside>
     </section>`;
 }
@@ -399,6 +462,7 @@ function renderNewGameConfirm() {
   const savedAtShop = Number(saved?.week) < 16 && Array.isArray(saved?.pendingShop?.cards);
   const oldArchetype = ARCHETYPE_DEFS[saved?.archetypeId];
   const nextArchetype = ARCHETYPE_DEFS[context.archetypeId] || ARCHETYPE_DEFS[selectedArchetype];
+  const nextPet = PET_DEFS[context.petId] || selectedPetDefinition();
   return `
     <section class="intro-shell new-game-confirm-shell">
       <div class="notebook-lines"></div>
@@ -409,9 +473,9 @@ function renderNewGameConfirm() {
         <div class="save-overwrite-summary">
           <article><small>将被覆盖</small><strong>${savedAtItemReplacement ? `第 ${saved.semester} 学期 · 书包待整理` : savedAtSemesterReward ? `第 ${saved.semester} 学期 · 期末待结算` : savedAtCombatReward ? `第 ${saved.semester} 学期 · 战斗奖励待选择` : savedAtCombatStart ? `第 ${saved.semester} 学期 · 战斗开局待继续` : savedAtEventReward ? `第 ${saved.semester} 学期 · 事件奖励待选择` : savedAtPendingEvent ? `第 ${saved.semester} 学期 · 问号事件待选择` : savedAtRest ? `第 ${saved.semester} 学期 · 休息待结算` : savedAtPetMilestone ? `第 ${saved.semester} 学期 · 羁绊成长待选择` : savedAtShop ? `第 ${saved.semester} 学期 · 商店待离开` : savedAtSemesterEnd ? `第 ${saved.semester} 学期 · 已完成` : `第 ${saved?.semester || 1} 学期 · 第 ${saved?.week || 1} 周`}</strong><span>${oldArchetype ? `${oldArchetype.sign} ${oldArchetype.name}` : "现有学生"} · ${saved?.deck?.length || 0} 张牌</span></article>
           <b>→</b>
-          <article class="new-run-summary"><small>准备开始</small><strong>第 1 学期 · 第 1 周</strong><span>${nextArchetype.sign} ${nextArchetype.name} · 初始卡组</span></article>
+          <article class="new-run-summary"><small>准备开始</small><strong>第 1 学期 · 第 1 周</strong><span>${nextArchetype.sign} ${nextArchetype.name} · ${escapeHtml(nextPet.name)}同行</span></article>
         </div>
-        <div class="overwrite-warning"><b>会重置</b><span>学期、卡组、校园币、随身物品与宠物羁绊</span><b>不会重置</b><span>生涯档案、敌人图鉴与成就</span></div>
+        <div class="overwrite-warning"><b>会重置</b><span>学期、卡组、校园币、随身物品与本局宠物养成</span><b>不会重置</b><span>生涯档案、敌人图鉴、成就与已解锁宠物</span></div>
         <div class="confirm-actions new-game-confirm-actions">
           <button class="quiet-button" data-action="cancel-new-game">取消，继续当前进度</button>
           <button class="primary" data-action="confirm-new-game">确认覆盖并开始</button>
@@ -469,6 +533,7 @@ function renderMap() {
     </div>
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
     ${tarot ? `<div class="tarot-banner"><span>${tarot.number}</span><p><b>塔罗·${tarot.name}</b><em>收益：${tarot.boon}</em><i>代价：${tarot.cost}</i></p><small>本学期固定</small></div>` : ""}
+    ${incubatorStatusHtml("map")}
     <button class="semester-calendar-trigger" data-action="open-calendar" aria-haspopup="dialog" aria-controls="semester-calendar-dialog" aria-expanded="${semesterCalendarOpen}">
       <span><small>学期日历</small><strong>当前周 · 第 ${game.week} 周</strong></span>
       <i aria-hidden="true">${currentWeekSymbols}</i>
@@ -619,22 +684,35 @@ function renderEnemyAvatar(enemy) {
 
 function renderBattlePet() {
   const pet = currentPetDefinition();
-  return `<div class="battle-pet" role="img" aria-label="战斗伙伴${pet.name}">
+  const visual = petVisualId(pet);
+  const fallback = visual === "sleepyBugCub"
+    ? `<span class="avatar-fallback battle-pet-fallback pet-cub-full-fallback" aria-hidden="true"><i class="pet-cub-body"><b></b><em></em></i><i class="pet-cub-face"><b></b><em></em></i></span>`
+    : `<span class="avatar-fallback battle-pet-fallback pet-full-fallback" aria-hidden="true">
+        <i class="battle-pet-body"><b></b></i>
+        <i class="pet-head"><b></b><em></em><strong></strong></i>
+        <i class="battle-pet-legs"></i>
+      </span>`;
+  return `<div class="battle-pet pet-${escapeHtml(visual)}" role="img" aria-label="战斗伙伴${pet.name}">
     <span class="battle-pet-halo" aria-hidden="true"></span>
     ${characterAssetHtml(pet.assets.battle, "character-asset battle-pet-asset", `${pet.name}战斗形象`)}
-    <span class="avatar-fallback battle-pet-fallback pet-full-fallback" aria-hidden="true">
-      <i class="battle-pet-body"><b></b></i>
-      <i class="pet-head"><b></b><em></em><strong></strong></i>
-      <i class="battle-pet-legs"></i>
-    </span>
+    ${fallback}
   </div>`;
 }
 
 function renderPetFace() {
   const pet = currentPetDefinition();
-  return `<span class="pet-face" aria-hidden="true">
+  return renderPetFaceFor(pet.id);
+}
+
+function renderPetFaceFor(petId) {
+  const pet = PET_DEFS[petId] || PET_DEFS.offlineDuck;
+  const visual = petVisualId(pet);
+  const fallback = visual === "sleepyBugCub"
+    ? '<span class="avatar-fallback pet-icon-fallback pet-cub-icon-fallback"><i class="pet-cub-face"><b></b><em></em></i></span>'
+    : '<span class="avatar-fallback pet-icon-fallback"><i class="pet-head"><b></b><em></em><strong></strong></i></span>';
+  return `<span class="pet-face pet-${escapeHtml(visual)}" aria-hidden="true">
     ${characterAssetHtml(pet.assets.icon, "character-asset pet-icon-asset")}
-    <span class="avatar-fallback pet-icon-fallback"><i class="pet-head"><b></b><em></em><strong></strong></i></span>
+    ${fallback}
   </span>`;
 }
 
@@ -1460,6 +1538,7 @@ function recordCurrentCombat() {
     saveGame();
   } else if (summary.result === "won" && context.outcome === "challenge") {
     game.prepareChallengeCombatReward({
+      enemyId: summary.enemyId,
       affix: summary.challengeAffix,
       trialCompleted: summary.challengeTrial?.completed,
       trialBonus: summary.challengeTrialBonus
@@ -1520,6 +1599,27 @@ function combatRecapAdvice(summary) {
   return `本场用 ${summary.turns} 回合结束战斗，损失 ${summary.hpLost} 生命。下一次保持输出，同时按公开意图补足护甲。`;
 }
 
+function petIncubationRecapHtml(combat) {
+  const event = combat.petIncubationEvent || combat.summary?.petIncubationEvent;
+  const egg = petEggDefinition(event?.eggId);
+  if (!event || !egg) return "";
+  const required = Math.max(1, Number(event.requiredCombats) || eggRequiredCombats(egg));
+  const battles = Math.min(required, Math.max(0, Number(event.battles) || 0));
+  if (event.type === "hatched") {
+    const pet = PET_DEFS[event.petId || egg.petId];
+    return `<div class="incubation-recap hatched">
+      ${pet ? renderPetFaceFor(pet.id) : petEggHtml(egg.id)}
+      <div><small>孵化完成</small><b>${escapeHtml(pet?.name || "动物幼崽")}出生了</b><span>已永久解锁，下一局可在开始界面选择；本局伙伴不变。</span></div>
+      <strong>${required}/${required}</strong>
+    </div>`;
+  }
+  return `<div class="incubation-recap progress">
+    ${petEggHtml(egg.id)}
+    <div><small>携带战斗完成</small><b>${escapeHtml(egg.name)}孵化进度 +1</b><span>当前 ${battles}/${required}，失败不会倒扣进度。</span></div>
+    <strong>${battles}/${required}</strong>
+  </div>`;
+}
+
 function renderCombatResult(combat) {
   const summary = combat.summary || game.combatSummary();
   const trial = summary.challengeTrial;
@@ -1541,6 +1641,7 @@ function renderCombatResult(combat) {
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
       ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>专属牌 / 宠物 / 物品，选择一种奖励方向</span></div>` : ""}
       ${trial ? `<div class="challenge-trial-result ${trial.completed ? "success" : "missed"}"><b>${trial.icon} ${trial.name} · ${trial.completed ? "完成" : "未完成"}</b><span>${trial.completed ? `额外 ${summary.challengeTrialBonus} 校园币已到账` : `${trial.progress}；不影响挑战基础奖励`}</span></div>` : ""}
+      ${combat.status === "won" ? petIncubationRecapHtml(combat) : ""}
       ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
       ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
       <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
@@ -1757,33 +1858,49 @@ function availableChallengeItems() {
 
 function renderChallengeReward() {
   const affix = CHALLENGE_AFFIX_DEFS[context.affix];
+  const pending = game.pendingCombatReward;
+  const rewardEgg = petEggDefinition(pending?.eggId);
+  const hasEggRoute = pending?.rewardVariant === "egg" && Boolean(rewardEgg);
   const availableItems = availableChallengeItems();
   const hasNewItems = availableItems.length > 0;
   const advice = challengeRewardGuidance(game, availableItems.length);
   const recommendedReward = CHALLENGE_REWARD_DEFS[advice.recommendedId];
+  const recommendedRewardName = advice.recommendedId === "pet" && hasEggRoute
+    ? rewardEgg.name
+    : recommendedReward.name;
   const body = `
     <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>${context.trialCompleted ? `星座试炼额外 ${context.trialBonus} 校园币已到账。` : "奖励只改变本局构筑，不提供跨对局永久数值。"}</span></div>
     <div class="challenge-reward-advisor">
       <span>${advice.build.sign}</span>
-      <div><small>本局构筑参谋</small><b>优先考虑：${recommendedReward.name}</b><p>${advice.options[advice.recommendedId].reason}</p></div>
+      <div><small>本局构筑参谋</small><b>优先考虑：${recommendedRewardName}</b><p>${advice.recommendedId === "pet" && hasEggRoute ? `本场击败${ENEMY_DEFS[pending.enemyId]?.name || "可驯化怪物"}，现在选择即可确定获得对应宠物蛋。` : advice.options[advice.recommendedId].reason}</p></div>
       <em>只读取当前构筑并解释判断，不改变奖励内容，也不会自动选择。</em>
     </div>
     <div class="challenge-reward-grid">
       ${Object.values(CHALLENGE_REWARD_DEFS).map((reward) => {
         const guide = advice.options[reward.id];
-        const text = reward.id === "item" && !hasNewItems
+        const isEggReward = reward.id === "pet" && hasEggRoute;
+        const text = isEggReward
+          ? `获得 ${reward.gold} 校园币与${rewardEgg.name}。宠物蛋进入独立孵化位，不占书包。`
+          : reward.id === "item" && !hasNewItems
           ? `随身物品已全部收集，选择后改为获得 ${reward.fallbackGold} 校园币。`
           : reward.text;
         const preview = reward.id === "cards"
           ? `结算后 ${game.gold + reward.gold} 币 · 再选 1 张牌`
           : reward.id === "pet"
-            ? `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
+            ? isEggReward
+              ? `结算后 ${game.gold + reward.gold} 币 · 孵化 0/${eggRequiredCombats(rewardEgg)}`
+              : `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
             : hasNewItems
               ? `结算后 ${game.gold + reward.gold} 币 · 再选 1 件物品`
               : `结算后 ${game.gold + reward.fallbackGold} 币`;
+        const name = isEggReward ? rewardEgg.name : reward.name;
+        const icon = isEggReward ? petEggHtml(rewardEgg.id, "reward-egg") : escapeHtml(reward.icon);
+        const reason = isEggReward
+          ? `来源公开：${ENEMY_DEFS[pending.enemyId]?.name || "本场怪物"}。领取后携带完成 ${eggRequiredCombats(rewardEgg)} 场有效战斗即可孵化。`
+          : guide.reason;
         return `<button class="challenge-reward-option reward-${reward.id} ${guide.recommended ? "is-recommended" : ""}" data-action="choose-challenge-reward" data-id="${reward.id}">
           ${guide.recommended ? '<i class="reward-recommend-badge">本局推荐</i>' : ""}
-          <span>${reward.icon}</span><small>奖励路线</small><strong>${reward.name}</strong><p>${text}</p><em>${guide.reason}</em><b>${preview} · 选择 →</b>
+          <span class="${isEggReward ? "egg-reward-icon" : ""}">${icon}</span><small>${isEggReward ? "确定掉落 · 宠物蛋" : "奖励路线"}</small><strong>${name}</strong><p>${text}</p><em>${reason}</em><b>${preview} · 选择 →</b>
         </button>`;
       }).join("")}
     </div>`;
@@ -1995,14 +2112,18 @@ function renderEnchantment() {
 function renderPetMilestone() {
   const milestone = game.pet.pendingMilestone;
   const isChoice = milestone === "choose";
+  const petDefinition = currentPetDefinition();
+  const talentChoices = (petDefinition.talentIds || [])
+    .map((id) => PET_TALENT_DEFS[id])
+    .filter(Boolean);
   const currentTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   const nextLevel = Math.min(3, game.pet.talentLevel + 1);
   const body = isChoice ? `
     <div class="pet-path-grid">
-      ${Object.values(PET_TALENT_DEFS).map((talent) => `
+      ${talentChoices.map((talent) => `
         <button class="pet-path" data-action="select-pet-talent" data-id="${talent.id}">
           <span>${talent.icon}</span><small>羁绊路线</small><strong>${talent.name}</strong><em>${talent.tagline}</em><p>Lv.1：${talent.levels[0].text}</p>
-        </button>`).join("")}
+        </button>`).join("") || '<div class="warning-box">这只宠物暂时没有可选择的羁绊路线。</div>'}
     </div>` : `
     <div class="pet-upgrade-card">
       <span>${currentTalent.icon}</span>
@@ -2136,16 +2257,31 @@ function renderArchive() {
   });
 }
 
+function restCurrentPetHtml() {
+  const pet = currentPetDefinition();
+  const talent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
+  return `<section class="rest-pet-roster" aria-labelledby="rest-pet-roster-title">
+    <div class="rest-pet-roster-heading"><div><small>本局同行伙伴</small><h2 id="rest-pet-roster-title">${escapeHtml(pet.name)}</h2></div><span>开局后已锁定，下局可重新选择</span></div>
+    <article class="rest-pet-card active">
+      ${renderPetFaceFor(pet.id)}
+      <div><small>当前参战</small><strong>${escapeHtml(pet.name)}</strong><p>${escapeHtml(pet.skill.name)} · 羁绊 ${game.pet.bond}${talent ? ` · ${escapeHtml(talent.name)} Lv.${game.pet.talentLevel}` : ""}</p></div>
+      <b>同行中</b>
+    </article>
+  </section>`;
+}
+
 function renderRest() {
   const missing = game.maxHp - game.hp;
   const canUpgrade = game.deck.some((card) => !card.upgraded);
   const tarotRest = game.tarotRestStatus();
   const body = `
     <div class="rest-scene"><span>☕</span><p>便利店的灯还亮着。今晚只能认真做一件事。</p></div>
+    ${incubatorStatusHtml("rest")}
+    ${restCurrentPetHtml()}
     <div class="node-grid rest-options">
       <button class="route-node" data-action="rest-heal" ${missing === 0 ? "disabled" : ""}><span class="node-icon">♥</span><span><small>恢复</small><strong>好好睡一觉</strong><em>恢复 ${Math.min(15, missing)} 点生命</em></span></button>
       <button class="route-node" data-action="rest-upgrade" ${canUpgrade ? "" : "disabled"}><span class="node-icon">↑</span><span><small>强化</small><strong>整理课堂笔记</strong><em>${canUpgrade ? "升级一张卡牌" : "所有卡牌均已升级"}</em></span></button>
-      <button class="route-node" data-action="rest-pet"><span class="node-icon">鸭</span><span><small>陪伴</small><strong>带${currentPetDefinition().shortName}散步</strong><em>羁绊 +2</em></span></button>
+      <button class="route-node" data-action="rest-pet"><span class="node-icon">${currentPetDefinition().icon}</span><span><small>陪伴</small><strong>带${currentPetDefinition().shortName}散步</strong><em>羁绊 +2</em></span></button>
       ${tarotRest ? `<button class="route-node tarot-rest-option" data-action="rest-tarot" ${tarotRest.available ? "" : "disabled"}><span class="node-icon">${game.tarot.icon}</span><span><small>${game.tarot.number} · 塔罗共鸣 · 每学期一次</small><strong>${tarotRest.name}</strong><em>${tarotRest.text}${tarotRest.available ? "" : ` · ${tarotRest.reason}`}</em></span></button>` : ""}
     </div>`;
   return page("休息节点", `第 ${game.week} 周`, body, { description: "恢复、强化与陪伴解决常规问题；塔罗共鸣每学期只能使用一次。" });
@@ -2451,9 +2587,12 @@ function render() {
   scheduleBattleMotion();
 }
 
-function startNewGame(archetypeId = selectedArchetype) {
-  game = new SemesterGame(Date.now(), archetypeId);
+function startNewGame(archetypeId = selectedArchetype, petId = selectedPetId) {
+  const availablePets = unlockedPetIds();
+  const startingPetId = availablePets.includes(petId) ? petId : "offlineDuck";
+  game = new SemesterGame(Date.now(), archetypeId, startingPetId, availablePets);
   selectedArchetype = archetypeId;
+  selectedPetId = game.activePetId;
   changeScreen("tarotChoice");
 }
 
@@ -2673,7 +2812,7 @@ function resolveChallengeReward(id) {
 function resolveCombatResult() {
   if (game.combat.status === "lost") {
     clearSave();
-    game = new SemesterGame(Date.now(), selectedArchetype);
+    game = new SemesterGame(Date.now(), selectedArchetype, selectedPetId, unlockedPetIds());
     changeScreen("intro");
     return;
   }
@@ -2698,6 +2837,7 @@ function grantCombatRewards(outcome) {
   } else if (outcome === "challenge") {
     const trial = game.challengeTrialStatus();
     game.prepareChallengeCombatReward({
+      enemyId: game.combat?.enemy?.id,
       affix: game.combat.modifiers.affix,
       trialCompleted: trial?.completed,
       trialBonus: game.combat.trialBonusGold
@@ -2786,6 +2926,7 @@ function resumeEliteCombatReward() {
 function resumeChallengeCombatReward() {
   const trial = game.combat ? game.challengeTrialStatus() : null;
   const pending = game.pendingCombatReward || game.prepareChallengeCombatReward({
+    enemyId: game.combat?.enemy?.id,
     affix: game.combat?.modifiers.affix,
     trialCompleted: trial?.completed,
     trialBonus: game.combat?.trialBonusGold
@@ -2837,8 +2978,14 @@ function resumeChallengeCombatReward() {
   if (pending.stage === "complete") {
     const route = pending.route;
     const fallbackGold = pending.fallbackGold;
+    const rewardVariant = pending.rewardVariant;
+    const rewardEgg = petEggDefinition(pending.eggId);
     game.completePendingCombatReward();
-    if (route === "pet") {
+    if (route === "pet" && rewardVariant === "egg" && rewardEgg) {
+      const required = eggRequiredCombats(rewardEgg);
+      const battles = game.incubator?.eggId === rewardEgg.id ? game.incubator.battles : 0;
+      setToast(`${CHALLENGE_REWARD_DEFS.pet.gold} 校园币已到账，${rewardEgg.name}已放入孵化位 · ${battles}/${required}`);
+    } else if (route === "pet") {
       const reward = CHALLENGE_REWARD_DEFS.pet;
       setToast(`${reward.gold} 校园币已到账，${currentPetDefinition().name}羁绊 +${reward.bond}`);
     } else if (fallbackGold) {
@@ -3093,7 +3240,7 @@ app.addEventListener("click", (event) => {
   if (action === "new-game") {
     const saved = readSave();
     if (newGameStartDecision(saved) === NEW_GAME_START.confirm) {
-      changeScreen("newGameConfirm", { saved, archetypeId: selectedArchetype });
+      changeScreen("newGameConfirm", { saved, archetypeId: selectedArchetype, petId: selectedPetId });
     } else {
       startNewGame();
     }
@@ -3101,15 +3248,21 @@ app.addEventListener("click", (event) => {
     changeScreen("intro");
   } else if (action === "confirm-new-game") {
     if (newGameStartDecision(context.saved, true) === NEW_GAME_START.start) {
-      startNewGame(context.archetypeId);
+      startNewGame(context.archetypeId, context.petId);
     }
   } else if (action === "select-archetype") {
     selectedArchetype = button.dataset.id;
     render();
+  } else if (action === "select-starting-pet") {
+    if (unlockedPetIds().includes(button.dataset.id)) {
+      selectedPetId = button.dataset.id;
+      render();
+    }
   } else if (action === "continue-game") {
     try {
       game = SemesterGame.fromJSON(readSave());
       selectedArchetype = game.archetypeId;
+      selectedPetId = game.activePetId;
       if (game.loadRepairs.length) {
         const visibleRepairs = game.loadRepairs.slice(0, 3).join("；");
         const remaining = game.loadRepairs.length - 3;

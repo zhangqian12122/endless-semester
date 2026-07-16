@@ -9,6 +9,7 @@ import {
   NORMAL_ENEMY_IDS,
   DEFAULT_PET_ID,
   PET_DEFS,
+  PET_EGG_DEFS,
   PET_TALENT_DEFS,
   REGULAR_ITEM_IDS,
   PUBLIC_REWARD_CARD_IDS,
@@ -17,9 +18,13 @@ import {
 
 const LEGACY_PET_ID_ALIASES = Object.freeze({ goose: DEFAULT_PET_ID });
 
-function petDefinition(id = DEFAULT_PET_ID) {
+function canonicalPetId(id) {
   const normalizedId = LEGACY_PET_ID_ALIASES[id] || id;
-  return PET_DEFS[normalizedId] || PET_DEFS[DEFAULT_PET_ID];
+  return PET_DEFS[normalizedId] ? normalizedId : null;
+}
+
+function petDefinition(id = DEFAULT_PET_ID) {
+  return PET_DEFS[canonicalPetId(id)] || PET_DEFS[DEFAULT_PET_ID];
 }
 
 function createPetState(id = DEFAULT_PET_ID) {
@@ -33,6 +38,36 @@ function createPetState(id = DEFAULT_PET_ID) {
     talent: null,
     talentLevel: 0,
     pendingMilestone: null
+  };
+}
+
+function eggDefinitionForEnemy(enemyId) {
+  return Object.values(PET_EGG_DEFS).find((egg) => egg.sourceEnemyIds.includes(enemyId)) || null;
+}
+
+function sanitizePetState(raw, id) {
+  const definition = petDefinition(id);
+  const saved = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const bond = nonNegativeInteger(saved.bond);
+  const charge = Math.min(definition.maxCharge, nonNegativeInteger(saved.charge));
+  const talent = definition.talentIds.includes(saved.talent) && PET_TALENT_DEFS[saved.talent]
+    ? saved.talent
+    : null;
+  const talentLevel = talent ? Math.min(3, Math.max(1, nonNegativeInteger(saved.talentLevel, 1))) : 0;
+  let pendingMilestone = [null, "choose", "upgrade", "master"].includes(saved.pendingMilestone)
+    ? saved.pendingMilestone
+    : null;
+  if (!talent && pendingMilestone !== "choose") pendingMilestone = null;
+  if (talent && pendingMilestone === "choose") pendingMilestone = null;
+  return {
+    id: definition.id,
+    name: definition.name,
+    bond,
+    charge,
+    maxCharge: definition.maxCharge,
+    talent,
+    talentLevel,
+    pendingMilestone
   };
 }
 
@@ -75,10 +110,10 @@ export const CHALLENGE_REWARD_DEFS = Object.freeze({
   pet: {
     id: "pet",
     icon: DEFAULT_PET.icon,
-    name: `${DEFAULT_PET.shortName}特训`,
+    name: "伙伴特训",
     gold: 25,
     bond: 2,
-    text: `获得 25 校园币，${DEFAULT_PET.name}羁绊 +2。`
+    text: "获得 25 校园币；符合条件时获得对应怪物蛋，否则当前宠物羁绊 +2。"
   },
   item: {
     id: "item",
@@ -138,14 +173,14 @@ export const TAROT_DEFS = Object.freeze({
     number: "XI",
     icon: "力",
     name: "力量",
-    tagline: "让鸭先上",
+    tagline: "让伙伴先上",
     boon: "宠物开战时获得 1 点充能。",
     cost: "敌人每段攻击伤害 +2。",
     petCharge: 1,
     enemyAttackBonus: 2,
     rest: {
       action: "bond",
-      name: `${DEFAULT_PET.shortName}夜训`,
+      name: "伙伴夜训",
       text: "支付 30 币，羁绊 +4 并恢复 6 生命。",
       goldCost: 30,
       bond: 4,
@@ -371,13 +406,13 @@ export function cardDefinition(card) {
 }
 
 export class SemesterGame {
-  constructor(seed = Date.now(), archetypeId = "cancer") {
+  constructor(seed = Date.now(), archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID]) {
     this.rng = new SeededRandom(seed);
     this.cardSerial = 0;
-    this.resetCampaign(archetypeId);
+    this.resetCampaign(archetypeId, startingPetId, unlockedPetIds);
   }
 
-  resetCampaign(archetypeId = "cancer") {
+  resetCampaign(archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID]) {
     if (!ARCHETYPE_DEFS[archetypeId]) throw new Error(`未知星座学生：${archetypeId}`);
     this.archetypeId = archetypeId;
     this.tarotId = null;
@@ -399,7 +434,15 @@ export class SemesterGame {
     this.deck = startingDeckFor(archetypeId).map((id) => this.createCard(id));
     this.items = [];
     this.backpackCapacity = 6;
-    this.pet = createPetState();
+    const unlocked = [...new Set([
+      DEFAULT_PET_ID,
+      ...(Array.isArray(unlockedPetIds) ? unlockedPetIds : [])
+    ].map((id) => canonicalPetId(id)).filter(Boolean))];
+    this.pets = Object.fromEntries(unlocked.map((id) => [id, createPetState(id)]));
+    const requestedPetId = canonicalPetId(startingPetId);
+    this.activePetId = requestedPetId && this.pets[requestedPetId] ? requestedPetId : DEFAULT_PET_ID;
+    this.pet = this.pets[this.activePetId];
+    this.incubator = null;
     this.stats = {
       combatsStarted: 0,
       combatsCompleted: 0,
@@ -450,6 +493,65 @@ export class SemesterGame {
 
   getPetDefinition() {
     return petDefinition(this.pet?.id);
+  }
+
+  hasPet(id) {
+    return Boolean(PET_DEFS[id] && this.pets?.[id]);
+  }
+
+  ownedPetIds() {
+    return Object.keys(this.pets || {}).filter((id) => PET_DEFS[id]);
+  }
+
+  challengePetRewardState(enemyId = this.combat?.enemy?.id) {
+    const canonicalEnemyId = ENEMY_DEFS[enemyId] ? enemyId : null;
+    const egg = canonicalEnemyId ? eggDefinitionForEnemy(canonicalEnemyId) : null;
+    const canClaimEgg = Boolean(egg && !this.incubator && !this.hasPet(egg.petId));
+    return {
+      enemyId: canonicalEnemyId,
+      eggId: egg?.id || null,
+      rewardVariant: canClaimEgg ? "egg" : "bond"
+    };
+  }
+
+  claimEgg(eggId) {
+    const egg = PET_EGG_DEFS[eggId];
+    if (!egg || this.incubator || this.hasPet(egg.petId)) return null;
+    this.incubator = { eggId: egg.id, battles: 0 };
+    return { eggId: egg.id, petId: egg.petId, battles: 0, requiredCombats: egg.requiredCombats };
+  }
+
+  advanceIncubatorAfterVictory(combat = this.combat) {
+    if (!combat || combat.status !== "won" || combat.petIncubationEvent || !this.incubator) return null;
+    const egg = PET_EGG_DEFS[this.incubator.eggId];
+    if (!egg || this.hasPet(egg.petId)) {
+      this.incubator = null;
+      return null;
+    }
+    const battles = Math.min(egg.requiredCombats, this.incubator.battles + 1);
+    let event;
+    if (battles >= egg.requiredCombats) {
+      this.pets[egg.petId] = createPetState(egg.petId);
+      this.incubator = null;
+      event = {
+        type: "hatched",
+        eggId: egg.id,
+        petId: egg.petId,
+        battles,
+        requiredCombats: egg.requiredCombats
+      };
+    } else {
+      this.incubator = { eggId: egg.id, battles };
+      event = {
+        type: "progress",
+        eggId: egg.id,
+        petId: egg.petId,
+        battles,
+        requiredCombats: egg.requiredCombats
+      };
+    }
+    combat.petIncubationEvent = event;
+    return event;
   }
 
   chooseTarot(id) {
@@ -852,7 +954,7 @@ export class SemesterGame {
     const levelEffect = talent && level > 0 ? talent.levels[level - 1] : {};
     return {
       damage: pet.skill.baseDamage + (levelEffect.damageBonus || 0),
-      block: levelEffect.block || 0,
+      block: (pet.skill.baseBlock || 0) + (levelEffect.block || 0),
       draw: levelEffect.draw || 0,
       nextDrawBonus: levelEffect.nextDrawBonus || 0,
       pet,
@@ -994,7 +1096,7 @@ export class SemesterGame {
     return true;
   }
 
-  prepareChallengeCombatReward({ affix, trialCompleted = false, trialBonus = 0 } = {}) {
+  prepareChallengeCombatReward({ affix, trialCompleted = false, trialBonus = 0, enemyId = null } = {}) {
     if (this.pendingCombatReward) {
       return {
         ...this.pendingCombatReward,
@@ -1007,11 +1109,18 @@ export class SemesterGame {
     if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || FIXED_ROUTE_WEEKS.has(this.week)
       || !CHALLENGE_AFFIX_DEFS[affix]) return null;
     const completed = trialCompleted === true;
+    const rewardEnemyId = ENEMY_DEFS[enemyId]
+      ? enemyId
+      : (this.combat?.modifiers?.challenge ? this.combat.enemy.id : null);
+    const petReward = this.challengePetRewardState(rewardEnemyId);
     this.pendingCombatReward = {
       type: "challengeChain",
       stage: "route",
       route: null,
       affix,
+      enemyId: petReward.enemyId,
+      eggId: petReward.eggId,
+      rewardVariant: petReward.rewardVariant,
       trialCompleted: completed,
       trialBonus: completed
         ? Math.min(ARCHETYPE_TRIAL_DEFS[this.archetypeId].bonusGold, nonNegativeInteger(trialBonus))
@@ -1037,8 +1146,14 @@ export class SemesterGame {
       pending.stage = "card";
       pending.choices = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 3);
     } else if (id === "pet") {
-      this.pet.bond += reward.bond;
-      this.updatePetMilestone();
+      const claimedEgg = pending.rewardVariant === "egg" && pending.eggId
+        ? this.claimEgg(pending.eggId)
+        : null;
+      if (!claimedEgg) {
+        pending.rewardVariant = "bond";
+        this.pet.bond += reward.bond;
+        this.updatePetMilestone();
+      }
       pending.stage = "complete";
     } else {
       const itemChoices = this.rng.shuffle(this.availableItemIds()).slice(0, reward.itemChoices);
@@ -1497,6 +1612,7 @@ export class SemesterGame {
       endTurnHpLoss: 0,
       petUsed: false,
       petChargedThisTurn: false,
+      petIncubationEvent: null,
       pencilUsed: false,
       notebookUsed: false,
       mistakeBookUsed: false,
@@ -2111,6 +2227,7 @@ export class SemesterGame {
       const pet = this.getPetDefinition();
       this.pet.bond += pet.victoryBond;
       this.updatePetMilestone();
+      this.advanceIncubatorAfterVictory(combat);
       for (const uid of combat.usedCardUids) {
         if (this.deck.some((card) => card.uid === uid)) {
           this.cardCombatUses[uid] = (this.cardCombatUses[uid] || 0) + 1;
@@ -2137,7 +2254,11 @@ export class SemesterGame {
       cardsPlayed: combat.cardsPlayed,
       damageDealt: combat.damageDealt,
       hpLost: Math.max(0, combat.startingHp - this.hp),
-      petUsed: combat.petUsed
+      petUsed: combat.petUsed,
+      petIncubationEvent: combat.petIncubationEvent ? { ...combat.petIncubationEvent } : null,
+      hatchedPetId: combat.petIncubationEvent?.type === "hatched"
+        ? combat.petIncubationEvent.petId
+        : null
     };
   }
 
@@ -2253,6 +2374,11 @@ export class SemesterGame {
       items: [...this.items],
       backpackCapacity: this.backpackCapacity,
       pet: { ...this.pet },
+      pets: Object.fromEntries(
+        this.ownedPetIds().map((id) => [id, { ...this.pets[id] }])
+      ),
+      activePetId: this.activePetId,
+      incubator: this.incubator ? { ...this.incubator } : null,
       cardCombatUses: { ...this.cardCombatUses },
       flags: { ...this.flags },
       rewardIndex: this.rewardIndex,
@@ -2377,11 +2503,18 @@ export class SemesterGame {
               && nonNegativeInteger(savedCombatReward.fallbackGold) === CHALLENGE_REWARD_DEFS.item.fallbackGold)));
         if (stageIsValid) {
           const trialCompleted = savedCombatReward.trialCompleted === true;
+          const enemyId = ENEMY_DEFS[savedCombatReward.enemyId] ? savedCombatReward.enemyId : null;
+          const challengeEgg = enemyId ? eggDefinitionForEnemy(enemyId) : null;
+          const eggId = challengeEgg?.id === savedCombatReward.eggId ? challengeEgg.id : null;
+          const rewardVariant = savedCombatReward.rewardVariant === "egg" && eggId ? "egg" : "bond";
           game.pendingCombatReward = {
             type: "challengeChain",
             stage: savedCombatReward.stage,
             route,
             affix: savedCombatReward.affix,
+            enemyId,
+            eggId,
+            rewardVariant,
             trialCompleted,
             trialBonus: trialCompleted ? ARCHETYPE_TRIAL_DEFS[game.archetypeId].bonusGold : 0,
             choices: savedCombatReward.stage === "card" ? savedExclusiveChoices : [],
@@ -2493,25 +2626,72 @@ export class SemesterGame {
       loadRepairs.push("重置异常物品列表");
     }
     const savedPet = data.pet && typeof data.pet === "object" && !Array.isArray(data.pet) ? data.pet : {};
-    const restoredPetDefinition = petDefinition(savedPet.id);
-    game.pet = {
-      ...createPetState(restoredPetDefinition.id),
-      ...savedPet,
-      id: restoredPetDefinition.id,
-      name: restoredPetDefinition.name,
-      maxCharge: restoredPetDefinition.maxCharge
-    };
-    game.pet.bond = nonNegativeInteger(game.pet.bond);
-    game.pet.charge = Math.min(game.pet.maxCharge, nonNegativeInteger(game.pet.charge));
-    if (!restoredPetDefinition.talentIds.includes(game.pet.talent) || !PET_TALENT_DEFS[game.pet.talent]) {
-      game.pet.talent = null;
-      game.pet.talentLevel = 0;
-      if (game.pet.pendingMilestone !== "choose") game.pet.pendingMilestone = null;
-    } else {
-      game.pet.talentLevel = Math.min(3, Math.max(1, Number(game.pet.talentLevel) || 1));
-      if (game.pet.pendingMilestone === "choose") game.pet.pendingMilestone = null;
+    const savedPets = data.pets && typeof data.pets === "object" && !Array.isArray(data.pets)
+      ? data.pets
+      : null;
+    const restoredPets = {};
+    let petRosterRepaired = data.pets !== undefined && data.pets !== null && !savedPets;
+    if (savedPets) {
+      for (const [savedId, rawPet] of Object.entries(savedPets)) {
+        const keyId = canonicalPetId(savedId);
+        const isPetObject = rawPet && typeof rawPet === "object" && !Array.isArray(rawPet);
+        const hasRawId = isPetObject && Object.hasOwn(rawPet, "id");
+        const rawId = isPetObject ? canonicalPetId(rawPet.id) : null;
+        const id = keyId && isPetObject && (!hasRawId || rawId === keyId) ? keyId : null;
+        if (!id || restoredPets[id]) {
+          petRosterRepaired = true;
+          continue;
+        }
+        restoredPets[id] = sanitizePetState(rawPet, id);
+      }
     }
-    if (![null, "choose", "upgrade", "master"].includes(game.pet.pendingMilestone)) game.pet.pendingMilestone = null;
+
+    const legacyPetId = canonicalPetId(savedPet.id) || DEFAULT_PET_ID;
+    if (!savedPets) {
+      restoredPets[legacyPetId] = sanitizePetState(savedPet, legacyPetId);
+    }
+    if (!restoredPets[DEFAULT_PET_ID]) {
+      restoredPets[DEFAULT_PET_ID] = createPetState(DEFAULT_PET_ID);
+      if (savedPets) petRosterRepaired = true;
+    }
+
+    let activePetId = canonicalPetId(data.activePetId);
+    if (!activePetId || !restoredPets[activePetId]) {
+      activePetId = restoredPets[legacyPetId] ? legacyPetId : DEFAULT_PET_ID;
+      if (data.activePetId !== undefined && data.activePetId !== activePetId) petRosterRepaired = true;
+    }
+    const legacySnapshotMatchesActive = !savedPet.id || canonicalPetId(savedPet.id) === activePetId;
+    if (savedPets && legacySnapshotMatchesActive) {
+      restoredPets[activePetId] = sanitizePetState(savedPet, activePetId);
+    } else if (savedPets && Object.keys(savedPet).length && !legacySnapshotMatchesActive) {
+      petRosterRepaired = true;
+    }
+    game.pets = restoredPets;
+    game.activePetId = activePetId;
+    game.pet = game.pets[game.activePetId];
+    if (petRosterRepaired) loadRepairs.push("清理异常宠物名册或当前伙伴");
+
+    game.incubator = null;
+    if (data.incubator !== undefined && data.incubator !== null) {
+      const egg = PET_EGG_DEFS[data.incubator?.eggId];
+      const battles = nonNegativeInteger(data.incubator?.battles);
+      const incubatorIsValid = egg && !game.hasPet(egg.petId)
+        && Number.isInteger(data.incubator?.battles)
+        && battles < egg.requiredCombats;
+      if (incubatorIsValid) game.incubator = { eggId: egg.id, battles };
+      else loadRepairs.push("清理异常宠物孵化状态");
+    }
+
+    const pendingChallenge = game.pendingCombatReward?.type === "challengeChain"
+      ? game.pendingCombatReward
+      : null;
+    if (pendingChallenge?.stage === "route" && pendingChallenge.rewardVariant === "egg") {
+      const egg = PET_EGG_DEFS[pendingChallenge.eggId];
+      if (!egg || game.incubator || game.hasPet(egg.petId)) {
+        pendingChallenge.rewardVariant = "bond";
+        loadRepairs.push("修正不可领取的挑战宠物蛋奖励");
+      }
+    }
     const deckUids = new Set(game.deck.map((card) => card.uid));
     if (game.pendingCombatReward?.type === "eliteChain") {
       const savedCandidateCount = game.pendingCombatReward.usedCardUids.length;

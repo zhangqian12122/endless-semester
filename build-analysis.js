@@ -1,5 +1,5 @@
 import { cardDefinition } from "./game-engine.js";
-import { DEFAULT_PET_ID, PET_DEFS } from "./game-data.js";
+import { DEFAULT_PET_ID, PET_DEFS, PET_EGG_DEFS } from "./game-data.js";
 
 const DEFAULT_PET = PET_DEFS[DEFAULT_PET_ID];
 
@@ -11,7 +11,7 @@ export const BUILD_STYLE_DEFS = {
   offense: { id: "offense", label: "爆发强攻", sign: "✦", text: "用攻击密度和伤害增幅尽快结束战斗。" },
   defense: { id: "defense", label: "稳固防守", sign: "◆", text: "先覆盖公开伤害，再用安全回合慢慢取胜。" },
   cycle: { id: "cycle", label: "高速循环", sign: "↻", text: "依靠零费、抽牌和筛选反复找到关键牌。" },
-  pet: { id: "pet", label: `${DEFAULT_PET.shortName}协同`, sign: DEFAULT_PET.icon, text: "稳定充能，让宠物成为每场战斗的固定节奏点。" }
+  pet: { id: "pet", label: "伙伴协同", sign: DEFAULT_PET.icon, text: "稳定充能，让当前宠物成为每场战斗的固定节奏点。" }
 };
 
 function emptyScores() {
@@ -63,9 +63,9 @@ function addItemBias(scores, game) {
   if (game.hasItem("referenceBooks")) scores.cycle += 4;
   if (game.hasItem("petSnack")) scores.pet += 5;
   if (game.pet.talent) scores.pet += 4 + game.pet.talentLevel * 2;
-  if (game.pet.talent === "fury") scores.offense += 2;
-  if (game.pet.talent === "guardian") scores.defense += 2;
-  if (game.pet.talent === "scout") scores.cycle += 2;
+  if (["fury", "sleepyPounce"].includes(game.pet.talent)) scores.offense += 2;
+  if (["guardian", "sleepyPillow"].includes(game.pet.talent)) scores.defense += 2;
+  if (["scout", "sleepyRhythm"].includes(game.pet.talent)) scores.cycle += 2;
 }
 
 export function analyzeBuild(game) {
@@ -195,29 +195,38 @@ export function challengeRewardGuidance(game, availableItemCount = 0) {
   }
   options.push({ id: "cards", score: cardScore, reason: cardReason });
 
-  let petScore = 38;
-  let petReason;
-  const [chooseAt, upgradeAt, masterAt] = activePetDefinition(game).bondMilestones;
-  const nextMilestone = !game.pet.talent
-    ? chooseAt
-    : game.pet.talentLevel < 2
-    ? upgradeAt
-    : game.pet.talentLevel < 3
-    ? masterAt
+  const pendingEgg = game.pendingCombatReward?.type === "challengeChain"
+    && game.pendingCombatReward.stage === "route"
+    ? PET_EGG_DEFS[game.pendingCombatReward.eggId]
     : null;
-  const nextBond = game.pet.bond + 2;
-  if (nextMilestone && game.pet.bond < nextMilestone && nextBond >= nextMilestone) {
-    petScore += 24;
-    const milestoneAction = !game.pet.talent ? "选择战斗路线" : game.pet.talentLevel < 2 ? "强化当前路线" : "精通当前路线";
-    petReason = `羁绊 ${game.pet.bond} → ${nextBond}，会立刻到达 ${nextMilestone} 并${milestoneAction}。`;
-  } else if (analysis.primary.id === "pet") {
-    petScore += 25;
-    petReason = `当前主流派是${analysis.primary.label}，羁绊 ${game.pet.bond} → ${nextBond} 能继续强化核心节奏。`;
-  } else if (nextMilestone) {
-    petReason = `羁绊 ${game.pet.bond} → ${nextBond}，距离 ${nextMilestone} 里程碑还 ${Math.max(0, nextMilestone - nextBond)}。`;
+  let petScore = pendingEgg ? 68 : 38;
+  let petReason;
+  if (pendingEgg) {
+    const hatchling = PET_DEFS[pendingEgg.petId];
+    petReason = `本场可确定获得${pendingEgg.name}，不占书包；再赢 ${pendingEgg.requiredCombats} 场可孵化${hatchling?.name || "新幼崽"}。`;
   } else {
-    petScore -= 10;
-    petReason = `宠物路线已经精通；羁绊仍会增加，但不会立即解锁新效果。`;
+    const [chooseAt, upgradeAt, masterAt] = activePetDefinition(game).bondMilestones;
+    const nextMilestone = !game.pet.talent
+      ? chooseAt
+      : game.pet.talentLevel < 2
+      ? upgradeAt
+      : game.pet.talentLevel < 3
+      ? masterAt
+      : null;
+    const nextBond = game.pet.bond + 2;
+    if (nextMilestone && game.pet.bond < nextMilestone && nextBond >= nextMilestone) {
+      petScore += 24;
+      const milestoneAction = !game.pet.talent ? "选择战斗路线" : game.pet.talentLevel < 2 ? "强化当前路线" : "精通当前路线";
+      petReason = `羁绊 ${game.pet.bond} → ${nextBond}，会立刻到达 ${nextMilestone} 并${milestoneAction}。`;
+    } else if (analysis.primary.id === "pet") {
+      petScore += 25;
+      petReason = `当前主流派是${analysis.primary.label}，羁绊 ${game.pet.bond} → ${nextBond} 能继续强化核心节奏。`;
+    } else if (nextMilestone) {
+      petReason = `羁绊 ${game.pet.bond} → ${nextBond}，距离 ${nextMilestone} 里程碑还 ${Math.max(0, nextMilestone - nextBond)}。`;
+    } else {
+      petScore -= 10;
+      petReason = "当前宠物路线已经精通；羁绊仍会增加，但不会立即解锁新效果。";
+    }
   }
   options.push({ id: "pet", score: petScore, reason: petReason });
 

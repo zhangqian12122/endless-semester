@@ -1,4 +1,4 @@
-import { ACHIEVEMENT_DEFS, ENEMY_DEFS, NORMAL_ENEMY_IDS } from "./game-data.js";
+import { ACHIEVEMENT_DEFS, DEFAULT_PET_ID, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_DEFS } from "./game-data.js";
 
 export const CAREER_TRIAL_IDS = Object.freeze(["aries", "gemini", "cancer"]);
 
@@ -11,6 +11,7 @@ export function createCareerProfile() {
     version: 1,
     discoveredEnemies: [],
     unlockedAchievements: [],
+    unlockedPetIds: [DEFAULT_PET_ID],
     combatsCompleted: 0,
     combatsWon: 0,
     cleanWins: 0,
@@ -37,6 +38,10 @@ export function normalizeCareerProfile(data) {
   profile.unlockedAchievements = Array.from(new Set(
     (Array.isArray(data.unlockedAchievements) ? data.unlockedAchievements : []).filter((id) => ACHIEVEMENT_DEFS[id])
   ));
+  profile.unlockedPetIds = Array.from(new Set([
+    DEFAULT_PET_ID,
+    ...(Array.isArray(data.unlockedPetIds) ? data.unlockedPetIds : [])
+  ].filter((id) => PET_DEFS[id])));
   for (const key of ["combatsCompleted", "combatsWon", "cleanWins", "quickWins", "challengeWins", "eliteWins", "bossWins", "petUses", "cardsPlayed"]) {
     profile[key] = safeCount(data[key]);
   }
@@ -109,6 +114,12 @@ export function recordCareerCombat(profile, summary) {
     if (summary.challengeTrial?.completed && CAREER_TRIAL_IDS.includes(trialId)) {
       profile.trialCompletions ??= createTrialCompletions();
       profile.trialCompletions[trialId] = safeCount(profile.trialCompletions[trialId]) + 1;
+    }
+    const hatchedPetId = summary.petIncubationEvent?.type === "hatched"
+      ? summary.petIncubationEvent.petId
+      : null;
+    if (PET_DEFS[hatchedPetId] && !profile.unlockedPetIds.includes(hatchedPetId)) {
+      profile.unlockedPetIds.push(hatchedPetId);
     }
   }
   return unlockEligibleAchievements(profile);
