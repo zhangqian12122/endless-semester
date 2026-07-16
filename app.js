@@ -1355,6 +1355,16 @@ function battleStateSnapshot() {
   };
 }
 
+function counterplayFeedbackParts(before, after) {
+  if (before?.type === "rivalInterrupt" && !before.triggered && after?.triggered) {
+    return [`打断内卷 · 敌方攻击 ${after.attackBefore}→${after.attackAfter}`];
+  }
+  if (before?.type === "examBlank" && !before.triggered && after?.triggered) {
+    return [`破题成功 · 大题 ${after.attackBefore}→${after.attackAfter}`];
+  }
+  return [];
+}
+
 function queueBattleFeedback(kind, label, before, options = {}) {
   battleFeedbackSequence += 1;
   const feedbackDelta = battleFeedbackFromDelta(before, battleStateSnapshot(), {
@@ -3460,7 +3470,7 @@ app.addEventListener("click", (event) => {
   } else if (action === "play-card") {
     const card = game.combat.hand.find((held) => held.uid === button.dataset.uid);
     const definition = card ? cardDefinition(card) : null;
-    const rivalInterruptBefore = game.getIntent().mechanicState;
+    const counterplayBefore = game.getIntent().mechanicState;
     const wasDistracted = game.combat.distracted === true;
     const statusCardsBefore = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
     const motionOrigin = captureBattleMotionOrigin(button, "card");
@@ -3472,17 +3482,14 @@ app.addEventListener("click", (event) => {
       const distractedCleared = Boolean(definition?.effect.clearDistracted && wasDistracted && !game.combat.distracted);
       const cleanseApplied = Boolean(distractedCleared
         || (definition?.effect.exhaustStatuses && statusCardsAfter < statusCardsBefore));
-      const rivalInterruptAfter = game.getIntent().mechanicState;
-      const rivalInterrupted = rivalInterruptBefore?.type === "rivalInterrupt"
-        && !rivalInterruptBefore.triggered
-        && rivalInterruptAfter?.triggered;
+      const counterplayAfter = game.getIntent().mechanicState;
       queueBattleFeedback("card", definition?.displayName || "卡牌生效", before, {
         cardPlayed: true,
         cardType: definition?.type || "skill",
         cleanseApplied,
         effectParts: [
           ...(distractedCleared ? ["移除走神"] : []),
-          ...(rivalInterrupted ? [`打断内卷 · 敌方攻击 ${rivalInterruptAfter.attackBefore}→${rivalInterruptAfter.attackAfter}`] : [])
+          ...counterplayFeedbackParts(counterplayBefore, counterplayAfter)
         ],
         motionOrigin
       });
@@ -3507,20 +3514,15 @@ app.addEventListener("click", (event) => {
     if (endTurnDecision(game.incomingDamagePreview(), true) === END_TURN_ACTION.end) finishPlayerTurn();
   } else if (action === "pet-skill") {
     const motionOrigin = captureBattleMotionOrigin(app.querySelector(".pet-companion-token"), "pet");
-    const rivalInterruptBefore = game.getIntent().mechanicState;
+    const counterplayBefore = game.getIntent().mechanicState;
     const before = battleStateSnapshot();
     const result = game.usePetSkill();
     if (!result.ok) setToast(result.reason);
     else {
       const pet = currentPetDefinition();
-      const rivalInterruptAfter = game.getIntent().mechanicState;
-      const rivalInterrupted = rivalInterruptBefore?.type === "rivalInterrupt"
-        && !rivalInterruptBefore.triggered
-        && rivalInterruptAfter?.triggered;
+      const counterplayAfter = game.getIntent().mechanicState;
       queueBattleFeedback("pet", `${pet.name} · ${pet.skill.name}`, before, {
-        effectParts: rivalInterrupted
-          ? [`打断内卷 · 敌方攻击 ${rivalInterruptAfter.attackBefore}→${rivalInterruptAfter.attackAfter}`]
-          : [],
+        effectParts: counterplayFeedbackParts(counterplayBefore, counterplayAfter),
         motionOrigin
       });
     }

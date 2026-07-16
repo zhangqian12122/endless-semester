@@ -63,6 +63,21 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
       lines.push(`打断进度 ${value}/${cap}：再造成 ${Math.max(0, cap - value)} 点实际生命伤害，达到后当前攻击 -${reduction}`);
     }
   }
+  if (intent.mechanicState?.type === "examBlank") {
+    const value = Math.max(0, Math.floor(Number(intent.mechanicState.value) || 0));
+    const cap = Math.max(1, Math.floor(Number(intent.mechanicState.cap) || 8));
+    const remainingBlock = Math.max(0, Math.floor(Number(intent.mechanicState.remainingBlock) || 0));
+    const reduction = Math.max(0, Math.floor(Number(intent.mechanicState.attackReduction) || 6));
+    const attackBefore = Math.max(0, Math.floor(Number(intent.mechanicState.attackBefore) || attack));
+    const attackAfter = Math.max(0, Math.floor(Number(intent.mechanicState.attackAfter) || attack));
+    if (intent.mechanicState.triggered) {
+      lines.push(`已破题：击破填空题护甲，大题 ${attackBefore}→${attackAfter}；下一轮重新开启`);
+    } else if (intent.mechanicState.windowOpen) {
+      lines.push(`破题进度 ${value}/${cap}：再击破 ${remainingBlock} 点护甲，本次大题伤害 -${reduction}`);
+    } else {
+      lines.push("破题窗口尚未开启：需先结算上一道填空题");
+    }
+  }
   if (intent.debuff === "distracted") {
     lines.push("施加走神：下回合你的攻击每段 -2");
   } else if (intent.debuff) {
@@ -158,14 +173,39 @@ export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = n
     const nextStepIndex = (stepIndex + 1) % SPECIAL_ENEMY_METER_STEPS.length;
     const nextRound = stepIndex === SPECIAL_ENEMY_METER_STEPS.length - 1 ? round + 1 : round;
     const nextStep = SPECIAL_ENEMY_METER_STEPS[nextStepIndex];
+    const segments = SPECIAL_ENEMY_METER_STEPS.map((_, index) => (
+      index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
+    ));
+    if (mechanicState?.type === "examBlank") {
+      const cap = Math.max(1, Math.floor(Number(mechanicState.cap) || 8));
+      const value = Math.min(cap, Math.max(0, Math.floor(Number(mechanicState.value) || 0)));
+      const remainingBlock = Math.max(0, Math.floor(Number(mechanicState.remainingBlock) || 0));
+      const attackBefore = Math.max(0, Math.floor(Number(mechanicState.attackBefore) || 0));
+      const attackAfter = Math.max(0, Math.floor(Number(mechanicState.attackAfter) || attackBefore));
+      const triggered = mechanicState.triggered === true;
+      const windowOpen = mechanicState.windowOpen === true;
+      return {
+        kind: "cycle",
+        title: "破题窗口",
+        label: triggered
+          ? `成功 · ${attackBefore}→${attackAfter}`
+          : windowOpen
+          ? `${value}/${cap} · 余${remainingBlock}甲`
+          : `第${round}轮 · ${stepIndex + 1}/4`,
+        detail: triggered
+          ? `当前：大题（已削弱）；下一步：${nextStep}（第${nextRound}轮）`
+          : windowOpen
+          ? `当前：大题；击破剩余 ${remainingBlock} 点护甲即可让本次大题 -${Math.max(0, Math.floor(Number(mechanicState.attackReduction) || 6))}`
+          : `当前：${currentStep}；破题窗口尚未开启`,
+        segments
+      };
+    }
     return {
       kind: "cycle",
-      title: "四步递增",
+      title: "四步破题",
       label: `第${round}轮 · ${stepIndex + 1}/4`,
       detail: `当前：${currentStep}；下一步：${nextStep}${nextRound === round ? "" : `（第${nextRound}轮）`}`,
-      segments: SPECIAL_ENEMY_METER_STEPS.map((_, index) => (
-        index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
-      ))
+      segments
     };
   }
 
@@ -513,6 +553,38 @@ export function combatRivalInterruptProjection(cardPreview = {}, incomingPreview
   };
 }
 
+export function combatFinalExamBlankProjection(cardPreview = {}, incomingPreview = {}, mechanicState = {}) {
+  if (
+    mechanicState?.type !== "examBlank"
+    || mechanicState.triggered
+    || mechanicState.windowOpen !== true
+  ) return null;
+  const cap = Math.max(1, Math.floor(safeBattleValue(mechanicState.cap) || 8));
+  const value = Math.min(cap, Math.max(0, Math.floor(safeBattleValue(mechanicState.value))));
+  const remainingBlock = Math.max(0, Math.floor(safeBattleValue(mechanicState.remainingBlock)));
+  const blockBroken = Math.max(0, Math.floor(safeBattleValue(cardPreview.enemyBlockAbsorbed)));
+  if (!remainingBlock || blockBroken < remainingBlock) return null;
+  const attackReduction = Math.max(0, Math.floor(safeBattleValue(mechanicState.attackReduction) || 6));
+  const perHitBefore = Math.max(0, safeBattleValue(incomingPreview.perHit));
+  const hits = perHitBefore > 0
+    ? Math.max(1, Math.floor(safeBattleValue(incomingPreview.hits) || 1))
+    : 0;
+  if (!attackReduction || !hits) return null;
+  const perHitAfter = Math.max(0, perHitBefore - attackReduction);
+  return {
+    valueBefore: value,
+    valueAfter: cap,
+    cap,
+    remainingBlock,
+    blockBroken,
+    attackReduction,
+    perHitBefore,
+    perHitAfter,
+    hits,
+    attackTotalAfter: perHitAfter * hits
+  };
+}
+
 export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, options = {}) {
   if (options.playable === false) return null;
   const enemyHp = Math.max(0, safeBattleValue(options.enemyHp));
@@ -539,6 +611,36 @@ export function combatCardTacticalCue(cardPreview = {}, incomingPreview = {}, op
   const lethalBefore = Boolean(incomingPreview.lethal || currentTotalLoss >= playerHp);
 
   const mechanicState = options.mechanicState;
+  const examBlank = combatFinalExamBlankProjection(cardPreview, incomingPreview, mechanicState);
+  if (examBlank) {
+    const { attackTotalAfter, remainingBlock, perHitBefore, perHitAfter } = examBlank;
+    const attackLossAfterCard = unavoidableLoss >= hpAfterCard
+      ? 0
+      : Math.max(0, attackTotalAfter - currentBlock - block);
+    const totalLossAfterCard = unavoidableLoss + attackLossAfterCard;
+    const projectedLoss = selfDamage + totalLossAfterCard;
+    const lethalAfter = hpAfterCard <= 0 || totalLossAfterCard >= hpAfterCard;
+    const label = `破题成功 · 大题 ${perHitBefore}→${perHitAfter}`;
+    const detailPrefix = `此牌会击破剩余 ${remainingBlock} 点护甲，本次大题从 ${perHitBefore} 降至 ${perHitAfter}`;
+
+    if (lethalBefore && !lethalAfter) {
+      return {
+        tone: "rescue",
+        label: `${label} · 脱险`,
+        detail: `${detailPrefix}，解除致命，预计剩余 ${hpAfterCard - totalLossAfterCard} 生命`
+      };
+    }
+    if (projectedLoss === 0) {
+      return { tone: "guard", label: `${label} · 无伤`, detail: `${detailPrefix}，打出后无伤` };
+    }
+    return {
+      tone: lethalAfter ? "danger" : "counter",
+      label: lethalAfter ? `${label} · 仍致命` : `${label} · -${projectedLoss}生命`,
+      detail: lethalAfter
+        ? `${detailPrefix}，仍会致命，预计损失 ${projectedLoss} 生命`
+        : `${detailPrefix}，预计损失 ${projectedLoss} 生命`
+    };
+  }
   const rivalInterrupt = combatRivalInterruptProjection(cardPreview, incomingPreview, mechanicState);
   if (rivalInterrupt) {
     const { attackTotalAfter, cap, perHitBefore, perHitAfter } = rivalInterrupt;

@@ -84,28 +84,28 @@ test("卷王幻影公开十格打断进度并保留当前加速轮次", () => {
 test("期末考试按四步循环显示轮次、当前步骤与下一步", () => {
   assert.deepEqual(enemyMechanicProgress("finalExam", 0), {
     kind: "cycle",
-    title: "四步递增",
+    title: "四步破题",
     label: "第1轮 · 1/4",
     detail: "当前：发卷；下一步：选择题",
     segments: ["current", "upcoming", "upcoming", "upcoming"]
   });
   assert.deepEqual(enemyMechanicProgress("finalExam", 3), {
     kind: "cycle",
-    title: "四步递增",
+    title: "四步破题",
     label: "第1轮 · 4/4",
     detail: "当前：大题；下一步：发卷（第2轮）",
     segments: ["done", "done", "done", "current"]
   });
   assert.deepEqual(enemyMechanicProgress("finalExam", 4), {
     kind: "cycle",
-    title: "四步递增",
+    title: "四步破题",
     label: "第2轮 · 1/4",
     detail: "当前：发卷；下一步：选择题",
     segments: ["current", "upcoming", "upcoming", "upcoming"]
   });
   assert.deepEqual(enemyMechanicProgress("finalExam", 6), {
     kind: "cycle",
-    title: "四步递增",
+    title: "四步破题",
     label: "第2轮 · 3/4",
     detail: "当前：填空题；下一步：大题",
     segments: ["done", "done", "current", "upcoming"]

@@ -1668,7 +1668,8 @@ export class SemesterGame {
         hp: enemyMaxHp,
         block: (this.flags.nextEnemyBlock || 0) + (tarot?.enemyBlock || 0),
         intentTurn: 0,
-        interruptDamageThisTurn: 0
+        interruptDamageThisTurn: 0,
+        examBlankState: "closed"
       },
       energy: 0,
       maxEnergy: 0,
@@ -1723,10 +1724,12 @@ export class SemesterGame {
       ? Math.round((intent.attack + damageScale) * damageMultiplier) + affixDamage + tarotDamage + postScaleAttackBonus
       : undefined;
     const rivalInterrupt = this.rivalInterruptState(attackBeforeInterrupt);
+    const examBlank = this.finalExamBlankState(attackBeforeInterrupt);
+    const counterplay = rivalInterrupt || examBlank;
     return {
       ...intent,
-      attack: rivalInterrupt?.attackAfter ?? attackBeforeInterrupt,
-      mechanicState: rivalInterrupt || intent.mechanicState
+      attack: counterplay?.attackAfter ?? attackBeforeInterrupt,
+      mechanicState: counterplay || intent.mechanicState
     };
   }
 
@@ -1749,6 +1752,43 @@ export class SemesterGame {
       value,
       cap,
       sourceCount,
+      triggered,
+      attackReduction,
+      reduction,
+      attackBefore: normalizedAttack,
+      attackAfter: Math.max(0, normalizedAttack - reduction)
+    };
+  }
+
+  finalExamBlankState(attackBefore = 0) {
+    const combat = this.requireCombat();
+    if (combat.enemy.id !== "finalExam" || combat.enemy.intentTurn % 4 !== 3) return null;
+    const definition = ENEMY_DEFS.finalExam;
+    const cap = Math.max(1, nonNegativeInteger(definition.blankArmor, 8));
+    const state = ["open", "solved"].includes(combat.enemy.examBlankState)
+      ? combat.enemy.examBlankState
+      : "closed";
+    const windowOpen = state !== "closed";
+    const triggered = state === "solved";
+    const remainingBlock = windowOpen
+      ? Math.max(0, nonNegativeInteger(combat.enemy.block))
+      : cap;
+    const value = triggered
+      ? cap
+      : windowOpen
+      ? Math.max(0, cap - Math.min(cap, remainingBlock))
+      : 0;
+    const attackReduction = Math.max(0, nonNegativeInteger(definition.blankBreakAttackReduction, 6));
+    const normalizedAttack = Math.max(0, nonNegativeInteger(attackBefore));
+    const reduction = triggered ? attackReduction : 0;
+    return {
+      type: "examBlank",
+      label: "填空破题",
+      state,
+      windowOpen,
+      value,
+      cap,
+      remainingBlock,
       triggered,
       attackReduction,
       reduction,
@@ -2193,6 +2233,7 @@ export class SemesterGame {
 
   damageEnemy(perHit, hits) {
     const combat = this.requireCombat();
+    const enemyBlockBefore = combat.enemy.block;
     let dealt = 0;
     for (let index = 0; index < hits; index += 1) {
       const absorbed = Math.min(combat.enemy.block, perHit);
@@ -2212,6 +2253,16 @@ export class SemesterGame {
       if (before < cap && combat.enemy.interruptDamageThisTurn >= cap) {
         combat.log.push(`打断内卷：本次公开攻击降低 ${definition.interruptAttackReduction} 点。`);
       }
+    }
+    if (
+      combat.enemy.id === "finalExam"
+      && combat.enemy.examBlankState === "open"
+      && enemyBlockBefore > 0
+      && combat.enemy.block === 0
+      && combat.enemy.hp > 0
+    ) {
+      combat.enemy.examBlankState = "solved";
+      combat.log.push(`填空破题：本次大题伤害降低 ${ENEMY_DEFS.finalExam.blankBreakAttackReduction} 点。`);
     }
     return dealt;
   }
@@ -2293,6 +2344,9 @@ export class SemesterGame {
       result.block = { gained: intent.block };
       notes.push(`获得 ${intent.block} 护甲`);
     }
+    if (combat.enemy.id === "finalExam" && combat.enemy.intentTurn % 4 === 2) {
+      combat.enemy.examBlankState = "open";
+    }
     if (intent.debuff) {
       if (this.hasItem("earplugs") && !combat.earplugsUsed) {
         combat.earplugsUsed = true;
@@ -2312,6 +2366,9 @@ export class SemesterGame {
       if (intent.addStatus.zone === "draw") combat.drawPile = this.rng.shuffle(combat.drawPile);
       result.statusAdded = { id: intent.addStatus.id, count: intent.addStatus.count, zone: intent.addStatus.zone };
       notes.push(`加入 ${intent.addStatus.count} 张${CARD_DEFS[intent.addStatus.id].name}`);
+    }
+    if (combat.enemy.id === "finalExam" && combat.enemy.intentTurn % 4 === 3) {
+      combat.enemy.examBlankState = "closed";
     }
     combat.log.push(`${combat.enemy.name}·${intent.name}：${notes.join("，") || "观察了你一会儿"}。`);
     combat.enemy.intentTurn += 1;

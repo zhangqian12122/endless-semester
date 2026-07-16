@@ -718,10 +718,12 @@ export const ENEMY_DEFS = {
   finalExam: {
     id: "finalExam", name: "期末考试", maxHp: 90, kind: "boss",
     subtitle: "题目完全公开，但时间不会等你。",
-    mechanicName: "四步递增",
-    mechanicText: "每 4 次行动固定轮转发卷、选择题、填空题、大题；每完成一轮，下一次大题基础伤害加 2。",
-    pattern: "塞入 2 张紧张 → 攻击 8 → 攻击 10 并护甲 8 → 大题 16（每轮 +2）",
-    tip: "四回合为一轮。发卷回合整理手牌，大题前保存高额防御。",
+    mechanicName: "四步破题",
+    mechanicText: "每 4 次行动固定轮转；填空题留下 8 点护甲，下一回合击破全部护甲可使本次大题最终伤害 -6。大题仍会每轮 +2。",
+    pattern: "塞入 2 张紧张 → 攻击 8 → 攻击 10 并留下 8 甲 → 大题 16（破题 -6，每轮 +2）",
+    tip: "填空题后会出现破题窗口。先击破 8 点护甲削弱大题，再用剩余能量防守。",
+    blankArmor: 8,
+    blankBreakAttackReduction: 6,
     intentAt(turn) {
       const step = turn % 4;
       const cycle = Math.floor(turn / 4);
