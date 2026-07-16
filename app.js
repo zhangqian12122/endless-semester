@@ -600,6 +600,13 @@ function renderTarotChoice() {
 
 function renderMap() {
   const nodes = game.semesterPlan[game.week] || [];
+  const coreCombatChoiceWeeks = [4, 6, 11, 14, 15];
+  const isCoreCombatChoiceWeek = nodes.length === 2
+    && nodes.every((node) => node.type === "combat" && !node.challenge);
+  const routeUsesCoreCombatDensity = coreCombatChoiceWeeks.every((week) => (
+    game.semesterPlan[week]?.length === 2
+    && game.semesterPlan[week].every((node) => node.type === "combat" && !node.challenge)
+  ));
   const trial = ARCHETYPE_TRIAL_DEFS[game.archetypeId];
   const tarot = game.tarot;
   const calendarWeeks = semesterCalendarWeeks(game.semesterPlan, game.week);
@@ -620,7 +627,7 @@ function renderMap() {
   const body = `
     <div class="route-callout">
       <div><small>当前目标</small><strong>${game.week === 16 ? "通过期末考试" : `完成第 ${game.week} 周`}</strong></div>
-      <p>${game.week === 8 ? "期中精英战：拖得越久，伤害越高。" : game.week === 16 ? "一切意图都公开。用你的构筑交卷。" : "本学期路线已经确定；先看完整日历，再选择本周节点。"}</p>
+      <p>${game.week === 8 ? "期中精英战：拖得越久，伤害越高。" : game.week === 16 ? "一切意图都公开。用你的构筑交卷。" : isCoreCombatChoiceWeek ? "核心战斗周：从两名不同敌人中选择一名，胜利后继续学期。" : "本学期路线已经确定；先看完整日历，再选择本周节点。"}</p>
     </div>
     <div class="constellation-banner"><span>${game.archetype.sign}</span><p><b>${game.archetype.name}</b>${game.archetype.text}</p><small>每周开始自动存档</small></div>
     ${tarot ? `<div class="tarot-banner"><span>${tarot.number}</span><p><b>塔罗·${tarot.name}</b><em>收益：${tarot.boon}</em><i>代价：${tarot.cost}</i></p><small>本学期固定</small></div>` : ""}
@@ -664,7 +671,7 @@ function renderMap() {
           <b>进入 →</b>
         </button>`).join("")}
     </div>
-    <div class="map-tip"><b>路线规则：</b>每学期期中前后各有一次可绕开的挑战战；星座试炼只是额外目标，失败不会影响挑战胜利和基础奖励。</div>`;
+    <div class="map-tip"><b>路线规则：</b>${routeUsesCoreCombatDensity ? "每学期至少经历 9 场战斗；核心战斗周从两名普通敌人中任选其一。" : "当前沿用旧存档路线；下一学期起启用五个核心战斗周。"}期中前后各有一次可绕开的挑战战，星座试炼失败不影响基础奖励。</div>`;
   return page(`第 ${game.week} 周`, `第 ${game.semester} 学期 · 16 周路线`, body, {
     description: game.week < 8 ? "路线在学期开始时生成并保存，可以提前规划构筑与补给。" : "越接近期末，卡组的缺点越难隐藏。",
     className: "map-page"

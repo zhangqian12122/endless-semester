@@ -81,6 +81,7 @@ const STARTING_DECK_CORE = [
 ];
 
 const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
+const COMBAT_CHOICE_WEEKS = new Set([4, 6, 11, 14, 15]);
 
 const EVENT_CARD_REWARD_SOURCES = Object.freeze({
   "quiz-card": "uncommon",
@@ -338,12 +339,16 @@ function normalizeSemesterPlan(data) {
     if (!Array.isArray(rawNodes) || rawNodes.length !== expectedCount) return null;
     const types = new Set();
     for (const raw of rawNodes) {
-      if (!raw || !["combat", "event", "rest", "shop"].includes(raw.type) || types.has(raw.type)) return null;
+      const repeatsAllowedCombat = raw?.type === "combat" && COMBAT_CHOICE_WEEKS.has(week);
+      if (!raw || !["combat", "event", "rest", "shop"].includes(raw.type)
+        || (types.has(raw.type) && !repeatsAllowedCombat)) return null;
       types.add(raw.type);
       if (raw.type === "combat") {
         if (!ENEMY_DEFS[raw.enemy]) return null;
         if (!FIXED_ROUTE_WEEKS.has(week) && ENEMY_DEFS[raw.enemy].kind !== "normal") return null;
         if (raw.challenge === true && FIXED_ROUTE_WEEKS.has(week)) return null;
+        if (COMBAT_CHOICE_WEEKS.has(week) && raw.challenge === true) return null;
+        if (plan[week].some((node) => node.type === "combat" && node.enemy === raw.enemy)) return null;
         plan[week].push(makeRouteNode("combat", week, {
           enemy: raw.enemy,
           challenge: raw.challenge === true,
@@ -893,11 +898,17 @@ export class SemesterGame {
       lastRouteCombatEnemy = enemy;
       return enemy;
     };
+    const pairedRouteEnemy = (week, enemyId) => {
+      const pool = normalRouteEnemyPool(this.semester, week);
+      const currentIndex = pool.indexOf(enemyId);
+      return pool[(currentIndex + 1 + pool.length) % pool.length] || enemyId;
+    };
     const challengeWeeks = [this.rng.pick([5, 7]), this.rng.pick([10, 12, 13])];
     const challengeAffixes = this.rng.shuffle(CHALLENGE_AFFIX_IDS).slice(0, challengeWeeks.length);
     const challengeAffixByWeek = new Map(challengeWeeks.map((week, index) => [week, challengeAffixes[index]]));
     for (const week of Object.keys(anchors).map(Number)) {
       const anchor = anchors[week];
+      const previousRouteCombatEnemy = lastRouteCombatEnemy;
       const anchorNode = makeRouteNode(anchor.type, week, {
         enemy: anchor.type === "combat" ? pickRouteEnemy("route", week) : undefined,
         pool: anchor.pool
@@ -907,18 +918,29 @@ export class SemesterGame {
         .filter((type) => type !== "rest" || restOptions < 4)
         .filter((type) => type !== "shop" || shopOptions < 3);
       if (!candidates.length) candidates = ["combat", "event"].filter((type) => type !== anchor.type);
-      const alternateType = challengeAffixByWeek.has(week) ? "combat" : this.rng.pick(candidates);
-      if (alternateType === "rest") restOptions += 1;
-      if (alternateType === "shop") shopOptions += 1;
+      // Keep the candidate roll and supply caps comparable when a core combat week replaces this sampled node.
+      const sampledAlternateType = challengeAffixByWeek.has(week)
+        ? "combat"
+        : this.rng.pick(candidates);
+      if (sampledAlternateType === "rest") restOptions += 1;
+      if (sampledAlternateType === "shop") shopOptions += 1;
+      const alternateType = COMBAT_CHOICE_WEEKS.has(week) ? "combat" : sampledAlternateType;
       const alternateNode = makeRouteNode(alternateType, week, {
         enemy: alternateType === "combat"
-          ? pickRouteEnemy(challengeAffixByWeek.has(week) ? "challenge" : "route", week)
+          ? COMBAT_CHOICE_WEEKS.has(week)
+            ? pairedRouteEnemy(week, anchorNode.enemy)
+            : pickRouteEnemy(challengeAffixByWeek.has(week) ? "challenge" : "route", week)
           : undefined,
         pool: week <= 3 ? "safe" : "all",
         challenge: challengeAffixByWeek.has(week),
         affix: challengeAffixByWeek.get(week)
       });
       plan[week] = this.rng.shuffle([anchorNode, alternateNode]);
+      if (COMBAT_CHOICE_WEEKS.has(week) && plan[week][0].enemy === previousRouteCombatEnemy) {
+        plan[week].reverse();
+      }
+      const lastVisibleCombat = plan[week].slice().reverse().find((node) => node.type === "combat");
+      if (lastVisibleCombat) lastRouteCombatEnemy = lastVisibleCombat.enemy;
     }
     return plan;
   }
