@@ -111,10 +111,10 @@ test("两张运行场景图是尺寸与体积合理的有效 WebP", () => {
   }
 });
 
-test("场景系统的样式与脚本使用同一 1.8.44 缓存版本", () => {
+test("场景系统的样式与脚本使用同一 1.8.45 缓存版本", () => {
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];
 
-  assert.equal(styleVersion, "1.8.44");
+  assert.equal(styleVersion, "1.8.45");
   assert.equal(appVersion, styleVersion);
 });

@@ -619,7 +619,7 @@ export const CHALLENGE_SIGNATURE_ITEM_DROPS = Object.freeze({
 
 export const ENEMY_DEFS = {
   sleepyBug: {
-    id: "sleepyBug", name: "瞌睡虫", maxHp: 20, kind: "normal",
+    id: "sleepyBug", name: "瞌睡虫", maxHp: 20, kind: "normal", routeThreat: 1,
     subtitle: "一边犯困，一边缓慢挥爪。",
     mechanicName: "张弛节拍",
     mechanicText: "两次攻击之间会蜷起防御，惊醒时再打出更高伤害。",
@@ -632,7 +632,7 @@ export const ENEMY_DEFS = {
     ]
   },
   homeworkBlob: {
-    id: "homeworkBlob", name: "作业团", maxHp: 24, kind: "normal",
+    id: "homeworkBlob", name: "作业团", maxHp: 24, kind: "normal", routeThreat: 2,
     subtitle: "越拖越多，但完成一点也有回报。",
     mechanicName: "待办污染",
     mechanicText: "低伤拍击会把待办塞进弃牌堆，拖延会持续降低抽牌质量。",
@@ -645,7 +645,7 @@ export const ENEMY_DEFS = {
     ]
   },
   alarmClock: {
-    id: "alarmClock", name: "闹钟怪", maxHp: 28, kind: "normal",
+    id: "alarmClock", name: "闹钟怪", maxHp: 28, kind: "normal", routeThreat: 4,
     subtitle: "你清楚知道它什么时候会响。",
     mechanicName: "公开倒计时",
     mechanicText: "先蓄响防御，再连续攻击并在第三次行动打出重击爆发。",
@@ -658,7 +658,7 @@ export const ENEMY_DEFS = {
     ]
   },
   phoneSpirit: {
-    id: "phoneSpirit", name: "手机精", maxHp: 22, kind: "normal",
+    id: "phoneSpirit", name: "手机精", maxHp: 22, kind: "normal", routeThreat: 3,
     subtitle: "只看一眼，注意力就被吸走。",
     mechanicName: "分心护屏",
     mechanicText: "发动带走神的推送行动时同步获得护甲 4 或 3，逼你错开爆发回合。",
@@ -671,7 +671,7 @@ export const ENEMY_DEFS = {
     ]
   },
   groupChat: {
-    id: "groupChat", name: "群聊99+", maxHp: 26, kind: "normal",
+    id: "groupChat", name: "群聊99+", maxHp: 26, kind: "normal", routeThreat: 5,
     subtitle: "你不回复，它也会自己越聊越多。",
     mechanicName: "未读压力",
     mechanicText: "战斗区每有 1 张紧张，消息轰炸就多攻击 1 段，最多额外 2 段；清理紧张会立刻降压。",
@@ -687,7 +687,7 @@ export const ENEMY_DEFS = {
     ]
   },
   printerJam: {
-    id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal",
+    id: "printerJam", name: "卡纸打印机", maxHp: 32, kind: "normal", routeThreat: 6,
     subtitle: "越着急，它越能吐出一叠没用的纸。",
     mechanicName: "卡纸蓄压",
     mechanicText: "剩余护甲会转为等量重击伤害，最多加 6；6 点以上的护甲不会继续增伤，压到 5 点或更少才会逐点降伤。",

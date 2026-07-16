@@ -18,7 +18,7 @@ import {
   SAFE_EVENT_IDS,
   SHOP_SCENE
 } from "./game-data.js";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
@@ -618,6 +618,12 @@ function renderMap() {
   const challengeHpPercent = Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100);
   const challengeDamagePercent = Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100);
   const nodeTypeName = (node) => node.challenge ? "挑战" : ({ combat: "战斗", event: "未知", rest: "休息", shop: "商店" }[node.type]);
+  const normalRouteDetailHtml = (node) => {
+    if (node.type !== "combat" || node.challenge || !Number.isInteger(node.routeThreat) || node.routeThreat <= 0) return "";
+    const bonusGold = node.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD ? HIGH_THREAT_ROUTE_BONUS_GOLD : 0;
+    const totalGold = NORMAL_COMBAT_REWARD_GOLD + bonusGold;
+    return `<em class="normal-route-detail"><span>${escapeHtml(ENEMY_DEFS[node.enemy].mechanicName)} · 威胁 ${node.routeThreat}</span><span>${bonusGold ? `<i class="route-threat-chip">高压加练 +${bonusGold} 币</i>` : "常规路线"} · 胜利共 ${totalGold} 币</span></em>`;
+  };
   const currentWeekSymbols = calendarWeeks[game.week - 1]?.nodes
     .map((node) => (CALENDAR_EVENT_META[node.type] || CALENDAR_EVENT_META.unknown).icon)
     .join(" ") || "·";
@@ -665,9 +671,9 @@ function renderMap() {
       </div>` : ""}
     <div class="node-grid">
       ${nodes.map((node, index) => `
-        <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
+        <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""} ${node.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD ? "node-high-threat" : ""}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br><i class="challenge-trial-chip">${trial.icon} ${trial.name}</i>${trial.text} 完成额外 +${trial.bonusGold} 币。<br>胜利：专属牌 / 宠物 / 物品三选一${challengeRewardSourceHintHtml(node.enemy)}</em>` : ""}</span>
+          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br><i class="challenge-trial-chip">${trial.icon} ${trial.name}</i>${trial.text} 完成额外 +${trial.bonusGold} 币。<br>胜利：专属牌 / 宠物 / 物品三选一${challengeRewardSourceHintHtml(node.enemy)}</em>` : normalRouteDetailHtml(node)}</span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
@@ -1882,6 +1888,7 @@ function renderCombatResult(combat) {
         <span><b>${summary.damageDealt}</b>伤害</span>
         <span><b>${summary.hpLost}</b>掉血</span>
       </div>
+      ${combat.status === "won" && summary.routeBonusGold ? `<div class="route-threat-payout"><b>高压加练完成</b><span>基础 ${NORMAL_COMBAT_REWARD_GOLD} + 加练 ${summary.routeBonusGold} · 共 ${NORMAL_COMBAT_REWARD_GOLD + summary.routeBonusGold} 校园币已到账</span></div>` : ""}
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
       ${combatSummaryProgressHtml(combat)}
@@ -2061,6 +2068,7 @@ function renderCombat() {
   const energy = combatEnergyState(combat);
   const visibleCombatLog = visibleCombatLogEntries(combat.log);
   const body = `
+    ${combat.routeBonusGold ? `<div class="route-threat-contract"><b>高压加练 · 威胁 ${combat.routeThreat}</b><span>你主动选择了本周更危险的对手</span><em>胜利额外 +${combat.routeBonusGold} 币 · 共 ${NORMAL_COMBAT_REWARD_GOLD + combat.routeBonusGold} 币</em></div>` : ""}
     ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeSourceHint ? `<i class="challenge-source-hint">${escapeHtml(challengeSourceHint)}</i> · ` : ""}${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
     ${challengeTrial ? `<div class="challenge-trial-progress state-${challengeTrial.state}"><b>${challengeTrial.icon} 星座试炼 · ${challengeTrial.name}</b><span>${challengeTrial.text}</span><em>${challengeTrial.progress}</em><i>${challengeTrial.state === "achieved" ? "已达成，赢下战斗即可结算" : challengeTrial.state === "failed" ? "本场已经错过，不影响挑战胜负" : `完成额外 +${challengeTrial.bonusGold} 币`}</i></div>` : ""}
     ${combatRelicRowHtml()}
@@ -3295,6 +3303,10 @@ function resumeNormalCombatReward() {
   showCardReward({
     choices: pending.choices,
     title: "战斗奖励",
+    eyebrow: pending.bonusGold ? "高压加练奖励" : "战斗奖励",
+    message: pending.bonusGold
+      ? `${pending.gold} 校园币已到账（基础 ${NORMAL_COMBAT_REWARD_GOLD} + 高压加练 ${pending.bonusGold}）。再选一张加入构筑，也可以跳过。`
+      : `${pending.gold || NORMAL_COMBAT_REWARD_GOLD} 校园币已到账。选一张加入构筑，也可以跳过。`,
     onDone() {
       game.completePendingCombatReward();
       advanceWeek();

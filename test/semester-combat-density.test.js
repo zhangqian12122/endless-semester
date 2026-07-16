@@ -23,6 +23,8 @@ function legacySingleCombatPlan(seed = 9101) {
       pool: "all",
       label: "？ 未知事件"
     };
+    delete plan[week][0].routeThreat;
+    delete plan[week][0].bonusGold;
   }
   return plan;
 }

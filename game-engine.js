@@ -101,6 +101,9 @@ export const CHALLENGE_RULES = Object.freeze({
 
 export const ITEM_REWARD_FALLBACK_GOLD = Object.freeze({ elite: 50, event: 70, boss: 100 });
 
+export const NORMAL_COMBAT_REWARD_GOLD = 15;
+export const HIGH_THREAT_ROUTE_BONUS_GOLD = 10;
+
 export const CHALLENGE_REWARD_DEFS = Object.freeze({
   cards: {
     id: "cards",
@@ -293,6 +296,24 @@ function makeRouteNode(type, week, options = {}) {
   return { type: "shop", label: "校园商店" };
 }
 
+function applyCoreCombatRouteRewards(plan) {
+  for (const week of COMBAT_CHOICE_WEEKS) {
+    const nodes = plan[week];
+    if (!Array.isArray(nodes) || nodes.length !== 2
+      || nodes.some((node) => node.type !== "combat" || node.challenge || ENEMY_DEFS[node.enemy]?.kind !== "normal")) continue;
+    for (const node of nodes) {
+      const routeThreat = ENEMY_DEFS[node.enemy]?.routeThreat;
+      node.routeThreat = Number.isInteger(routeThreat) && routeThreat > 0 ? routeThreat : 0;
+      node.bonusGold = 0;
+    }
+    const [left, right] = nodes;
+    if (left.routeThreat === right.routeThreat) continue;
+    const riskier = left.routeThreat > right.routeThreat ? left : right;
+    riskier.bonusGold = HIGH_THREAT_ROUTE_BONUS_GOLD;
+  }
+  return plan;
+}
+
 function ensureChallengeNodes(plan) {
   const phases = [
     { weeks: [3, 4, 5, 6, 7], priority: [5, 7, 4, 6, 3] },
@@ -366,7 +387,8 @@ function normalizeSemesterPlan(data) {
   if (plan[1][0]?.enemy !== "sleepyBug" || plan[2][0]?.enemy !== "homeworkBlob"
     || plan[8][0]?.enemy !== "rivalShadow" || plan[16][0]?.enemy !== "finalExam") return null;
   if (restOptions < 2 || shopOptions < 2) return null;
-  return ensureChallengeNodes(plan);
+  const normalized = ensureChallengeNodes(plan);
+  return normalized ? applyCoreCombatRouteRewards(normalized) : null;
 }
 
 function startingDeckFor(archetypeId) {
@@ -967,7 +989,25 @@ export class SemesterGame {
       const lastVisibleCombat = plan[week].slice().reverse().find((node) => node.type === "combat");
       if (lastVisibleCombat) lastRouteCombatEnemy = lastVisibleCombat.enemy;
     }
-    return plan;
+    return applyCoreCombatRouteRewards(plan);
+  }
+
+  normalCombatRouteReward(enemyId = this.combat?.enemy?.id) {
+    const node = this.semesterPlan[this.week]?.find((candidate) => (
+      candidate.type === "combat" && !candidate.challenge && candidate.enemy === enemyId
+    ));
+    const routeThreat = Number.isInteger(node?.routeThreat) && node.routeThreat > 0
+      ? node.routeThreat
+      : 0;
+    const bonusGold = node?.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD
+      ? HIGH_THREAT_ROUTE_BONUS_GOLD
+      : 0;
+    return {
+      routeThreat,
+      baseGold: NORMAL_COMBAT_REWARD_GOLD,
+      bonusGold,
+      totalGold: NORMAL_COMBAT_REWARD_GOLD + bonusGold
+    };
   }
 
   availableItemIds({ rarity, allowBoss = false, ids = null } = {}) {
@@ -1142,8 +1182,14 @@ export class SemesterGame {
       };
     }
     if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || this.week >= 16) return null;
-    this.gold += 15;
-    this.pendingCombatReward = { type: "normalCard", choices: this.rewardCards(3) };
+    const routeReward = this.normalCombatRouteReward();
+    this.gold += routeReward.totalGold;
+    this.pendingCombatReward = {
+      type: "normalCard",
+      choices: this.rewardCards(3),
+      gold: routeReward.totalGold,
+      bonusGold: routeReward.bonusGold
+    };
     return { ...this.pendingCombatReward, choices: [...this.pendingCombatReward.choices], started: true };
   }
 
@@ -1497,7 +1543,18 @@ export class SemesterGame {
       if (expectedOutcome !== outcome || (outcome === "challenge" && node.affix !== canonicalModifiers.affix)) return null;
     }
 
-    this.pendingCombatStart = { enemyId, outcome, modifiers: canonicalModifiers };
+    const routeReward = outcome === "normal"
+      ? this.normalCombatRouteReward(enemyId)
+      : null;
+    this.pendingCombatStart = {
+      enemyId,
+      outcome,
+      modifiers: canonicalModifiers,
+      ...(routeReward?.routeThreat ? {
+        routeThreat: routeReward.routeThreat,
+        bonusGold: routeReward.bonusGold
+      } : {})
+    };
     return this.copyPendingCombatStart(true);
   }
 
@@ -1714,10 +1771,13 @@ export class SemesterGame {
     this.flags.nextCombatTension = 0;
     if (combatModifiers.challenge) this.stats.trialsAttempted += 1;
 
+    const routeReward = this.normalCombatRouteReward(enemyId);
     this.combat = {
       status: "active",
       result: null,
       modifiers: combatModifiers,
+      routeThreat: routeReward.routeThreat,
+      routeBonusGold: routeReward.bonusGold,
       turn: 0,
       tutorialOpening,
       startingHp: this.hp,
@@ -1763,6 +1823,7 @@ export class SemesterGame {
       usedCardUids: new Set(),
       log: [
         `遭遇 ${definition.name}。它的行动会完全公开。`,
+        ...(routeReward.bonusGold ? [`高压加练：胜利额外获得 ${routeReward.bonusGold} 校园币。`] : []),
         ...(tarot ? [`塔罗契约·${tarot.name}：${tarot.boon} 代价：${tarot.cost}`] : []),
         ...(combatModifiers.affix ? [`挑战词缀·${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].name}：${CHALLENGE_AFFIX_DEFS[combatModifiers.affix].text}`] : []),
         ...(tutorialOpening ? ["新生首手保底：前 3 张依次为攻击、防御与主角特性牌。"] : [])
@@ -2534,6 +2595,8 @@ export class SemesterGame {
       challengeAffix: combat.modifiers.affix || null,
       challengeTrial: this.challengeTrialStatus(),
       challengeTrialBonus: combat.trialBonusGold,
+      routeThreat: combat.routeThreat || 0,
+      routeBonusGold: combat.routeBonusGold || 0,
       result: combat.result,
       turns: combat.turn,
       cardsPlayed: combat.cardsPlayed,
@@ -2742,7 +2805,13 @@ export class SemesterGame {
       .filter((id) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(id));
     if (!game.awaitingNextSemester && !game.pendingSemesterReward && game.week < 16) {
       if (savedCombatReward?.type === "normalCard" && savedCombatChoices.length) {
-        game.pendingCombatReward = { type: "normalCard", choices: savedCombatChoices };
+        const savedBonusGold = savedCombatReward.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD
+          ? HIGH_THREAT_ROUTE_BONUS_GOLD
+          : 0;
+        const breakdownIsValid = savedCombatReward.gold === NORMAL_COMBAT_REWARD_GOLD + savedBonusGold;
+        const bonusGold = breakdownIsValid ? savedBonusGold : 0;
+        const gold = NORMAL_COMBAT_REWARD_GOLD + bonusGold;
+        game.pendingCombatReward = { type: "normalCard", choices: savedCombatChoices, gold, bonusGold };
       } else if (game.week === 8 && savedCombatReward?.type === "eliteChain"
         && ["card", "item", "enchant"].includes(savedCombatReward.stage)) {
         const itemChoices = Array.isArray(savedCombatReward.itemChoices)
