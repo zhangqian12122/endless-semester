@@ -610,6 +610,22 @@ test("战场意图移除黑色大底，回合规则回到新生教学", () => {
   assert.match(appSource, /visibleCombatLog\.reverse\(\)/);
 });
 
+test("新生教学使用真正模态弹层并在完成后交回战斗焦点", () => {
+  const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
+
+  assert.match(appSource, /class="tutorial-card" id="tutorial-dialog" role="dialog" aria-modal="true"/);
+  assert.match(appSource, /aria-labelledby="tutorial-progress tutorial-title" aria-describedby="tutorial-description"/);
+  assert.match(appSource, /id="tutorial-progress">新生教学 \$\{step\.number\}\/03/);
+  assert.match(appSource, /id="tutorial-title">\$\{step\.title\}<\/h2><p id="tutorial-description">\$\{step\.text\}/);
+  assert.match(appSource, /data-action="tutorial-next" autofocus/);
+  assert.match(appSource, /const focusTarget = dialog\.querySelector\("\[autofocus\]"\)[\s\S]*?\|\| dialog\.querySelector\("button:not\(:disabled\)"\);[\s\S]*?focusTarget\?\.focus\(\);/);
+  assert.match(appSource, /function completeTutorial\(\) \{[\s\S]*?game\.tutorialSeen = true;[\s\S]*?saveGame\(\);[\s\S]*?render\(\);[\s\S]*?toggle-intent-details[\s\S]*?\.focus\(\);/);
+  assert.match(appSource, /action === "tutorial-next"[\s\S]*?completeTutorial\(\)[\s\S]*?tutorialStep \+= 1;[\s\S]*?render\(\);/);
+  assert.match(appSource, /action === "skip-tutorial"[\s\S]*?completeTutorial\(\)/);
+  assert.match(appSource, /function activeDialog\(\) \{[\s\S]*?\[role="dialog"\]\[aria-modal="true"\]/);
+  assert.match(appSource, /if \(dialog && event\.key === "Tab"\) \{[\s\S]*?trapDialogFocus\(event, dialog\)/);
+});
+
 test("牌堆弹层保持卡牌正常亮度且不泄露抽牌顺序", () => {
   const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");

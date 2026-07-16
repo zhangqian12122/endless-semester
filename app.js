@@ -1724,11 +1724,19 @@ function renderTutorial() {
   ];
   const step = steps[tutorialStep];
   return `<div class="tutorial-overlay">
-    <div class="tutorial-card">
-      <small>新生教学 ${step.number}/03</small><h2>${step.title}</h2><p>${step.text}</p>
-      <div><button class="quiet-button" data-action="skip-tutorial">跳过教学</button><button class="primary" data-action="tutorial-next">${tutorialStep === steps.length - 1 ? "明白，开始战斗" : "下一条"}</button></div>
-    </div>
+    <section class="tutorial-card" id="tutorial-dialog" role="dialog" aria-modal="true" aria-labelledby="tutorial-progress tutorial-title" aria-describedby="tutorial-description">
+      <small id="tutorial-progress">新生教学 ${step.number}/03</small><h2 id="tutorial-title">${step.title}</h2><p id="tutorial-description">${step.text}</p>
+      <div><button class="quiet-button" data-action="skip-tutorial">跳过教学</button><button class="primary" data-action="tutorial-next" autofocus>${tutorialStep === steps.length - 1 ? "明白，开始战斗" : "下一条"}</button></div>
+    </section>
   </div>`;
+}
+
+function completeTutorial() {
+  tutorialStep = -1;
+  game.tutorialSeen = true;
+  saveGame();
+  render();
+  app.querySelector('[data-action="toggle-intent-details"]')?.focus();
 }
 
 function availableChallengeItems() {
@@ -2383,7 +2391,9 @@ function closeSemesterCalendar() {
 function focusActiveDialog() {
   const dialog = activeDialog();
   if (!dialog || dialog.contains(document.activeElement)) return;
-  dialog.querySelector("[autofocus], button:not(:disabled)")?.focus();
+  const focusTarget = dialog.querySelector("[autofocus]")
+    || dialog.querySelector("button:not(:disabled)");
+  focusTarget?.focus();
 }
 
 function trapDialogFocus(event, dialog) {
@@ -3277,16 +3287,13 @@ app.addEventListener("click", (event) => {
     changeScreen(target.screen, target.context);
   } else if (action === "tutorial-next") {
     if (tutorialStep >= 2) {
-      tutorialStep = -1;
-      game.tutorialSeen = true;
+      completeTutorial();
     } else {
       tutorialStep += 1;
+      render();
     }
-    render();
   } else if (action === "skip-tutorial") {
-    tutorialStep = -1;
-    game.tutorialSeen = true;
-    render();
+    completeTutorial();
   } else if (action === "select-deck-card") {
     const card = game.deck.find((candidate) => candidate.uid === button.dataset.uid);
     if (card && context.onSelect) context.onSelect(card);
