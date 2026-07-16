@@ -1566,7 +1566,28 @@ export class SemesterGame {
   }
 
   eligibleSummaryCards() {
-    return this.deck.filter((card) => !card.upgraded && (this.cardCombatUses[card.uid] || 0) >= 3);
+    return this.deck.filter((card) => this.summaryCardProgress(card.uid).upgradeable);
+  }
+
+  summaryCardProgress(uid) {
+    const target = 3;
+    const card = this.deck.find((candidate) => candidate.uid === uid);
+    const current = card
+      ? Math.min(target, nonNegativeInteger(this.cardCombatUses[uid]))
+      : 0;
+    const eligible = Boolean(card && current >= target);
+    const upgradeable = Boolean(
+      eligible
+      && !card.upgraded
+      && CARD_DEFS[card.id]?.type !== "status"
+    );
+    return {
+      current,
+      target,
+      remaining: Math.max(0, target - current),
+      eligible,
+      upgradeable
+    };
   }
 
   startCombat(enemyId, modifiers = {}) {
@@ -2413,6 +2434,7 @@ export class SemesterGame {
     this.lastEventId = null;
     this.pendingEventId = null;
     this.completedNodes.clear();
+    this.cardCombatUses = {};
     this.flags.eraserUsed = false;
     this.flags.tarotRestUsed = false;
     this.backpackCapacity = Math.min(12, this.backpackCapacity + 1);
@@ -2477,6 +2499,7 @@ export class SemesterGame {
       activePetId: this.activePetId,
       incubator: this.incubator ? { ...this.incubator } : null,
       cardCombatUses: { ...this.cardCombatUses },
+      cardCombatUsesSemester: this.semester,
       flags: { ...this.flags },
       rewardIndex: this.rewardIndex,
       tutorialSeen: this.tutorialSeen,
@@ -2946,14 +2969,22 @@ export class SemesterGame {
     const savedUseEntries = data.cardCombatUses && typeof data.cardCombatUses === "object"
       ? Object.entries(data.cardCombatUses)
       : [];
-    game.cardCombatUses = data.cardCombatUses && typeof data.cardCombatUses === "object"
+    const hasUseSemesterMarker = Object.hasOwn(data, "cardCombatUsesSemester");
+    const useSemesterMatches = Number.isSafeInteger(data.cardCombatUsesSemester)
+      && data.cardCombatUsesSemester === game.semester;
+    const canRestoreUseProgress = useSemesterMatches
+      || (!hasUseSemesterMarker && game.semester === 1);
+    const sanitizedUseProgress = data.cardCombatUses && typeof data.cardCombatUses === "object"
       ? Object.fromEntries(
         savedUseEntries
           .filter(([uid]) => deckUids.has(uid))
           .map(([uid, count]) => [uid, nonNegativeInteger(count)])
       )
       : {};
-    if (savedUseEntries.length !== Object.keys(game.cardCombatUses).length
+    game.cardCombatUses = canRestoreUseProgress ? sanitizedUseProgress : {};
+    if (!canRestoreUseProgress) {
+      loadRepairs.push("重置异常或跨学期主力进度");
+    } else if (savedUseEntries.length !== Object.keys(game.cardCombatUses).length
       || savedUseEntries.some(([uid, count]) => deckUids.has(uid) && count !== nonNegativeInteger(count))) {
       loadRepairs.push("清理异常卡牌使用记录");
     }

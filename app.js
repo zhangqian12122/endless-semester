@@ -344,6 +344,7 @@ function cardHtml(card, options = {}) {
   const cost = definition.cost === null ? "—" : definition.cost;
   const fit = options.fit;
   const tacticalCue = options.tacticalCue;
+  const summaryProgress = options.summaryProgress?.current > 0 ? options.summaryProgress : null;
   const typeLabel = definition.type === "attack" ? "攻击" : definition.type === "status" ? "状态" : "技能";
   const extraClass = options.className ? ` ${escapeHtml(options.className)}` : "";
   const tacticalClass = tacticalCue ? ` tactical-${escapeHtml(tacticalCue.tone)}` : "";
@@ -360,12 +361,48 @@ function cardHtml(card, options = {}) {
       ${definition.enchantment ? `<span class="card-enchantment" title="${definition.enchantment.text}">${definition.enchantment.sign}</span>` : ""}
       <span class="card-name"><strong>${definition.displayName}</strong></span>
       ${cardArtHtml(instance, definition)}
-      <span class="card-type-banner"><i aria-hidden="true"></i><b>${owner ? `${owner.sign} · ` : ""}${typeLabel}</b><i aria-hidden="true"></i></span>
+      <span class="card-type-banner"><i aria-hidden="true"></i><b>${owner ? `${owner.sign} · ` : ""}${typeLabel}${summaryProgress ? `<span class="card-summary-dots" title="本学期主力进度 ${summaryProgress.current}/${summaryProgress.target}" aria-label="本学期主力进度 ${summaryProgress.current}/${summaryProgress.target}">${Array.from({ length: summaryProgress.target }, (_, index) => `<i class="${index < summaryProgress.current ? "filled" : ""}" aria-hidden="true"></i>`).join("")}</span>` : ""}</b><i aria-hidden="true"></i></span>
       ${tacticalCue ? `<span class="card-tactical-cue cue-${escapeHtml(tacticalCue.tone)}" title="${escapeHtml(tacticalCue.detail)}" aria-hidden="true"><b>${escapeHtml(tacticalCue.label)}</b></span><span class="sr-only card-tactical-description">${escapeHtml(tacticalCue.detail)}</span>` : ""}
       <span class="card-text">${definition.displayText}</span>
       ${combatCardPreviewHtml(options.combatPreview)}
       ${fit ? `<span class="card-fit fit-${fit.id}"><b>${fit.label}</b><em>${fit.reason}</em></span>` : ""}
     </button>`;
+}
+
+function summaryProgressCard(card) {
+  const definition = CARD_DEFS[card?.id];
+  if (!card || card.upgraded || !definition || definition.type === "status") return null;
+  return {
+    card,
+    name: definition.name,
+    ...game.summaryCardProgress(card.uid)
+  };
+}
+
+function summaryProgressPipsHtml(progress) {
+  return `<i class="summary-progress-pips" aria-hidden="true">${Array.from({ length: progress.target }, (_, index) => `<b class="${index < progress.current ? "filled" : ""}"></b>`).join("")}</i>`;
+}
+
+function summaryProgressBadgeHtml(card) {
+  const progress = summaryProgressCard(card);
+  if (!progress) return "";
+  const settled = game.awaitingNextSemester;
+  const state = settled ? "settled" : progress.upgradeable ? "ready" : progress.current > 0 ? "active" : "idle";
+  const detail = settled
+    ? "本学期已结算；进入下一学期后从 0/3 重新累计"
+    : progress.upgradeable
+    ? "已达到期末主力升级条件"
+    : progress.current > 0
+    ? `本学期再在 ${progress.remaining} 场胜利中使用即可达标`
+    : "在一场胜利中使用后开始累计";
+  return `<div class="summary-card-progress ${state}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${progress.name}，主力进度 ${progress.current}/${progress.target}。${detail}`)}">
+    <span>${settled ? "已结算" : "主力"} <b>${progress.current}/${progress.target}</b></span>
+    ${summaryProgressPipsHtml(progress)}
+  </div>`;
+}
+
+function deckCardHtml(card) {
+  return `<div class="deck-card-slot">${cardHtml(card, { playable: false })}${summaryProgressBadgeHtml(card)}</div>`;
 }
 
 const ITEM_ICON_FALLBACK = Object.freeze({
@@ -1653,17 +1690,41 @@ function petIncubationRecapHtml(combat) {
   </div>`;
 }
 
+function combatSummaryProgressHtml(combat) {
+  if (combat.status !== "won") return "";
+  const usedCardUids = combat.usedCardUids instanceof Set
+    ? combat.usedCardUids
+    : new Set(Array.isArray(combat.usedCardUids) ? combat.usedCardUids : []);
+  const entries = game.deck
+    .filter((card) => usedCardUids.has(card.uid))
+    .map(summaryProgressCard)
+    .filter(Boolean)
+    .sort((left, right) => Number(right.upgradeable) - Number(left.upgradeable)
+      || right.current - left.current
+      || left.name.localeCompare(right.name, "zh-CN"));
+  if (!entries.length) return "";
+  const visible = entries.slice(0, 4);
+  const hiddenCount = entries.length - visible.length;
+  return `<section class="summary-progress-recap" aria-label="本场主力牌进度">
+    <div><small>本场主力进度</small><p>每张卡组副本独立累计，同一副本每场胜利最多记 1 次；本学期累计 3 场后可参加期末升级。</p></div>
+    <div class="summary-progress-recap-list">
+      ${visible.map((progress) => `<span class="${progress.upgradeable ? "ready" : ""}"><b>${escapeHtml(progress.name)}</b><em>${progress.current}/${progress.target}</em><i>${progress.upgradeable ? "已达标" : `还差 ${progress.remaining} 场`}</i></span>`).join("")}
+      ${hiddenCount > 0 ? `<span class="more"><b>另有 ${hiddenCount} 张</b><i>本场已计入</i></span>` : ""}
+    </div>
+  </section>`;
+}
+
 function renderCombatResult(combat) {
   const summary = combat.summary || game.combatSummary();
   const trial = summary.challengeTrial;
   const enemy = ENEMY_DEFS[summary.enemyId];
   const build = analyzeBuild(game);
   const unlocked = (combat.newAchievements || []).map((id) => ACHIEVEMENT_DEFS[id]).filter(Boolean);
-  return `<div class="result-overlay">
-    <div class="result-card recap-card ${combat.status}">
+  return `<div class="result-overlay" role="dialog" aria-modal="true" aria-labelledby="combat-result-title" aria-describedby="combat-result-description">
+    <div class="result-card recap-card ${combat.status}" tabindex="-1" autofocus>
       <small>${combat.status === "won" ? "战斗复盘" : "挑战复盘"}</small>
-      <h2>${combat.status === "won" ? "胜利" : "体力耗尽"}</h2>
-      <p class="recap-enemy">对阵 ${enemy.name} · ${enemy.pattern}</p>
+      <h2 id="combat-result-title">${combat.status === "won" ? "胜利" : "体力耗尽"}</h2>
+      <p class="recap-enemy" id="combat-result-description">对阵 ${enemy.name} · ${enemy.pattern}</p>
       <div class="recap-stats">
         <span><b>${summary.turns}</b>回合</span>
         <span><b>${summary.cardsPlayed}</b>出牌</span>
@@ -1672,6 +1733,7 @@ function renderCombatResult(combat) {
       </div>
       <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
       <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
+      ${combatSummaryProgressHtml(combat)}
       ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>专属牌 / 宠物 / 物品，选择一种奖励方向</span></div>` : ""}
       ${trial ? `<div class="challenge-trial-result ${trial.completed ? "success" : "missed"}"><b>${trial.icon} ${trial.name} · ${trial.completed ? "完成" : "未完成"}</b><span>${trial.completed ? `额外 ${summary.challengeTrialBonus} 校园币已到账` : `${trial.progress}；不影响挑战基础奖励`}</span></div>` : ""}
       ${combat.status === "won" ? petIncubationRecapHtml(combat) : ""}
@@ -1831,7 +1893,8 @@ function renderCombat() {
           combatPreview,
           tacticalCue,
           handPose: handCardPose(index, combat.hand.length),
-          shortcut: index < 9 ? index + 1 : null
+          shortcut: index < 9 ? index + 1 : null,
+          summaryProgress: summaryProgressCard(card)
         });
       }).join("")}
     </div>
@@ -2038,17 +2101,41 @@ function buildProfileHtml(build, compact = false) {
   </section>`;
 }
 
+function summaryTrainingPanelHtml() {
+  const progressEntries = game.deck
+    .map(summaryProgressCard)
+    .filter(Boolean)
+    .sort((left, right) => Number(right.upgradeable) - Number(left.upgradeable)
+      || right.current - left.current
+      || left.name.localeCompare(right.name, "zh-CN"));
+  const readyCount = progressEntries.filter((entry) => entry.upgradeable).length;
+  const closest = progressEntries[0];
+  const settled = game.awaitingNextSemester;
+  const headline = settled
+    ? "本学期主力升级已经结算"
+    : readyCount > 0
+    ? `${readyCount} 张主力牌已达标`
+    : closest?.current > 0
+    ? `${closest.name} ${closest.current}/${closest.target}，还差 ${closest.remaining} 场`
+    : "本学期尚未培养主力牌";
+  return `<section class="summary-training-panel ${settled ? "settled" : readyCount > 0 ? "ready" : ""}">
+    <div><small>第 ${game.semester} 学期 · 期末升级</small><strong>${escapeHtml(headline)}</strong><p>${settled ? "升级机会已经使用或跳过；进入下一学期后，所有主力进度从 0/3 重新累计。" : "每张卡组副本独立累计；每场胜利中打出过的卡各记 1 次，达到 3/3 后可在期末免费升级，本进度不会带入下一学期。"}</p></div>
+    <b>${settled ? "已结算" : readyCount > 0 ? "可升级" : "本学期"}</b>
+  </section>`;
+}
+
 function renderDeck() {
   const build = analyzeBuild(game);
   const body = `
     ${buildProfileHtml(build)}
+    ${summaryTrainingPanelHtml()}
     <div class="collection-summary">
       <span>攻击 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "attack").length}</span>
       <span>技能 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "skill").length}</span>
       <span>已升级 ${game.deck.filter((card) => card.upgraded).length}</span>
       <span>已刻印 ${game.deck.filter((card) => card.enchantment).length}</span>
     </div>
-    <div class="deck-grid">${game.deck.map((card) => cardHtml(card, { playable: false })).join("")}</div>
+    <div class="deck-grid">${game.deck.map(deckCardHtml).join("")}</div>
     <h2 class="subheading">书包物品</h2>
     <div class="item-choice-list compact">${game.items.length ? game.items.map((id) => itemHtml(id, { disabled: true })).join("") : '<p class="empty-state">还没有物品。</p>'}</div>
     <button class="primary centered" data-action="close-deck">返回</button>`;
@@ -2573,7 +2660,7 @@ function renderSemesterComplete() {
     </div>
     <div class="semester-actions">
       <button class="primary big" data-action="next-semester">插班进入第 ${game.semester + 1} 学期</button>
-      <p>代价与补偿：敌人生命 +15%、攻击 +1；你最大生命 +2、书包容量 +1并回满生命。卡组和羁绊全部保留。</p>
+      <p>代价与补偿：敌人生命 +15%、攻击 +1；你最大生命 +2、书包容量 +1并回满生命。卡组和羁绊全部保留，主力进度清零。</p>
       <button class="quiet-button" data-action="return-title">保存并返回标题</button>
     </div>`;
   return page("这学期，过了。", "期末总结", body, {
@@ -3186,14 +3273,21 @@ function resumeSemesterRewards() {
 function showSemesterSummary() {
   const eligible = game.eligibleSummaryCards();
   if (!eligible.length) {
+    const closest = game.deck
+      .map(summaryProgressCard)
+      .filter(Boolean)
+      .sort((left, right) => right.current - left.current || left.name.localeCompare(right.name, "zh-CN"))[0];
+    const progressHint = closest?.current > 0
+      ? `最接近的是${closest.name} ${closest.current}/${closest.target}，还差 ${closest.remaining} 场。`
+      : "本学期还没有卡牌获得主力进度。";
+    setToast(`没有卡牌达到主力升级条件，已跳过。${progressHint}`);
     game.completeCurrentSemester();
     changeScreen("semesterComplete");
-    setToast("本学期没有一张未升级卡在至少 3 场战斗中使用，跳过期末总结升级");
     return;
   }
   showCardSelection({
     title: "期末总结：升级一张主力牌",
-    eyebrow: "使用记录 ≥ 3 场",
+    eyebrow: "本学期胜利使用记录 3/3",
     description: "只有真正进入过本学期战斗节奏的卡，才能沉淀为长期能力。",
     cards: eligible,
     onSelect(card) {

@@ -4283,7 +4283,7 @@ test("受污染商店库存、跨星座卡牌或错误路线会被安全清理",
   assert.equal(repairedWeek.loadRepairs.some((note) => /商店状态/.test(note)), true);
 });
 
-test("新学期尚未选择塔罗时也能完整保存并恢复无尽进度", () => {
+test("新学期尚未选择塔罗时保存构筑并重置本学期主力进度", () => {
   const game = new SemesterGame(515, "gemini");
   game.chooseTarot("hermit");
   const added = game.addCard("catCombo", true);
@@ -4308,6 +4308,6 @@ test("新学期尚未选择塔罗时也能完整保存并恢复无尽进度", ()
   assert.deepEqual(restored.deck, game.deck);
   assert.deepEqual(restored.semesterPlan, game.semesterPlan);
   assert.equal(restored.rng.state, game.rng.state);
-  assert.equal(restored.cardCombatUses[added.uid], 4);
+  assert.deepEqual(restored.cardCombatUses, {});
   assert.deepEqual(restored.loadRepairs, []);
 });
