@@ -220,6 +220,13 @@ function nonNegativeInteger(value, fallback = 0) {
   return Number.isFinite(number) ? Math.max(0, Math.floor(number)) : fallback;
 }
 
+function samePrimitiveRecord(left = {}, right = {}) {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key) => Object.hasOwn(right, key) && left[key] === right[key]);
+}
+
 function mergeDrawResults(results = []) {
   return results.reduce((merged, result) => ({
     requested: merged.requested + nonNegativeInteger(result?.requested),
@@ -1194,6 +1201,7 @@ export class SemesterGame {
 
   prepareNormalCombatReward() {
     if (this.pendingCombatReward) {
+      if (this.pendingCombatReward.type !== "normalCard") return null;
       return {
         ...this.pendingCombatReward,
         choices: [...(this.pendingCombatReward.choices || [])],
@@ -1202,15 +1210,25 @@ export class SemesterGame {
         started: false
       };
     }
-    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || this.week >= 16) return null;
-    const routeReward = this.normalCombatRouteReward();
-    this.gold += routeReward.totalGold;
+    const combat = this.combat;
+    const receipt = combat?.victoryReceipt;
+    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester
+      || this.pendingSemesterReward || this.week >= 16 || combat?.status !== "won"
+      || combat.result !== "won" || combat.rewardPrepared === true || receipt?.outcome !== "normal"
+      || receipt.week !== this.week || receipt.enemyId !== combat.enemy?.id
+      || ENEMY_DEFS[receipt.enemyId]?.kind !== "normal") return null;
+    const bonusGold = receipt.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD
+      ? HIGH_THREAT_ROUTE_BONUS_GOLD
+      : 0;
+    const gold = NORMAL_COMBAT_REWARD_GOLD + bonusGold;
+    this.gold += gold;
     this.pendingCombatReward = {
       type: "normalCard",
       choices: this.rewardCards(3),
-      gold: routeReward.totalGold,
-      bonusGold: routeReward.bonusGold
+      gold,
+      bonusGold
     };
+    combat.rewardPrepared = true;
     return { ...this.pendingCombatReward, choices: [...this.pendingCombatReward.choices], started: true };
   }
 
@@ -1747,6 +1765,26 @@ export class SemesterGame {
     } else if (!CHALLENGE_AFFIX_DEFS[combatModifiers.affix]) {
       delete combatModifiers.affix;
     }
+    const combatCheckpoint = this.pendingCombatStart;
+    const checkpointMatches = Boolean(
+      combatCheckpoint
+      && combatCheckpoint.enemyId === enemyId
+      && samePrimitiveRecord(combatCheckpoint.modifiers, combatModifiers)
+    );
+    const rewardSource = checkpointMatches ? {
+      outcome: combatCheckpoint.outcome,
+      enemyId,
+      week: this.week,
+      routeThreat: combatCheckpoint.outcome === "normal"
+        && Number.isInteger(combatCheckpoint.routeThreat)
+        && combatCheckpoint.routeThreat > 0
+        ? combatCheckpoint.routeThreat
+        : 0,
+      bonusGold: combatCheckpoint.outcome === "normal"
+        && combatCheckpoint.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD
+        ? HIGH_THREAT_ROUTE_BONUS_GOLD
+        : 0
+    } : null;
     const shouldGuaranteeTutorialOpening = this.semester === 1
       && this.week === 1
       && enemyId === "sleepyBug"
@@ -1795,11 +1833,16 @@ export class SemesterGame {
     this.flags.nextCombatTension = 0;
     if (combatModifiers.challenge) this.stats.trialsAttempted += 1;
 
-    const routeReward = this.normalCombatRouteReward(enemyId);
+    const routeReward = rewardSource?.outcome === "normal"
+      ? { routeThreat: rewardSource.routeThreat, bonusGold: rewardSource.bonusGold }
+      : { routeThreat: 0, bonusGold: 0 };
     this.combat = {
       status: "active",
       result: null,
       modifiers: combatModifiers,
+      rewardSource,
+      victoryReceipt: null,
+      rewardPrepared: false,
       routeThreat: routeReward.routeThreat,
       routeBonusGold: routeReward.bonusGold,
       turn: 0,
@@ -2583,6 +2626,7 @@ export class SemesterGame {
     } else if (combat.enemy.hp <= 0 && combat.status === "active") {
       combat.status = "won";
       combat.result = "won";
+      combat.victoryReceipt = combat.rewardSource ? { ...combat.rewardSource } : null;
       this.stats.combatsCompleted += 1;
       this.stats.combatsWon += 1;
       if (combat.modifiers.challenge) this.stats.challengeWins += 1;
