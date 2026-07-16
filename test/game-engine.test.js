@@ -536,19 +536,19 @@ test("战斗手牌支持鼠标悬停和键盘聚焦放大查看", () => {
   assert.match(styles, /\.hand \.game-card \{[^}]*height: 280px;/);
 });
 
-test("桌面战斗操作区固定在首屏底部并保留完整出牌入口", () => {
+test("平板与桌面战斗操作区固定在首屏底部并保留完整出牌入口", () => {
   const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
   const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 
   assert.match(appSource, /<section class="combat-action-dock" aria-label="战斗操作区">/);
-  assert.match(styles, /@media \(min-width: 820px\) and \(min-height: 680px\)/);
+  assert.match(styles, /@media \(min-width: 701px\) and \(min-height: 680px\)/);
   assert.match(styles, /\.combat-page \{[^}]*height: calc\(100vh - 64px\);[^}]*overflow: hidden;/);
   assert.match(styles, /\.combat-action-dock \{ position: fixed;[^}]*bottom: 0;[^}]*height: 294px;/);
   assert.match(styles, /\.combat-action-dock \.hand \{[^}]*height: 236px;[^}]*min-height: 236px;/);
   assert.match(styles, /\.combat-action-dock \.combat-shortcut-guide \{ display: none; \}/);
   assert.match(styles, /\.combat-action-dock \.hand \.game-card \{[^}]*flex-basis: 146px;[^}]*width: 146px;[^}]*transform: none;/);
   assert.match(styles, /\.combat-action-dock \.hand:has\(\.game-card:nth-child\(8\)\) \.game-card \{[^}]*flex-basis: 132px;[^}]*margin-right: -60px;/);
-  assert.match(styles, /@media \(min-width: 820px\) and \(max-width: 980px\) and \(min-height: 620px\)/);
+  assert.match(styles, /@media \(min-width: 701px\) and \(max-width: 980px\) and \(min-height: 620px\)/);
   assert.match(styles, /@media \(max-width: 1100px\) \{\s*\.topbar \.sign-resource, \.topbar \.tarot-resource \{ display: none; \}/);
 });
 
@@ -585,7 +585,7 @@ test("战斗双方共享校园舞台并把中央战报降为次要信息", () =>
   assert.match(styles, /\.combat-log p:first-child \{[^}]*display: block;[^}]*text-overflow: ellipsis;/);
   assert.match(styles, /\.combat-vitals \{[^}]*width: min\(232px, 82%\);[^}]*margin: -7px auto 0;/);
   assert.match(styles, /\.combat-action-dock::before \{[^}]*border-top: 1px solid rgba\(194,207,207,\.13\);/);
-  assert.match(styles, /@media \(min-width: 820px\) and \(min-height: 680px\) and \(max-height: 759px\)/);
+  assert.match(styles, /@media \(min-width: 701px\) and \(min-height: 680px\) and \(max-height: 759px\)/);
   assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-board \{ height: 226px; min-height: 226px; \}/);
   assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-log,[\s\S]*?\.enemy-fighter > p \{ display: none; \}/);
 });
