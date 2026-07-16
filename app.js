@@ -670,9 +670,10 @@ function enemyIntentTokenHtml(intent, resolution = null, counterplayCue = null) 
   const mechanicDescriptionId = enemyMechanicProgress(
     enemyDefinition?.id,
     resolution ? Math.max(0, resolution.turn - 1) : game.combat?.enemy?.intentTurn,
-    resolution?.mechanicState || intent.mechanicState
+    resolution?.mechanicState || intent.mechanicState,
+    resolution?.intent || intent
   ) ? " enemy-mechanic-summary" : "";
-  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-expanded="${pinned}" aria-controls="enemy-intent-details" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(name)}">
+  return `<button type="button" class="enemy-intent-token state-${tone} ${pinned ? "is-pinned" : ""} ${dismissed ? "is-dismissed" : ""}" data-action="toggle-intent-details" aria-keyshortcuts="R" aria-expanded="${pinned}" aria-controls="enemy-intent-details" aria-describedby="enemy-intent-details${mechanicDescriptionId}" aria-label="敌人意图：${escapeHtml(name)}">
     <span class="enemy-intent-chips" aria-hidden="true">${chips.map((chip) => `<i class="intent-chip intent-${chip.kind}"><em>${chip.icon}</em><b>${escapeHtml(chip.value)}</b></i>`).join("")}</span>
     <small>${escapeHtml(name)}</small>
     <span class="enemy-intent-detail" id="enemy-intent-details" role="tooltip">
@@ -681,14 +682,19 @@ function enemyIntentTokenHtml(intent, resolution = null, counterplayCue = null) 
       ${enemyDefinition?.mechanicName && enemyDefinition?.mechanicText ? `<span class="intent-mechanic"><b>特性 · ${escapeHtml(enemyDefinition.mechanicName)}</b><span>${escapeHtml(enemyDefinition.mechanicText)}</span></span>` : ""}
       ${!resolution && counterplayCue ? `<span class="intent-counter-tip tone-${escapeHtml(counterplayCue.tone)}"><b>${escapeHtml(counterplayCue.label)}</b><span>${escapeHtml(counterplayCue.detail)}</span></span>` : ""}
       ${enemyDefinition?.pattern ? `<span class="intent-cycle"><b>行动周期</b>${escapeHtml(enemyDefinition.pattern)}</span>` : ""}
-      <em class="intent-detail-hint">${pinned ? "点击关闭 · Esc 也可关闭" : "点击可固定说明"}</em>
+      <em class="intent-detail-hint">${pinned ? "点击关闭 · R / Esc 也可关闭" : "点击或按 R 固定说明"}</em>
     </span>
   </button>`;
 }
 
 function enemyMechanicProgressHtml(enemy, intent, resolution = null) {
   const intentTurn = resolution ? Math.max(0, resolution.turn - 1) : enemy?.intentTurn;
-  const progress = enemyMechanicProgress(enemy?.id, intentTurn, resolution?.mechanicState || intent?.mechanicState);
+  const progress = enemyMechanicProgress(
+    enemy?.id,
+    intentTurn,
+    resolution?.mechanicState || intent?.mechanicState,
+    resolution?.intent || intent
+  );
   if (!progress) return "";
   const segments = progress.segments.map((state) => {
     const stateClass = state === "done"
@@ -712,7 +718,7 @@ function setIntentDetailsOpen(button, open) {
   button.classList.toggle("is-dismissed", !open);
   button.setAttribute("aria-expanded", String(open));
   const hint = button.querySelector(".intent-detail-hint");
-  if (hint) hint.textContent = open ? "点击关闭 · Esc 也可关闭" : "点击可固定说明";
+  if (hint) hint.textContent = open ? "点击关闭 · R / Esc 也可关闭" : "点击或按 R 固定说明";
 }
 
 function characterAssetHtml(src, className = "character-asset", alt = "") {
@@ -1657,6 +1663,7 @@ function finishPlayerTurn() {
       turn: resolvingTurn,
       name: intent.name,
       detail: enemyIntentDetailLines(intent, (id) => CARD_DEFS[id]?.name || id).join(" · "),
+      intent: { attack: intent.attack, block: intent.block, hits: intent.hits },
       incoming,
       effects: actualEffects,
       mechanicState: intent.mechanicState
@@ -1987,7 +1994,7 @@ function renderCombat() {
       <button class="pile-button pile-discard" data-action="open-pile" data-zone="discardPile" aria-label="查看弃牌堆，共 ${combat.discardPile.length} 张" ${combatInputLocked ? "disabled" : ""}><i class="pile-stack" aria-hidden="true"></i><span>弃牌堆</span><b>${combat.discardPile.length}</b></button>
     </div>
     <div class="combat-shortcut-guide" aria-label="战斗快捷键">
-      <span><kbd>1–9</kbd> 对应手牌</span><span><kbd>G</kbd> ${currentPetDefinition().shortName}出手</span><span><kbd>E</kbd> 结束回合</span><span><kbd>Esc</kbd> 关闭弹层</span>
+      <span><kbd>1–9</kbd> 对应手牌</span><span><kbd>R</kbd> 查看意图</span><span><kbd>G</kbd> ${currentPetDefinition().shortName}出手</span><span><kbd>E</kbd> 结束回合</span><span><kbd>Esc</kbd> 关闭弹层</span>
     </div>
 
     ${combat.pendingDiscard ? '<div class="discard-prompt">草稿纸：请选择一张手牌弃掉</div>' : ""}
@@ -3859,6 +3866,13 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     const token = app.querySelector('[data-action="toggle-intent-details"]');
     if (token) setIntentDetailsOpen(token, false);
+    return;
+  }
+
+  if (command.action === COMBAT_SHORTCUT_ACTION.toggleIntentDetails) {
+    event.preventDefault();
+    const token = app.querySelector('[data-action="toggle-intent-details"]');
+    if (token) setIntentDetailsOpen(token, context.intentDetailsPinned !== true);
     return;
   }
 

@@ -22,7 +22,8 @@ export const COMBAT_SHORTCUT_ACTION = Object.freeze({
   discardCard: "discard-card",
   endTurn: "end-turn",
   petSkill: "pet-skill",
-  playCard: "play-card"
+  playCard: "play-card",
+  toggleIntentDetails: "toggle-intent-details"
 });
 
 export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
@@ -101,16 +102,23 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
 
 const ALARM_CLOCK_METER_STEPS = Object.freeze([
   Object.freeze({
-    label: "1/3 · 蓄响",
-    detail: "当前：蓄响（护甲 5）；下一步：铃声（攻击 7）"
+    name: "蓄响",
+    effect: "block",
+    currentFallback: "防御",
+    next: "铃声（攻击）"
   }),
   Object.freeze({
-    label: "2/3 · 下次 14",
-    detail: "当前：铃声（攻击 7）；下一步：夺命连环响（攻击 14）"
+    name: "铃声",
+    effect: "attack",
+    currentFallback: "攻击",
+    next: "夺命连环响（重击）"
   }),
   Object.freeze({
-    label: "3/3 · 爆发 14",
-    detail: "当前：夺命连环响（攻击 14）；下一步：蓄响（护甲 5）"
+    name: "夺命连环响",
+    shortName: "爆发",
+    effect: "attack",
+    currentFallback: "重击",
+    next: "蓄响（防御）"
   })
 ]);
 const SPECIAL_ENEMY_METER_STEPS = Object.freeze(["发卷", "选择题", "填空题", "大题"]);
@@ -128,17 +136,31 @@ function normalizedIntentTurn(intentTurn) {
     : 0;
 }
 
-export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = null) {
+function resolvedIntentValue(intent, key) {
+  if (!intent || typeof intent !== "object" || !Object.prototype.hasOwnProperty.call(intent, key)) return null;
+  try {
+    const value = Number(intent[key]);
+    return Number.isFinite(value) && value >= 0 ? Math.floor(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = null, resolvedIntent = null) {
   const turn = normalizedIntentTurn(intentTurn);
 
   if (enemyId === "alarmClock") {
     const stepIndex = turn % ALARM_CLOCK_METER_STEPS.length;
     const step = ALARM_CLOCK_METER_STEPS[stepIndex];
+    const value = resolvedIntentValue(resolvedIntent, step.effect);
+    const effectName = step.effect === "block" ? "护甲" : "攻击";
+    const currentEffect = value === null ? step.currentFallback : `${effectName} ${value}`;
+    const labelValue = value === null ? "" : ` ${step.effect === "block" ? "+" : ""}${value}`;
     return {
       kind: "countdown",
       title: "公开倒计时",
-      label: step.label,
-      detail: step.detail,
+      label: `${stepIndex + 1}/3 · ${step.shortName || step.name}${labelValue}`,
+      detail: `当前：${step.name}（${currentEffect}）；下一步：${step.next}`,
       segments: ALARM_CLOCK_METER_STEPS.map((_, index) => (
         index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
       ))
@@ -274,7 +296,10 @@ export function enemyResolutionSnapshot(resolution, feedback = {}) {
     effects,
     mechanicState: resolution.mechanicState && typeof resolution.mechanicState === "object"
       ? { ...resolution.mechanicState }
-      : null
+      : null,
+    ...(resolution.intent && typeof resolution.intent === "object"
+      ? { intent: { ...resolution.intent } }
+      : {})
   };
 }
 
@@ -1673,6 +1698,7 @@ export function combatShortcutCommand(code, state = {}) {
     return null;
   }
   if (state.resolvingEnemy || state.lethalConfirmOpen || state.pileOpen || state.tutorialOpen) return null;
+  if (code === "KeyR") return { action: COMBAT_SHORTCUT_ACTION.toggleIntentDetails };
 
   const numberMatch = /^(?:Digit|Numpad)([1-9])$/.exec(code);
   if (numberMatch) {

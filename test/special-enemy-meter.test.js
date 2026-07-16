@@ -1,8 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { enemyMechanicProgress } from "../app-flow.js";
+import { enemyMechanicProgress, enemyResolutionSnapshot } from "../app-flow.js";
 import { ENEMY_DEFS, NORMAL_ENEMY_IDS } from "../game-data.js";
+import { CHALLENGE_RULES, SemesterGame } from "../game-engine.js";
 
 test("未配置常驻进度的普通敌人继续返回空", () => {
   for (const enemyId of NORMAL_ENEMY_IDS) {
@@ -13,34 +14,79 @@ test("未配置常驻进度的普通敌人继续返回空", () => {
   assert.equal(enemyMechanicProgress(undefined, 0), null);
 });
 
-test("闹钟怪用三格公开倒计时预告 14 点爆发", () => {
+test("闹钟怪用三格公开倒计时预告行动语义，不把基础伤害伪装成真实数值", () => {
   assert.deepEqual(ENEMY_DEFS.alarmClock.intents, [
     { name: "蓄响", block: 5 },
     { name: "铃声", attack: 7 },
     { name: "夺命连环响", attack: 14 }
   ]);
+  assert.equal(ENEMY_DEFS.alarmClock.pattern, "蓄响防御 → 铃声攻击 → 连环响爆发");
+  assert.doesNotMatch(
+    `${ENEMY_DEFS.alarmClock.mechanicText} ${ENEMY_DEFS.alarmClock.pattern}`,
+    /\d/,
+    "倍率局的行动周期提示不能继续展示基础数值"
+  );
   assert.deepEqual(enemyMechanicProgress("alarmClock", 0), {
     kind: "countdown",
     title: "公开倒计时",
     label: "1/3 · 蓄响",
-    detail: "当前：蓄响（护甲 5）；下一步：铃声（攻击 7）",
+    detail: "当前：蓄响（防御）；下一步：铃声（攻击）",
     segments: ["current", "upcoming", "upcoming"]
   });
   assert.deepEqual(enemyMechanicProgress("alarmClock", 1), {
     kind: "countdown",
     title: "公开倒计时",
-    label: "2/3 · 下次 14",
-    detail: "当前：铃声（攻击 7）；下一步：夺命连环响（攻击 14）",
+    label: "2/3 · 铃声",
+    detail: "当前：铃声（攻击）；下一步：夺命连环响（重击）",
     segments: ["done", "current", "upcoming"]
   });
   assert.deepEqual(enemyMechanicProgress("alarmClock", 2), {
     kind: "countdown",
     title: "公开倒计时",
-    label: "3/3 · 爆发 14",
-    detail: "当前：夺命连环响（攻击 14）；下一步：蓄响（护甲 5）",
+    label: "3/3 · 爆发",
+    detail: "当前：夺命连环响（重击）；下一步：蓄响（防御）",
     segments: ["done", "done", "current"]
   });
   assert.deepEqual(enemyMechanicProgress("alarmClock", 3), enemyMechanicProgress("alarmClock", 0));
+});
+
+test("闹钟怪机制牌读取第 2 学期挑战与塔罗共同结算后的真实攻击", () => {
+  const game = new SemesterGame(610, "cancer");
+  game.semester = 2;
+  game.chooseTarot("strength");
+  game.startCombat("alarmClock", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix: "deadline"
+  });
+  const openingIntent = game.getIntent();
+  assert.equal(openingIntent.block, 5);
+  assert.equal(
+    enemyMechanicProgress("alarmClock", 0, openingIntent.mechanicState, openingIntent).label,
+    "1/3 · 蓄响 +5",
+    "防御步骤也必须读取当前已解析意图"
+  );
+  game.combat.enemy.intentTurn = 2;
+  game.combat.turn = 4;
+
+  const intent = game.getIntent();
+  assert.equal(intent.attack, 25, "14 基础伤害应依次结算学期成长、挑战倍率、截止日期与力量塔罗");
+  const progress = enemyMechanicProgress("alarmClock", game.combat.enemy.intentTurn, intent.mechanicState, intent);
+  assert.equal(progress.label, "3/3 · 爆发 25");
+  assert.equal(progress.detail, "当前：夺命连环响（攻击 25）；下一步：蓄响（防御）");
+  assert.doesNotMatch(`${progress.label} ${progress.detail}`, /爆发 14|攻击 14|护甲 5/);
+
+  const resolvedSnapshot = enemyResolutionSnapshot({
+    turn: 3,
+    name: intent.name,
+    intent: { attack: intent.attack, block: intent.block, hits: intent.hits }
+  });
+  assert.equal(
+    enemyMechanicProgress("alarmClock", 2, null, resolvedSnapshot.intent).label,
+    "3/3 · 爆发 25",
+    "敌方结算演出也应冻结刚刚执行的真实数值"
+  );
 });
 
 test("卷王幻影公开十格打断进度并保留当前加速轮次", () => {

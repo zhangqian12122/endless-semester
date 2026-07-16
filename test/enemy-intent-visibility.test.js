@@ -113,6 +113,8 @@ test("390 by 844 keeps the intent above the nameplate and away from mechanic pro
   const value = declarations(".intent-chip b", mobile);
   const mechanicToken = declarations(".enemy-fighter:has(.enemy-mechanic-progress) .enemy-intent-token", mobile);
   const mechanicChips = declarations(".enemy-fighter:has(.enemy-mechanic-progress) .enemy-intent-chips", mobile);
+  const doubleToken = declarations(".enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(2))", mobile);
+  const doubleChips = declarations(".enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(2)) .enemy-intent-chips", mobile);
   const tripleToken = declarations(".enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3))", mobile);
   const tripleChips = declarations(".enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) .enemy-intent-chips", mobile);
 
@@ -123,6 +125,8 @@ test("390 by 844 keeps the intent above the nameplate and away from mechanic pro
   assert.equal(mechanicToken.left, "4px");
   assert.equal(mechanicToken.transform, "none");
   assert.equal(mechanicToken["max-width"], mechanicChips["max-width"]);
+  assert.equal(doubleToken["max-width"], doubleChips["max-width"]);
+  assert.ok(px(doubleToken.width) >= (px(chip["min-width"]) * 2) + horizontalGap(chips.gap));
   assert.equal(tripleToken.top, token.top);
   assertThreeChipsFit(chip, tripleChips, horizontalGap(chips.gap));
 });
@@ -140,8 +144,9 @@ test("390 by 650 uses an exact compact header stack without shrinking the capsul
 
   assert.equal(label.height, "24px");
   assert.equal(label["margin-bottom"], "6px");
-  assert.equal(token.top, `-${chip["min-height"]}`);
-  assert.equal(intentName.display, "none");
+  assert.equal(token.top, `-${px(chip["min-height"]) + 12}px`);
+  assert.equal(intentName.display, "block");
+  assert.ok(px(intentName["font-size"]) >= 7, "compact mode must keep the action name readable");
   assert.ok(px(chip["min-height"]) >= 30, "compact mode must keep the intent capsule readable");
   assert.equal(tripleToken.top, token.top);
   assertThreeChipsFit(chip, tripleChips, horizontalGap(chips.gap));

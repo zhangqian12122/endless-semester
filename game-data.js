@@ -648,8 +648,8 @@ export const ENEMY_DEFS = {
     id: "alarmClock", name: "闹钟怪", maxHp: 28, kind: "normal",
     subtitle: "你清楚知道它什么时候会响。",
     mechanicName: "公开倒计时",
-    mechanicText: "先蓄响防御，再连续攻击并在第三次行动打出 14 点爆发。",
-    pattern: "护甲 5 → 攻击 7 → 攻击 14",
+    mechanicText: "先蓄响防御，再连续攻击并在第三次行动打出重击爆发。",
+    pattern: "蓄响防御 → 铃声攻击 → 连环响爆发",
     tip: "蓄响回合不会攻击，别花能量叠下回合会清零的护甲；重点应对随后两次攻击，尤其是第三步爆发。",
     intents: [
       { name: "蓄响", block: 5 },
