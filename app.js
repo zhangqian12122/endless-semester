@@ -18,7 +18,7 @@ import {
   SAFE_EVENT_IDS,
   SHOP_SCENE
 } from "./game-data.js";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.48";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.49";
 import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
 import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
 import {
@@ -1739,7 +1739,7 @@ function recordCurrentCombat() {
     game.prepareSemesterRewards(BOSS_ITEM_IDS);
     saveGame();
   } else if (summary.result === "won" && context.outcome === "elite") {
-    game.prepareEliteCombatReward([...combat.usedCardUids]);
+    game.prepareEliteCombatReward();
     saveGame();
   } else if (summary.result === "won" && context.outcome === "challenge") {
     game.prepareChallengeCombatReward({
@@ -3243,6 +3243,15 @@ function grantItem(id) {
     return true;
   }
 
+  if (source === "combat" && game.pendingCombatReward?.type === "eliteChain") {
+    const result = game.resolvePendingEliteItem(id);
+    if (!result) return false;
+    rewardContext.settling = true;
+    if (result.status === "replacement") resumePendingItemReplacement();
+    else rewardContext.onDone(result);
+    return true;
+  }
+
   if (game.items.length >= game.backpackCapacity) {
     const replacement = game.prepareItemReplacement(id);
     if (replacement) {
@@ -3270,6 +3279,8 @@ function skipItemReward() {
     || !rewardContext.choices?.length
     || !rewardContext.choices.every((id) => game.itemRewardSourceFor(id) === rewardContext.rewardSource)) return false;
   if (rewardContext.rewardSource === "semester" && !game.skipPendingSemesterItem()) return false;
+  if (rewardContext.rewardSource === "combat" && game.pendingCombatReward?.type === "eliteChain"
+    && !game.skipPendingEliteItem()) return false;
   rewardContext.settling = true;
   rewardContext.onDone({ status: "skipped" });
   return true;
@@ -3294,7 +3305,6 @@ function completeItemRewardSource(source) {
     advanceWeek();
   } else if (source === "combat") {
     if (game.pendingCombatReward?.type === "eliteChain") {
-      game.advanceEliteCombatRewardFromItem();
       resumeEliteCombatReward();
     } else {
       game.completePendingCombatReward();
@@ -3319,19 +3329,21 @@ function showCardSelection(options) {
   changeScreen("selection", options);
 }
 
-function showEnchantmentReward(onDone = advanceWeek, savedUsedCardUids = null) {
-  const usedUids = Array.isArray(savedUsedCardUids)
-    ? savedUsedCardUids
-    : game.combat?.usedCardUids ? [...game.combat.usedCardUids] : [];
-  const usedEligible = game.enchantableCards(usedUids);
-  const cards = usedEligible.length ? usedEligible : game.enchantableCards();
+function showEnchantmentReward(onDone = advanceWeek) {
+  const pending = game.pendingCombatReward;
+  if (pending?.type !== "eliteChain" || pending.stage !== "enchant" || typeof onDone !== "function") return false;
+  const usedUids = Array.isArray(pending.usedCardUids) ? pending.usedCardUids : [];
+  const cards = game.enchantableCards(usedUids);
   if (!cards.length) {
-    setToast("当前没有符合本星座刻印条件的卡牌");
-    onDone();
-    return;
+    const result = game.resolvePendingEnchantment(null);
+    if (!result) return false;
+    setToast("本场没有实际使用过且符合条件的卡牌，已跳过刻印");
+    onDone(result);
+    return true;
   }
   const enchantment = Object.values(ENCHANTMENT_DEFS).find((entry) => entry.archetype === game.archetypeId);
-  changeScreen("enchantment", { cards, enchantment, onDone });
+  changeScreen("enchantment", { cards, enchantment, onDone, settling: false });
+  return true;
 }
 
 function showPetMilestone(onDone) {
@@ -3377,7 +3389,7 @@ function grantCombatRewards(outcome) {
     game.prepareSemesterRewards(BOSS_ITEM_IDS);
     resumeSemesterRewards();
   } else if (outcome === "elite") {
-    game.prepareEliteCombatReward(game.combat?.usedCardUids ? [...game.combat.usedCardUids] : []);
+    game.prepareEliteCombatReward();
     resumeEliteCombatReward();
   } else if (outcome === "challenge") {
     const trial = game.challengeTrialStatus();
@@ -3425,7 +3437,7 @@ function resumeNormalCombatReward() {
 
 function resumeEliteCombatReward() {
   const pending = game.pendingCombatReward
-    || game.prepareEliteCombatReward(game.combat?.usedCardUids ? [...game.combat.usedCardUids] : []);
+    || game.prepareEliteCombatReward();
   if (!pending || pending.type !== "eliteChain") {
     changeScreen("map");
     setToast("精英奖励状态无法恢复，已返回本周地图");
@@ -3450,21 +3462,23 @@ function resumeEliteCombatReward() {
     const choices = pending.itemChoices.filter((id) => !game.hasItem(id));
     if (choices.length) {
       showItemReward(choices, () => {
-        game.advanceEliteCombatRewardFromItem();
         resumeEliteCombatReward();
       }, "精英物品奖励", "combat");
       return;
     }
-    game.advanceEliteCombatRewardFromItem();
+    if (!game.skipPendingEliteItem()) {
+      changeScreen("map");
+      setToast("精英物品奖励状态已经失效，请重新进入结算");
+      return;
+    }
     return resumeEliteCombatReward();
   }
   if (pending.stage === "enchant") {
     showEnchantmentReward(() => {
       const fallbackGold = pending.fallbackGold;
-      game.completePendingCombatReward();
       if (fallbackGold) setToast(`普通物品已收齐，精英物品改为 ${fallbackGold} 校园币`);
       advanceWeek();
-    }, pending.usedCardUids);
+    });
     return;
   }
   game.completePendingCombatReward();
@@ -4057,14 +4071,28 @@ app.addEventListener("click", (event) => {
     const card = game.deck.find((candidate) => candidate.uid === button.dataset.uid);
     if (card && context.onSelect) context.onSelect(card);
   } else if (action === "enchant-card") {
-    if (game.enchantCard(button.dataset.uid)) {
-      game.stats.enchantments += 1;
-      const done = context.onDone;
-      setToast("星座刻印已写入卡牌");
-      done();
+    const rewardContext = context;
+    if (screen !== "enchantment" || rewardContext.settling === true
+      || typeof rewardContext.onDone !== "function"
+      || !rewardContext.cards?.some((card) => card.uid === button.dataset.uid)) return;
+    const result = game.resolvePendingEnchantment(button.dataset.uid);
+    if (!result) {
+      setToast("这张牌不在当前精英刻印候选中");
+      render();
+      return;
     }
+    rewardContext.settling = true;
+    const done = rewardContext.onDone;
+    setToast("星座刻印已写入卡牌");
+    done(result);
   } else if (action === "skip-enchantment") {
-    context.onDone();
+    const rewardContext = context;
+    if (screen !== "enchantment" || rewardContext.settling === true
+      || typeof rewardContext.onDone !== "function") return;
+    const result = game.resolvePendingEnchantment(null);
+    if (!result) return;
+    rewardContext.settling = true;
+    rewardContext.onDone(result);
   } else if (action === "select-pet-talent") {
     if (game.resolvePetMilestone(button.dataset.id)) {
       const done = context.onDone;

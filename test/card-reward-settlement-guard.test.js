@@ -142,7 +142,9 @@ test("精英奖励 pending 已清空后，旧卡面回调不能再加卡", () =>
     completions += 1;
     game.advanceEliteCombatRewardFromCard();
   });
-  assert.equal(game.completePendingCombatReward(), true);
+  assert.equal(game.resolvePendingCardReward({ source: "elite", choice: null })?.nextStage, "item");
+  assert.equal(game.skipPendingEliteItem(), true);
+  assert.deepEqual(game.resolvePendingEnchantment(null), { status: "skipped" });
   const deckBefore = game.deck.length;
   const statsBefore = rewardStats(game);
 

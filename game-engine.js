@@ -1106,6 +1106,13 @@ export class SemesterGame {
     this.items.splice(oldIndex, 1, pending.incoming);
     this.stats.itemsTaken += 1;
     this.pendingItemReplacement = null;
+    if (pending.source === "combat" && this.pendingCombatReward?.type === "eliteChain"
+      && this.pendingCombatReward.stage === "item"
+      && this.pendingCombatReward.itemChoices.includes(pending.incoming)) {
+      this.pendingCombatReward.stage = "enchant";
+      this.pendingCombatReward.itemChoices = [];
+      this.pendingCombatReward.fallbackGold = 0;
+    }
     if (pending.source === "semester") {
       this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
     }
@@ -1235,7 +1242,7 @@ export class SemesterGame {
     return { ...this.pendingCombatReward, choices: [...this.pendingCombatReward.choices], started: true };
   }
 
-  prepareEliteCombatReward(usedCardUids = []) {
+  prepareEliteCombatReward() {
     if (this.pendingCombatReward) {
       return {
         ...this.pendingCombatReward,
@@ -1245,18 +1252,30 @@ export class SemesterGame {
         started: false
       };
     }
-    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || this.week !== 8) return null;
+    const combat = this.combat;
+    const receipt = combat?.victoryReceipt;
+    if (this.pendingCombatStart || this.pendingEventReward || this.pendingShop || this.pendingRest
+      || this.pendingItemReplacement || this.awaitingNextSemester || this.pendingSemesterReward
+      || this.week !== 8 || combat?.status !== "won" || combat.result !== "won"
+      || combat.rewardPrepared === true || receipt?.outcome !== "elite"
+      || receipt.week !== 8 || receipt.week !== this.week
+      || receipt.enemyId !== combat.enemy?.id || ENEMY_DEFS[receipt.enemyId]?.kind !== "elite") return null;
+    const deckUids = new Set(this.deck.map((card) => card.uid));
+    const combatUsedCardUids = combat.usedCardUids instanceof Set
+      ? [...combat.usedCardUids]
+      : Array.isArray(combat.usedCardUids) ? combat.usedCardUids : [];
     this.gold += 30;
     this.pendingCombatReward = {
       type: "eliteChain",
       stage: "card",
       choices: this.rewardCards(3),
       itemChoices: [],
-      usedCardUids: [...new Set(usedCardUids)]
-        .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid))
+      usedCardUids: [...new Set(combatUsedCardUids)]
+        .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid) && deckUids.has(uid))
         .slice(0, 64),
       fallbackGold: 0
     };
+    combat.rewardPrepared = true;
     return {
       ...this.pendingCombatReward,
       choices: [...this.pendingCombatReward.choices],
@@ -1285,12 +1304,57 @@ export class SemesterGame {
   }
 
   advanceEliteCombatRewardFromItem() {
+    return this.skipPendingEliteItem();
+  }
+
+  resolvePendingEliteItem(id) {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "eliteChain" || pending.stage !== "item" || this.pendingItemReplacement
+      || typeof id !== "string" || !pending.itemChoices.includes(id)
+      || !REGULAR_ITEM_IDS.includes(id) || !ITEM_DEFS[id] || this.hasItem(id)) return null;
+    if (this.items.length >= this.backpackCapacity) {
+      const replacement = this.prepareItemReplacement(id);
+      return replacement ? { id, status: "replacement", replacement } : null;
+    }
+    if (!this.addItem(id)) return null;
+    this.stats.itemsTaken += 1;
+    pending.stage = "enchant";
+    pending.itemChoices = [];
+    pending.fallbackGold = 0;
+    return { id, status: "claimed" };
+  }
+
+  skipPendingEliteItem() {
     const pending = this.pendingCombatReward;
     if (pending?.type !== "eliteChain" || pending.stage !== "item" || this.pendingItemReplacement) return false;
     pending.stage = "enchant";
     pending.itemChoices = [];
     pending.fallbackGold = 0;
     return true;
+  }
+
+  eligiblePendingEliteEnchantCards() {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "eliteChain" || pending.stage !== "enchant") return [];
+    const usedCardUids = Array.isArray(pending.usedCardUids) ? pending.usedCardUids : [];
+    return this.enchantableCards(usedCardUids);
+  }
+
+  resolvePendingEnchantment(uid = null) {
+    const pending = this.pendingCombatReward;
+    if (pending?.type !== "eliteChain" || pending.stage !== "enchant" || this.pendingItemReplacement) return null;
+    const skipped = uid === null;
+    let card = null;
+    if (!skipped) {
+      if (typeof uid !== "string") return null;
+      card = this.eligiblePendingEliteEnchantCards().find((candidate) => candidate.uid === uid);
+      if (!card || !this.enchantCard(uid)) return null;
+      this.stats.enchantments += 1;
+    }
+    this.pendingCombatReward = null;
+    return skipped
+      ? { status: "skipped" }
+      : { status: "enchanted", uid, enchantment: card.enchantment };
   }
 
   prepareChallengeCombatReward({ affix, trialCompleted = false, trialBonus = 0, enemyId = null } = {}) {
@@ -1500,6 +1564,8 @@ export class SemesterGame {
 
   completePendingCombatReward() {
     if (!this.pendingCombatReward || this.pendingItemReplacement?.source === "combat") return false;
+    if (this.pendingCombatReward.type === "eliteChain"
+      && ["card", "item", "enchant"].includes(this.pendingCombatReward.stage)) return false;
     this.pendingCombatReward = null;
     return true;
   }
