@@ -6,6 +6,7 @@ import {
   EVENT_DEFS,
   FIRST_SEMESTER_NORMAL_ENEMY_POOLS,
   ITEM_DEFS,
+  CHALLENGE_SIGNATURE_ITEM_DROPS,
   NORMAL_ENEMY_IDS,
   DEFAULT_PET_ID,
   PET_DEFS,
@@ -514,6 +515,19 @@ export class SemesterGame {
     };
   }
 
+  challengeSignatureItemRewardState(enemyId = this.combat?.enemy?.id) {
+    const canonicalEnemyId = ENEMY_DEFS[enemyId] ? enemyId : null;
+    const signatureItemId = canonicalEnemyId
+      ? CHALLENGE_SIGNATURE_ITEM_DROPS[canonicalEnemyId] || null
+      : null;
+    const canClaimSignature = Boolean(signatureItemId && !this.hasItem(signatureItemId));
+    return {
+      enemyId: canonicalEnemyId,
+      signatureItemId: canClaimSignature ? signatureItemId : null,
+      rewardVariant: canClaimSignature ? "signature" : "choice"
+    };
+  }
+
   claimEgg(eggId) {
     const egg = PET_EGG_DEFS[eggId];
     if (!egg || this.incubator || this.hasPet(egg.petId)) return null;
@@ -889,6 +903,18 @@ export class SemesterGame {
     return pool;
   }
 
+  availableChallengeItemIds(enemyId = null, signatureItemId = undefined) {
+    const liveSignature = this.challengeSignatureItemRewardState(enemyId).signatureItemId;
+    const resolvedSignature = signatureItemId === undefined ? liveSignature : signatureItemId;
+    const validSignature = resolvedSignature
+      && CHALLENGE_SIGNATURE_ITEM_DROPS[enemyId] === resolvedSignature
+      && ITEM_DEFS[resolvedSignature]
+      && !this.hasItem(resolvedSignature)
+      ? resolvedSignature
+      : null;
+    return validSignature ? [validSignature] : this.availableItemIds();
+  }
+
   claimItemRewardFallback(source) {
     const gold = ITEM_REWARD_FALLBACK_GOLD[source];
     if (!gold) return null;
@@ -1113,6 +1139,7 @@ export class SemesterGame {
       ? enemyId
       : (this.combat?.modifiers?.challenge ? this.combat.enemy.id : null);
     const petReward = this.challengePetRewardState(rewardEnemyId);
+    const signatureReward = this.challengeSignatureItemRewardState(rewardEnemyId);
     this.pendingCombatReward = {
       type: "challengeChain",
       stage: "route",
@@ -1121,6 +1148,7 @@ export class SemesterGame {
       enemyId: petReward.enemyId,
       eggId: petReward.eggId,
       rewardVariant: petReward.rewardVariant,
+      signatureItemId: signatureReward.signatureItemId,
       trialCompleted: completed,
       trialBonus: completed
         ? Math.min(ARCHETYPE_TRIAL_DEFS[this.archetypeId].bonusGold, nonNegativeInteger(trialBonus))
@@ -1156,7 +1184,10 @@ export class SemesterGame {
       }
       pending.stage = "complete";
     } else {
-      const itemChoices = this.rng.shuffle(this.availableItemIds()).slice(0, reward.itemChoices);
+      const availableItems = this.availableChallengeItemIds(pending.enemyId, pending.signatureItemId);
+      const itemChoices = availableItems[0] === pending.signatureItemId
+        ? availableItems.slice(0, 1)
+        : this.rng.shuffle(availableItems).slice(0, reward.itemChoices);
       if (itemChoices.length) {
         pending.stage = "item";
         pending.itemChoices = itemChoices;
@@ -1732,6 +1763,7 @@ export class SemesterGame {
       0,
       5
       + (this.hasItem("referenceBooks") ? 1 : 0)
+      + (combat.turn === 1 && this.hasItem("silentPhone") ? 1 : 0)
       + (combat.turn === 1 ? this.tarot?.firstTurnDraw || 0 : 0)
       + combat.nextDrawBonus
       - combat.nextDrawPenalty
@@ -1743,6 +1775,9 @@ export class SemesterGame {
     if (combat.turn === 1 && this.hasItem("bandage") && this.hp * 2 <= this.maxHp) {
       combat.playerBlock += 6;
       combat.log.push("创可贴生效：获得 6 点护甲。");
+    }
+    if (combat.turn === 1 && this.hasItem("silentPhone")) {
+      combat.log.push("静音手机生效：第一回合多抽 1 张牌。");
     }
     if (combat.turn === 1 && this.archetypeId === "cancer") {
       combat.playerBlock += 4;
@@ -2460,7 +2495,7 @@ export class SemesterGame {
         && ["card", "item", "enchant"].includes(savedCombatReward.stage)) {
         const itemChoices = Array.isArray(savedCombatReward.itemChoices)
           ? [...new Set(savedCombatReward.itemChoices)]
-            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .filter((id) => REGULAR_ITEM_IDS.includes(id) && ITEM_DEFS[id])
             .slice(0, 2)
           : [];
         const usedCardUids = Array.isArray(savedCombatReward.usedCardUids)
@@ -2489,9 +2524,32 @@ export class SemesterGame {
         const route = CHALLENGE_REWARD_DEFS[savedCombatReward.route]
           ? savedCombatReward.route
           : null;
+        const enemyId = ENEMY_DEFS[savedCombatReward.enemyId] ? savedCombatReward.enemyId : null;
+        const expectedSignatureItemId = enemyId
+          ? CHALLENGE_SIGNATURE_ITEM_DROPS[enemyId] || null
+          : null;
+        const savedReplacementIncoming = savedItemReplacement?.incoming;
+        const preserveLegacyRegularReplacement = savedCombatReward.signatureItemId === undefined
+          && savedCombatReward.stage === "item"
+          && route === "item"
+          && savedItemReplacement?.source === "combat"
+          && REGULAR_ITEM_IDS.includes(savedReplacementIncoming)
+          && Array.isArray(savedCombatReward.itemChoices)
+          && savedCombatReward.itemChoices.includes(savedReplacementIncoming);
+        const inferLegacySignature = savedCombatReward.signatureItemId === undefined
+          && ["route", "item"].includes(savedCombatReward.stage)
+          && !preserveLegacyRegularReplacement;
+        const signatureItemId = expectedSignatureItemId
+          && (savedCombatReward.signatureItemId === expectedSignatureItemId || inferLegacySignature)
+          ? expectedSignatureItemId
+          : null;
+        const allowedChallengeItems = new Set([
+          ...REGULAR_ITEM_IDS,
+          ...(signatureItemId ? [signatureItemId] : [])
+        ]);
         const itemChoices = Array.isArray(savedCombatReward.itemChoices)
           ? [...new Set(savedCombatReward.itemChoices)]
-            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .filter((id) => allowedChallengeItems.has(id) && ITEM_DEFS[id])
             .slice(0, CHALLENGE_REWARD_DEFS.item.itemChoices)
           : [];
         const stageIsValid = (savedCombatReward.stage === "route"
@@ -2503,7 +2561,6 @@ export class SemesterGame {
               && nonNegativeInteger(savedCombatReward.fallbackGold) === CHALLENGE_REWARD_DEFS.item.fallbackGold)));
         if (stageIsValid) {
           const trialCompleted = savedCombatReward.trialCompleted === true;
-          const enemyId = ENEMY_DEFS[savedCombatReward.enemyId] ? savedCombatReward.enemyId : null;
           const challengeEgg = enemyId ? eggDefinitionForEnemy(enemyId) : null;
           const eggId = challengeEgg?.id === savedCombatReward.eggId ? challengeEgg.id : null;
           const rewardVariant = savedCombatReward.rewardVariant === "egg" && eggId ? "egg" : "bond";
@@ -2515,6 +2572,7 @@ export class SemesterGame {
             enemyId,
             eggId,
             rewardVariant,
+            signatureItemId,
             trialCompleted,
             trialBonus: trialCompleted ? ARCHETYPE_TRIAL_DEFS[game.archetypeId].bonusGold : 0,
             choices: savedCombatReward.stage === "card" ? savedExclusiveChoices : [],
@@ -2529,7 +2587,7 @@ export class SemesterGame {
         && ["item", "complete"].includes(savedCombatReward.stage)) {
         const itemChoices = Array.isArray(savedCombatReward.itemChoices)
           ? [...new Set(savedCombatReward.itemChoices)]
-            .filter((id) => ITEM_DEFS[id] && ITEM_DEFS[id].rarity !== "boss")
+            .filter((id) => REGULAR_ITEM_IDS.includes(id) && ITEM_DEFS[id])
             .slice(0, 2)
           : [];
         const stageIsValid = (savedCombatReward.stage === "item" && itemChoices.length)
@@ -2690,6 +2748,26 @@ export class SemesterGame {
       if (!egg || game.incubator || game.hasPet(egg.petId)) {
         pendingChallenge.rewardVariant = "bond";
         loadRepairs.push("修正不可领取的挑战宠物蛋奖励");
+      }
+    }
+    if (pendingChallenge?.signatureItemId && game.hasItem(pendingChallenge.signatureItemId)) {
+      pendingChallenge.signatureItemId = null;
+      loadRepairs.push("修正已拥有的挑战招牌物品奖励");
+    }
+    if (pendingChallenge?.stage === "item") {
+      const savedItemChoices = [...pendingChallenge.itemChoices];
+      if (pendingChallenge.signatureItemId) {
+        pendingChallenge.itemChoices = [pendingChallenge.signatureItemId];
+      } else {
+        pendingChallenge.itemChoices = pendingChallenge.itemChoices
+          .filter((id) => REGULAR_ITEM_IDS.includes(id) && !game.hasItem(id));
+      }
+      if (JSON.stringify(savedItemChoices) !== JSON.stringify(pendingChallenge.itemChoices)) {
+        loadRepairs.push("修正挑战物品候选");
+      }
+      if (!pendingChallenge.itemChoices.length) {
+        game.pendingCombatReward = null;
+        loadRepairs.push("重置无可领取物品的挑战奖励");
       }
     }
     const deckUids = new Set(game.deck.map((card) => card.uid));
@@ -2882,7 +2960,7 @@ export class SemesterGame {
         && CARD_DEFS[stock.id] && (!CARD_DEFS[stock.id].archetype || CARD_DEFS[stock.id].archetype === game.archetypeId))
         .map((stock) => ({ id: stock.id, sold: stock.sold }));
       const items = rawItems.filter((stock) => stock && typeof stock.sold === "boolean"
-        && ITEM_DEFS[stock.id] && ITEM_DEFS[stock.id].rarity !== "boss")
+        && REGULAR_ITEM_IDS.includes(stock.id) && ITEM_DEFS[stock.id])
         .map((stock) => ({ id: stock.id, sold: stock.sold }));
       const cardIds = new Set(cards.map((stock) => stock.id));
       const itemIds = new Set(items.map((stock) => stock.id));

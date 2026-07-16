@@ -545,6 +545,7 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-contract span { color: #e8c2bd; font-size: 12px; }
 .challenge-contract small { color: var(--muted); font-size: 10px; }
 .challenge-contract em { margin-left: auto; color: var(--yellow); font-size: 11px; font-style: normal; }
+.challenge-source-hint { color: #f3d681; font-size: 9px; font-style: normal; font-weight: 900; letter-spacing: .02em; }
 .challenge-trial-progress { display: grid; grid-template-columns: auto 1fr auto auto; align-items: center; gap: 16px; max-width: 1200px; margin: -8px auto 18px; padding: 11px 15px; border: 1px solid #54715e; border-left: 5px solid var(--green); border-radius: 7px; background: rgba(56,91,68,.3); }
 .challenge-trial-progress b { color: var(--green); }
 .challenge-trial-progress span { color: #cbd8cf; font-size: 11px; }
@@ -963,16 +964,16 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .combat-relic-heading b { color: #717987; font-size: 9px; }
 .combat-relic-icons { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .combat-relic { position: relative; flex: 0 0 38px; width: 38px; height: 38px; border-radius: 7px; outline: none; }
-.combat-relic > span { display: grid; place-items: center; overflow: hidden; width: 38px; height: 38px; color: #d9d0bf; border: 1px solid #59616d; border-radius: 7px; background: #2b3038; box-shadow: inset 0 0 0 1px rgba(255,255,255,.025), 0 4px 10px rgba(0,0,0,.2); font-family: Georgia, "Songti SC", serif; font-size: 13px; font-weight: 900; transition: transform .16s ease, border-color .16s ease, filter .16s ease; }
-.combat-relic-icon img { display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(.55) contrast(1.12) brightness(.78); opacity: .92; }
+.combat-relic > span { display: grid; place-items: center; overflow: visible; width: 38px; height: 38px; color: #d9d0bf; border: 0; border-radius: 50%; background: transparent; box-shadow: none; font-family: Georgia, "Songti SC", serif; font-size: 13px; font-weight: 900; transition: transform .16s ease, filter .16s ease; }
+.combat-relic-icon img { display: block; width: 112%; height: 112%; object-fit: cover; mix-blend-mode: screen; filter: saturate(.8) contrast(1.2) brightness(1.2) drop-shadow(0 3px 3px rgba(0,0,0,.72)); opacity: .98; -webkit-mask-image: radial-gradient(ellipse at center, #000 46%, rgba(0,0,0,.92) 66%, transparent 90%); mask-image: radial-gradient(ellipse at center, #000 46%, rgba(0,0,0,.92) 66%, transparent 90%); }
 .combat-relic-state { position: absolute; right: -2px; bottom: -2px; width: 9px; height: 9px; border: 2px solid #22272e; border-radius: 50%; background: #767d88; }
-.combat-relic.state-ready > span { border-color: #b89a49; }
+.combat-relic.state-ready > span { filter: drop-shadow(0 0 4px rgba(243,201,93,.5)); }
 .combat-relic.state-ready .combat-relic-state { background: var(--yellow); box-shadow: 0 0 7px rgba(243,201,93,.55); }
-.combat-relic.state-active > span { border-color: #5d9873; }
+.combat-relic.state-active > span { filter: drop-shadow(0 0 4px rgba(93,152,115,.42)); }
 .combat-relic.state-active .combat-relic-state { background: var(--green); }
 .combat-relic.state-spent > span { filter: grayscale(.8) brightness(.66); opacity: .7; }
 .combat-relic.state-spent .combat-relic-state { background: #626874; }
-.combat-relic:hover > span, .combat-relic:focus > span { border-color: #d5ba72; transform: translateY(-2px); }
+.combat-relic:hover > span, .combat-relic:focus > span { filter: drop-shadow(0 0 5px rgba(213,186,114,.62)); transform: translateY(-2px) scale(1.08); }
 .combat-relic-tooltip { position: absolute; z-index: 40; top: calc(100% + 9px); left: -8px; width: 248px; padding: 12px 13px; visibility: hidden; color: var(--ink); border: 1px solid #5b6370; border-top: 3px solid var(--yellow); border-radius: 7px; background: #20242b; box-shadow: 0 15px 34px rgba(0,0,0,.46); opacity: 0; transform: translateY(-4px); transition: opacity .14s ease, transform .14s ease, visibility .14s; }
 .combat-relic-tooltip::before { content: ""; position: absolute; top: -8px; left: 20px; width: 10px; height: 10px; border-top: 1px solid #5b6370; border-left: 1px solid #5b6370; background: #20242b; transform: rotate(45deg); }
 .combat-relic:hover .combat-relic-tooltip, .combat-relic:focus .combat-relic-tooltip, .combat-relic:focus-within .combat-relic-tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
@@ -1235,6 +1236,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .challenge-reward-option .reward-egg > b { display: none; }
 .challenge-reward-option.reward-item { border-top-color: var(--blue); }
 .challenge-reward-option.reward-item > span { background: var(--blue); }
+.challenge-reward-option > span.signature-reward-icon { background: transparent; box-shadow: none; }
+.challenge-signature-icon { width: 50px; height: 50px; }
 .discovery-note { margin-top: 12px; padding: 10px; text-align: center; color: var(--yellow); border: 1px dashed #7e6a38; font-size: 11px; }
 .unlocked-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .unlocked-row > small { color: var(--yellow); }
@@ -1315,8 +1318,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .item-tile:hover:not(:disabled) { transform: translateY(-3px); border-color: var(--yellow); }
 .item-tile.rarity-uncommon { border-left-color: var(--blue); }
 .item-tile.rarity-rare, .item-tile.rarity-boss { border-left-color: var(--purple); }
-.item-icon { display: grid; place-items: center; flex: 0 0 auto; overflow: hidden; width: 44px; height: 44px; border: 1px solid #4c5360; border-radius: 7px; color: #c8c1ae; background: #20242b; font-size: 16px; font-weight: 900; }
-.item-icon img { display: block; width: 100%; height: 100%; object-fit: cover; filter: saturate(.58) contrast(1.12) brightness(.8); opacity: .92; }
+.item-icon { display: grid; place-items: center; flex: 0 0 auto; overflow: visible; width: 44px; height: 44px; border: 0; border-radius: 50%; color: #c8c1ae; background: transparent; font-size: 16px; font-weight: 900; }
+.item-icon img { display: block; width: 116%; height: 116%; object-fit: cover; mix-blend-mode: screen; filter: saturate(.82) contrast(1.2) brightness(1.24) drop-shadow(0 4px 4px rgba(0,0,0,.68)); opacity: .98; -webkit-mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0,0,0,.92) 66%, transparent 90%); mask-image: radial-gradient(ellipse at center, #000 45%, rgba(0,0,0,.92) 66%, transparent 90%); }
 .item-tile small, .item-tile strong, .item-tile em { display: block; }
 .item-tile small { color: var(--muted); font-size: 9px; letter-spacing: .12em; }
 .item-tile strong { margin: 3px 0 5px; }

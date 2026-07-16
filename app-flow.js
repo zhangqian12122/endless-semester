@@ -284,6 +284,8 @@ export function combatItemCue(itemId, state = {}) {
     }
     case "petSnack":
       return cue("入场已充能", "active");
+    case "silentPhone":
+      return cue("首回合已多抽 1 张", "active");
     case "allNighter":
       return cue("持续：能量 +1", "active");
     case "referenceBooks":

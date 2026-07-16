@@ -124,6 +124,37 @@ function petEggDefinition(eggId) {
   return PET_EGG_DEFS?.[eggId] || null;
 }
 
+function challengeRewardSourcePreview(enemyId, pending = null) {
+  const canonicalEnemyId = ENEMY_DEFS[enemyId] ? enemyId : null;
+  if (!canonicalEnemyId) return { enemy: null, egg: null, signatureItem: null };
+  const frozen = pending?.type === "challengeChain" && pending.enemyId === canonicalEnemyId;
+  const petState = frozen ? null : game.challengePetRewardState(canonicalEnemyId);
+  const itemState = frozen ? null : game.challengeSignatureItemRewardState(canonicalEnemyId);
+  const eggId = frozen
+    ? (pending.rewardVariant === "egg" ? pending.eggId : null)
+    : (petState?.rewardVariant === "egg" ? petState.eggId : null);
+  const signatureItemId = frozen ? pending.signatureItemId : itemState?.signatureItemId;
+  return {
+    enemy: ENEMY_DEFS[canonicalEnemyId],
+    egg: petEggDefinition(eggId),
+    signatureItem: ITEM_DEFS[signatureItemId] || null
+  };
+}
+
+function challengeRewardSourceHintText(enemyId, pending = null) {
+  const preview = challengeRewardSourcePreview(enemyId, pending);
+  const targets = [
+    preview.egg ? `伙伴路线：${preview.egg.name}` : "",
+    preview.signatureItem ? `失物招领：${preview.signatureItem.name}` : ""
+  ].filter(Boolean);
+  return targets.length ? `确定目标 · ${targets.join(" · ")}` : "";
+}
+
+function challengeRewardSourceHintHtml(enemyId, pending = null) {
+  const hint = challengeRewardSourceHintText(enemyId, pending);
+  return hint ? `<br><i class="challenge-source-hint">${escapeHtml(hint)}</i>` : "";
+}
+
 function eggRequiredCombats(egg) {
   return Math.max(1, Number(egg?.requiredCombats) || 3);
 }
@@ -339,7 +370,7 @@ function cardHtml(card, options = {}) {
 
 const ITEM_ICON_FALLBACK = Object.freeze({
   autoPencil: "铅", thickNotebook: "本", studentId: "证", mistakeBook: "错", earplugs: "塞",
-  bandage: "贴", petSnack: "粮", eraser: "擦", allNighter: "宵", referenceBooks: "参"
+  bandage: "贴", petSnack: "粮", eraser: "擦", silentPhone: "机", allNighter: "宵", referenceBooks: "参"
 });
 
 function itemIconHtml(item, className = "item-icon") {
@@ -353,7 +384,7 @@ function itemHtml(id, options = {}) {
     <button class="item-tile rarity-${item.rarity}" data-action="${options.action || "choose-item"}" data-id="${id}"
       ${options.disabled ? "disabled" : ""}>
       ${itemIconHtml(item)}
-      <span><small>${rarityName(item.rarity)}物品 · ${item.timing}</small><strong>${item.name}</strong><em>${item.text}</em></span>
+      <span><small>${rarityName(item.rarity)}物品 · ${item.timing}${item.source ? ` · ${item.source}` : ""}</small><strong>${item.name}</strong><em>${item.text}</em></span>
       ${options.price !== undefined ? `<b>${typeof options.price === "number" ? `${options.price} 币` : options.price}</b>` : ""}
     </button>`;
 }
@@ -569,7 +600,7 @@ function renderMap() {
       ${nodes.map((node, index) => `
         <button class="route-node node-${node.type} ${node.challenge ? "node-challenge" : ""}" data-action="choose-node" data-index="${index}">
           <span class="node-icon">${ICONS[node.type]}</span>
-          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br><i class="challenge-trial-chip">${trial.icon} ${trial.name}</i>${trial.text} 完成额外 +${trial.bonusGold} 币。<br>胜利：专属牌 / 宠物 / 物品三选一</em>` : ""}</span>
+          <span><small>${nodeTypeName(node)}</small><strong>${node.label}</strong>${node.challenge ? `<em><i class="challenge-affix-chip">${CHALLENGE_AFFIX_DEFS[node.affix].icon} ${CHALLENGE_AFFIX_DEFS[node.affix].name}</i>${CHALLENGE_AFFIX_DEFS[node.affix].text}<br>基础强化：生命 +${challengeHpPercent}% · 伤害 +${challengeDamagePercent}%<br><i class="challenge-trial-chip">${trial.icon} ${trial.name}</i>${trial.text} 完成额外 +${trial.bonusGold} 币。<br>胜利：专属牌 / 宠物 / 物品三选一${challengeRewardSourceHintHtml(node.enemy)}</em>` : ""}</span>
           <b>进入 →</b>
         </button>`).join("")}
     </div>
@@ -1672,7 +1703,7 @@ function combatRelicRowHtml() {
   </section>`;
 }
 
-const COMBAT_SETUP_LOG_PATTERN = /^(?:遭遇 |塔罗契约·|挑战词缀·|新生首手保底：|创可贴生效：|巨蟹座命盘：|第一节早课：|塔罗·.+生效：|第 \d+ 回合：抽 )/;
+const COMBAT_SETUP_LOG_PATTERN = /^(?:遭遇 |塔罗契约·|挑战词缀·|新生首手保底：|创可贴生效：|静音手机生效：|巨蟹座命盘：|第一节早课：|塔罗·.+生效：|第 \d+ 回合：抽 )/;
 
 function visibleCombatLogEntries(entries) {
   return entries.filter((entry) => !COMBAT_SETUP_LOG_PATTERN.test(entry)).slice(-3);
@@ -1686,6 +1717,9 @@ function renderCombat() {
   const tarot = game.tarot;
   const challengeAffix = CHALLENGE_AFFIX_DEFS[combat.modifiers.affix];
   const challengeTrial = combat.modifiers.challenge ? game.challengeTrialStatus() : null;
+  const challengeSourceHint = combat.modifiers.challenge
+    ? challengeRewardSourceHintText(combat.enemy.id)
+    : "";
   const intent = game.getIntent();
   const incomingDamage = game.incomingDamagePreview();
   const turnRisk = endTurnRiskGuidance(incomingDamage, game.hp);
@@ -1703,7 +1737,7 @@ function renderCombat() {
   const energy = combatEnergyState(combat);
   const visibleCombatLog = visibleCombatLogEntries(combat.log);
   const body = `
-    ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
+    ${combat.modifiers.challenge ? `<div class="challenge-contract"><b>${challengeAffix.icon} ${challengeAffix.name}</b><span>${challengeSourceHint ? `<i class="challenge-source-hint">${escapeHtml(challengeSourceHint)}</i> · ` : ""}${challengeAffix.text}</span><small>基础强化：生命 +${Math.round((CHALLENGE_RULES.hpMultiplier - 1) * 100)}% · 攻击伤害 +${Math.round((CHALLENGE_RULES.damageMultiplier - 1) * 100)}%</small><em>胜利：三种奖励方向任选一</em></div>` : ""}
     ${challengeTrial ? `<div class="challenge-trial-progress state-${challengeTrial.state}"><b>${challengeTrial.icon} 星座试炼 · ${challengeTrial.name}</b><span>${challengeTrial.text}</span><em>${challengeTrial.progress}</em><i>${challengeTrial.state === "achieved" ? "已达成，赢下战斗即可结算" : challengeTrial.state === "failed" ? "本场已经错过，不影响挑战胜负" : `完成额外 +${challengeTrial.bonusGold} 币`}</i></div>` : ""}
     ${combatRelicRowHtml()}
     <div class="combat-board ${battleFeedback ? `feedback-${battleFeedback.kind} feedback-${battleFeedback.tone}` : ""} ${combatInputLocked ? "enemy-resolving" : ""}">
@@ -1851,22 +1885,26 @@ function completeTutorial() {
   app.querySelector('[data-action="toggle-intent-details"]')?.focus();
 }
 
-function availableChallengeItems() {
-  return Object.keys(ITEM_DEFS)
-    .filter((id) => ITEM_DEFS[id].rarity !== "boss" && !game.hasItem(id));
+function availableChallengeItems(pending = game.pendingCombatReward) {
+  return game.availableChallengeItemIds(pending?.enemyId, pending?.signatureItemId);
 }
 
 function renderChallengeReward() {
   const affix = CHALLENGE_AFFIX_DEFS[context.affix];
   const pending = game.pendingCombatReward;
-  const rewardEgg = petEggDefinition(pending?.eggId);
+  const rewardSource = challengeRewardSourcePreview(pending?.enemyId, pending);
+  const rewardEgg = rewardSource.egg;
+  const rewardSignatureItem = rewardSource.signatureItem;
   const hasEggRoute = pending?.rewardVariant === "egg" && Boolean(rewardEgg);
-  const availableItems = availableChallengeItems();
+  const hasSignatureItemRoute = Boolean(rewardSignatureItem);
+  const availableItems = availableChallengeItems(pending);
   const hasNewItems = availableItems.length > 0;
   const advice = challengeRewardGuidance(game, availableItems.length);
   const recommendedReward = CHALLENGE_REWARD_DEFS[advice.recommendedId];
   const recommendedRewardName = advice.recommendedId === "pet" && hasEggRoute
     ? rewardEgg.name
+    : advice.recommendedId === "item" && hasSignatureItemRoute
+      ? rewardSignatureItem.name
     : recommendedReward.name;
   const body = `
     <div class="challenge-reward-summary"><b>${affix.icon} ${affix.name}完成</b><span>${context.trialCompleted ? `星座试炼额外 ${context.trialBonus} 校园币已到账。` : "奖励只改变本局构筑，不提供跨对局永久数值。"}</span></div>
@@ -1879,8 +1917,11 @@ function renderChallengeReward() {
       ${Object.values(CHALLENGE_REWARD_DEFS).map((reward) => {
         const guide = advice.options[reward.id];
         const isEggReward = reward.id === "pet" && hasEggRoute;
+        const isSignatureItemReward = reward.id === "item" && hasSignatureItemRoute;
         const text = isEggReward
           ? `获得 ${reward.gold} 校园币与${rewardEgg.name}。宠物蛋进入独立孵化位，不占书包。`
+          : isSignatureItemReward
+          ? `获得 ${reward.gold} 校园币，并确定领取${rewardSignatureItem.name}。只占本次物品路线，不增加奖励份数。`
           : reward.id === "item" && !hasNewItems
           ? `随身物品已全部收集，选择后改为获得 ${reward.fallbackGold} 校园币。`
           : reward.text;
@@ -1890,17 +1931,25 @@ function renderChallengeReward() {
             ? isEggReward
               ? `结算后 ${game.gold + reward.gold} 币 · 孵化 0/${eggRequiredCombats(rewardEgg)}`
               : `结算后 ${game.gold + reward.gold} 币 · 羁绊 ${game.pet.bond + reward.bond}`
+            : isSignatureItemReward
+              ? `结算后 ${game.gold + reward.gold} 币 · 确定 1 件招牌物品`
             : hasNewItems
               ? `结算后 ${game.gold + reward.gold} 币 · 再选 1 件物品`
               : `结算后 ${game.gold + reward.fallbackGold} 币`;
-        const name = isEggReward ? rewardEgg.name : reward.name;
-        const icon = isEggReward ? petEggHtml(rewardEgg.id, "reward-egg") : escapeHtml(reward.icon);
+        const name = isEggReward ? rewardEgg.name : isSignatureItemReward ? rewardSignatureItem.name : reward.name;
+        const icon = isEggReward
+          ? petEggHtml(rewardEgg.id, "reward-egg")
+          : isSignatureItemReward
+            ? itemIconHtml(rewardSignatureItem, "item-icon challenge-signature-icon")
+            : escapeHtml(reward.icon);
         const reason = isEggReward
           ? `来源公开：${ENEMY_DEFS[pending.enemyId]?.name || "本场怪物"}。领取后携带完成 ${eggRequiredCombats(rewardEgg)} 场有效战斗即可孵化。`
+          : isSignatureItemReward
+            ? `招牌来源：${rewardSource.enemy?.name || "本场怪物"}。${rewardSignatureItem.text}`
           : guide.reason;
         return `<button class="challenge-reward-option reward-${reward.id} ${guide.recommended ? "is-recommended" : ""}" data-action="choose-challenge-reward" data-id="${reward.id}">
           ${guide.recommended ? '<i class="reward-recommend-badge">本局推荐</i>' : ""}
-          <span class="${isEggReward ? "egg-reward-icon" : ""}">${icon}</span><small>${isEggReward ? "确定掉落 · 宠物蛋" : "奖励路线"}</small><strong>${name}</strong><p>${text}</p><em>${reason}</em><b>${preview} · 选择 →</b>
+          <span class="${isEggReward ? "egg-reward-icon" : isSignatureItemReward ? "signature-reward-icon" : ""}">${icon}</span><small>${isEggReward ? "确定掉落 · 宠物蛋" : isSignatureItemReward ? "确定掉落 · 招牌物品" : "奖励路线"}</small><strong>${name}</strong><p>${text}</p><em>${reason}</em><b>${preview} · 选择 →</b>
         </button>`;
       }).join("")}
     </div>`;
@@ -2966,10 +3015,11 @@ function resumeChallengeCombatReward() {
   if (pending.stage === "item") {
     const choices = pending.itemChoices.filter((id) => !game.hasItem(id));
     if (choices.length) {
+      const signatureItem = ITEM_DEFS[pending.signatureItemId];
       showItemReward(choices, () => {
         game.completePendingCombatReward();
         advanceWeek();
-      }, `失物招领 · ${CHALLENGE_REWARD_DEFS.item.gold} 校园币已到账`);
+      }, `${signatureItem ? `${ENEMY_DEFS[pending.enemyId]?.name || "挑战怪物"}遗落 · ${signatureItem.name}` : "失物招领"} · ${CHALLENGE_REWARD_DEFS.item.gold} 校园币已到账`);
       return;
     }
     game.completePendingCombatReward();

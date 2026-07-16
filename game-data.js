@@ -601,6 +601,7 @@ export const ITEM_DEFS = {
   bandage: { id: "bandage", name: "创可贴", rarity: "common", timing: "入场触发", art: "assets/items/bandage-v1.webp", text: "半血以下进入战斗时，获得6点护甲。" },
   petSnack: { id: "petSnack", name: "宠物零食", rarity: "rare", timing: "每场入场", art: "assets/items/pet-snack-v1.webp", text: "每场战斗开始时，宠物获得1点充能。" },
   eraser: { id: "eraser", name: "橡皮擦", rarity: "uncommon", timing: "每学期 1 次", art: "assets/items/eraser-v1.webp", text: "每学期一次，刷新战后的卡牌奖励。" },
+  silentPhone: { id: "silentPhone", name: "静音手机", rarity: "rare", timing: "每场首回合", source: "挑战手机精", art: "assets/items/silent-phone-v1.webp", text: "每场战斗第一回合多抽1张牌。" },
   allNighter: { id: "allNighter", name: "通宵复习计划", rarity: "boss", timing: "每回合 / 每场", art: "assets/items/all-nighter-v1.webp", text: "每回合+1能量；每场开始洗入2张紧张。" },
   referenceBooks: { id: "referenceBooks", name: "全套参考书", rarity: "boss", timing: "每回合 / 首回合", art: "assets/items/reference-books-v1.webp", text: "每回合多抽1张；每场第一回合少1能量。" }
 };
@@ -610,6 +611,11 @@ export const REGULAR_ITEM_IDS = [
   "earplugs", "bandage", "petSnack", "eraser"
 ];
 export const BOSS_ITEM_IDS = ["allNighter", "referenceBooks"];
+
+// 招牌物品只占指定挑战敌人的既有物品路线，不进入普通物品池。
+export const CHALLENGE_SIGNATURE_ITEM_DROPS = Object.freeze({
+  phoneSpirit: "silentPhone"
+});
 
 export const ENEMY_DEFS = {
   sleepyBug: {
