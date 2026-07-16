@@ -585,7 +585,7 @@ test("战斗双方共享校园舞台并把中央战报降为次要信息", () =>
   assert.match(styles, /\.combat-log p:first-child \{[^}]*display: block;[^}]*text-overflow: ellipsis;/);
   assert.match(styles, /\.combat-vitals \{[^}]*width: min\(232px, 82%\);[^}]*margin: -7px auto 0;/);
   assert.match(styles, /\.combat-action-dock::before \{[^}]*border-top: 1px solid rgba\(194,207,207,\.13\);/);
-  assert.match(styles, /@media \(min-width: 701px\) and \(min-height: 680px\) and \(max-height: 759px\)/);
+  assert.match(styles, /@media \(min-width: 701px\) and \(min-height: 680px\) and \(max-height: 933px\)/);
   assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-board \{ height: 226px; min-height: 226px; \}/);
   assert.match(styles, /\.combat-page:has\(\.challenge-contract\) \.combat-log,[\s\S]*?\.enemy-fighter > p \{ display: none; \}/);
 });

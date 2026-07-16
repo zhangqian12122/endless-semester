@@ -53,7 +53,7 @@ test("701–980px 窄屏战斗顶栏保持单行并主动收敛次要入口", ()
 });
 
 test("平板底部手牌坞为八张手牌保留独立压缩兜底", () => {
-  const tablet = mediaBlock("min-width: 701px", "max-width: 980px", "min-height: 620px");
+  const tablet = exactMediaBlock("(min-width: 701px) and (max-width: 980px) and (min-height: 620px)");
   const eightCards = tablet.match(/\.hand:has\(\.game-card:nth-child\(8\)\) \.game-card\s*\{([^}]*)\}/);
 
   assert.ok(eightCards, "缺少平板八手牌兜底选择器");

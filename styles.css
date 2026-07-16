@@ -1532,7 +1532,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
 .toast { position: fixed; z-index: 80; bottom: 26px; left: 50%; max-width: calc(100% - 30px); padding: 12px 18px; color: #17140d; border-radius: 6px; background: var(--yellow); box-shadow: var(--shadow); font-size: 13px; font-weight: 900; transform: translateX(-50%); animation: toast-in .25s ease both; }
 @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 12px); } }
 
-@media (min-width: 701px) and (min-height: 680px) {
+@media (min-width: 701px) and (min-height: 680px),
+       (min-width: 701px) and (max-width: 980px) and (min-height: 620px) and (max-height: 680px) {
   .combat-page { height: calc(100vh - 64px); min-height: calc(100vh - 64px); overflow: hidden; padding: 8px clamp(14px, 3vw, 44px) 294px; }
   .combat-page .tarot-combat-contract { gap: 12px; min-height: 34px; margin-bottom: 6px; padding: 7px 12px; }
   .combat-page .challenge-contract { gap: 12px; min-height: 34px; margin-bottom: 6px; padding: 7px 12px; }
@@ -1585,7 +1586,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-action-dock .hand .card-tactical-cue { top: 84px; }
 }
 
-@media (min-width: 701px) and (min-height: 680px) and (max-height: 759px) {
+@media (min-width: 701px) and (min-height: 680px) and (max-height: 933px),
+       (min-width: 701px) and (max-width: 980px) and (min-height: 620px) and (max-height: 680px) {
   .combat-page:has(.challenge-contract) .challenge-contract,
   .combat-page:has(.challenge-contract) .challenge-trial-progress { position: absolute; z-index: 14; top: 8px; overflow: hidden; height: 34px; min-height: 34px; margin: 0; padding: 6px 9px; white-space: nowrap; }
   .combat-page:has(.challenge-contract) .challenge-contract { right: calc(50% + 4px); left: clamp(14px, 3vw, 44px); }
@@ -1602,6 +1604,8 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-page:has(.challenge-contract) .enemy-finalExam { width: 140px; }
   .combat-page:has(.challenge-contract) .battle-pet { right: -42px; width: 82px; height: 96px; }
   .combat-page:has(.challenge-contract) .combat-vitals { width: min(190px, 80%); }
+  .combat-page:has(.challenge-contract) .enemy-intent-token,
+  .combat-page:has(.challenge-contract) .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -34px; }
   .combat-page:has(.challenge-contract) .combat-log,
   .combat-page:has(.challenge-contract) .enemy-fighter > p { display: none; }
 }
@@ -1656,6 +1660,9 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   .combat-controls { gap: 8px; }
   .combat-action-dock .hand .game-card { flex-basis: 146px; width: 146px; transform: none; }
   .combat-action-dock .hand:has(.game-card:nth-child(8)) .game-card { flex-basis: 132px; width: 132px; margin-right: -60px; }
+  .combat-action-dock .hand:has(.game-card:nth-child(9)) .game-card { flex-basis: 126px; width: 126px; margin-right: -62px; }
+  .combat-action-dock .hand:has(.game-card:nth-child(8)) .game-card:last-child { margin-right: 0; }
+  .combat-action-dock .hand:has(.game-card:nth-child(9)) .game-card:last-child { margin-right: 0; }
 }
 
 @media (min-width: 701px) and (max-width: 980px) {
@@ -1669,6 +1676,29 @@ h1 { margin: 0; font-size: clamp(34px, 6vw, 62px); line-height: .98; letter-spac
   body:has(.combat-page) .topbar > .quiet-button:not([data-action="open-rules"]):not([data-action="open-deck"]) { display: none; }
   body:has(.combat-page) .topbar .brand small { display: none; }
   body:has(.combat-page) .health-resource { min-width: 104px; }
+}
+
+@media (min-width: 701px) and (max-width: 980px) and (min-height: 620px) and (max-height: 680px) {
+  body:has(.combat-page) { overflow: hidden; }
+  .combat-page {
+    height: calc(100vh - 64px);
+    height: calc(100dvh - 64px);
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+  }
+  .combat-page .combat-relic-row.is-empty { display: none; }
+  .combat-page:has(.challenge-contract):has(.combat-relic-row.is-empty) .combat-board { margin-top: 40px; }
+  .combat-page .enemy-intent-token,
+  .combat-page .enemy-fighter .enemy-intent-token:has(.intent-chip:nth-child(3)) { top: -34px; }
+  .combat-action-dock .hand {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: thin;
+  }
 }
 
 @media (max-width: 620px) {
