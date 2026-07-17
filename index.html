@@ -2,15 +2,24 @@
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="无限学期卡牌构筑游戏灰盒原型" />
     <title>无限学期 · 灰盒原型</title>
-    <link rel="stylesheet" href="styles.css?v=1.8.62" />
+    <link rel="stylesheet" href="styles.css?v=1.8.63" />
   </head>
   <body>
+    <aside id="mobile-landscape-gate" class="mobile-landscape-gate" aria-labelledby="mobile-landscape-title">
+      <div class="mobile-landscape-phone" aria-hidden="true"><span></span></div>
+      <div>
+        <small>手机游玩模式</small>
+        <strong id="mobile-landscape-title">请进入 16:9 横屏</strong>
+        <p id="mobile-landscape-status">横屏能完整显示敌人、手牌与回合操作。</p>
+        <button type="button" id="mobile-landscape-enter">点击进入横屏</button>
+      </div>
+    </aside>
     <main id="app"></main>
     <div id="toast-live-region" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
     <script async src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
-    <script type="module" src="app.js?v=1.8.62"></script>
+    <script type="module" src="app.js?v=1.8.63"></script>
   </body>
 </html>

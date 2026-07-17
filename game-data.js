@@ -380,6 +380,142 @@ export const CARD_DEFS = {
     effect: { damage: 4, enemyExposed: 2 },
     upgradedEffect: { damage: 6, enemyExposed: 3 }
   },
+  tomorrowForSure: {
+    id: "tomorrowForSure", name: "明天一定", type: "skill", rarity: "common", cost: 1,
+    text: "下回合获得2点能量。", upgradedText: "下回合获得3点能量。",
+    effect: { nextEnergy: 2 }, upgradedEffect: { nextEnergy: 3 }
+  },
+  fiveMoreMinutes: {
+    id: "fiveMoreMinutes", name: "我先眯五分钟", type: "skill", rarity: "common", cost: 1,
+    text: "获得6点护甲。下回合获得1点能量。",
+    upgradedText: "获得9点护甲。下回合获得1点能量。",
+    effect: { block: 6, nextEnergy: 1 }, upgradedEffect: { block: 9, nextEnergy: 1 }
+  },
+  bellAmbush: {
+    id: "bellAmbush", name: "下课铃突袭", type: "attack", rarity: "common", cost: 1,
+    text: "造成5点伤害。下回合获得1点能量。",
+    upgradedText: "造成8点伤害。下回合获得1点能量。",
+    effect: { damage: 5, nextEnergy: 1 }, upgradedEffect: { damage: 8, nextEnergy: 1 }
+  },
+  teacherOvertime: {
+    id: "teacherOvertime", name: "老师拖堂了", type: "skill", rarity: "common", cost: 0,
+    text: "下回合多抽1张牌并获得1点能量。消耗。",
+    upgradedText: "下回合多抽2张牌并获得1点能量。消耗。",
+    effect: { nextDrawBonus: 1, nextEnergy: 1, exhaust: true },
+    upgradedEffect: { nextDrawBonus: 2, nextEnergy: 1, exhaust: true }
+  },
+  dontRush: {
+    id: "dontRush", name: "你先别急", type: "skill", rarity: "common", cost: 1,
+    text: "敌人的下一次攻击每段伤害-1。下回合获得1点能量。",
+    upgradedText: "敌人的下一次攻击每段伤害-2。下回合获得1点能量。",
+    effect: { enemyAttackDown: 1, nextEnergy: 1 },
+    upgradedEffect: { enemyAttackDown: 2, nextEnergy: 1 }
+  },
+  powerSavingMode: {
+    id: "powerSavingMode", name: "省电模式", type: "skill", rarity: "uncommon", cost: 0,
+    text: "下回合获得1点能量，但少抽1张牌。消耗。",
+    upgradedText: "下回合获得2点能量，但少抽1张牌。消耗。",
+    effect: { nextEnergy: 1, nextDrawPenalty: 1, exhaust: true },
+    upgradedEffect: { nextEnergy: 2, nextDrawPenalty: 1, exhaust: true }
+  },
+  borrowFromTomorrow: {
+    id: "borrowFromTomorrow", name: "向明天借一点", type: "skill", rarity: "uncommon", cost: 0,
+    text: "获得1点能量。下回合少1点能量。消耗。",
+    upgradedText: "获得2点能量。下回合少1点能量。消耗。",
+    effect: { energy: 1, nextEnergyPenalty: 1, exhaust: true },
+    upgradedEffect: { energy: 2, nextEnergyPenalty: 1, exhaust: true }
+  },
+  weekendStudy: {
+    id: "weekendStudy", name: "周末一定学", type: "skill", rarity: "uncommon", cost: 2,
+    text: "下回合多抽1张牌并获得3点能量。",
+    upgradedText: "下回合多抽1张牌并获得4点能量。",
+    effect: { nextDrawBonus: 1, nextEnergy: 3 },
+    upgradedEffect: { nextDrawBonus: 1, nextEnergy: 4 }
+  },
+  refuseOverthinking: {
+    id: "refuseOverthinking", name: "拒绝内耗", type: "skill", rarity: "uncommon", cost: 1,
+    text: "获得4点护甲。移除走神。下回合获得1点能量。",
+    upgradedText: "获得7点护甲。移除走神。下回合获得1点能量。",
+    effect: { block: 4, clearDistracted: true, nextEnergy: 1 },
+    upgradedEffect: { block: 7, clearDistracted: true, nextEnergy: 1 }
+  },
+  withdrawHomework: {
+    id: "withdrawHomework", name: "撤回了一条作业", type: "skill", rarity: "uncommon", cost: 1,
+    text: "获得3点护甲。消耗手中所有状态牌，每张使下回合获得1点能量，最多3点。",
+    upgradedText: "获得5点护甲。消耗手中所有状态牌，每张使下回合获得1点能量，最多4点。",
+    effect: { block: 3, exhaustStatuses: true, nextEnergyPerStatus: 1, nextEnergyStatusCap: 3 },
+    upgradedEffect: { block: 5, exhaustStatuses: true, nextEnergyPerStatus: 1, nextEnergyStatusCap: 4 }
+  },
+  saveAllForTomorrow: {
+    id: "saveAllForTomorrow", name: "全部留到明天", type: "skill", rarity: "rare", cost: 0,
+    text: "将本回合剩余能量存到下回合。消耗。",
+    upgradedText: "将本回合剩余能量存到下回合，再多获得1点。消耗。",
+    effect: { bankEnergy: true, exhaust: true },
+    upgradedEffect: { bankEnergy: true, nextEnergy: 1, exhaust: true }
+  },
+  ddlPowerSpike: {
+    id: "ddlPowerSpike", name: "DDL开始发力", type: "skill", rarity: "rare", cost: 2,
+    text: "下回合多抽2张牌并获得2点能量。消耗。",
+    upgradedText: "下回合多抽2张牌并获得3点能量。消耗。",
+    effect: { nextDrawBonus: 2, nextEnergy: 2, exhaust: true },
+    upgradedEffect: { nextDrawBonus: 2, nextEnergy: 3, exhaust: true }
+  },
+  screenshotProof: {
+    id: "screenshotProof", name: "截图为证", type: "skill", rarity: "common", cost: 0,
+    text: "抽1张牌，然后弃1张牌。消耗。",
+    upgradedText: "抽2张牌，然后弃1张牌。消耗。",
+    effect: { draw: 1, discard: 1, exhaust: true },
+    upgradedEffect: { draw: 2, discard: 1, exhaust: true }
+  },
+  dontAtMe: {
+    id: "dontAtMe", name: "别艾特我", type: "skill", rarity: "common", cost: 1,
+    text: "获得6点护甲。敌人的下一次攻击每段伤害-1。",
+    upgradedText: "获得9点护甲。敌人的下一次攻击每段伤害-1。",
+    effect: { block: 6, enemyAttackDown: 1 },
+    upgradedEffect: { block: 9, enemyAttackDown: 1 }
+  },
+  oneMoreQuestion: {
+    id: "oneMoreQuestion", name: "最后一个问题", type: "attack", rarity: "common", cost: 1,
+    text: "造成4点伤害。抽1张牌。",
+    upgradedText: "造成7点伤害。抽1张牌。",
+    effect: { damage: 4, draw: 1 },
+    upgradedEffect: { damage: 7, draw: 1 }
+  },
+  boldIdea: {
+    id: "boldIdea", name: "我有个大胆想法", type: "skill", rarity: "uncommon", cost: 1,
+    text: "令敌人露怯3。下回合获得1点能量。",
+    upgradedText: "令敌人露怯4。下回合获得1点能量。",
+    effect: { enemyExposed: 3, nextEnergy: 1 },
+    upgradedEffect: { enemyExposed: 4, nextEnergy: 1 }
+  },
+  highEndRound: {
+    id: "highEndRound", name: "这把高端局", type: "attack", rarity: "uncommon", cost: 2,
+    text: "造成13点伤害。下回合获得2点能量。",
+    upgradedText: "造成18点伤害。下回合获得2点能量。",
+    effect: { damage: 13, nextEnergy: 2 },
+    upgradedEffect: { damage: 18, nextEnergy: 2 }
+  },
+  muteGroupChat: {
+    id: "muteGroupChat", name: "群聊免打扰", type: "skill", rarity: "uncommon", cost: 1,
+    text: "获得4点护甲。消耗手中所有状态牌，每张再获得3点护甲。",
+    upgradedText: "获得6点护甲。消耗手中所有状态牌，每张再获得4点护甲。",
+    effect: { block: 4, exhaustStatuses: true, blockPerStatus: 3 },
+    upgradedEffect: { block: 6, exhaustStatuses: true, blockPerStatus: 4 }
+  },
+  brainOffline: {
+    id: "brainOffline", name: "大脑已下线", type: "skill", rarity: "rare", cost: 0,
+    text: "下回合获得3点能量，但少抽2张牌。消耗。",
+    upgradedText: "下回合获得4点能量，但少抽2张牌。消耗。",
+    effect: { nextEnergy: 3, nextDrawPenalty: 2, exhaust: true },
+    upgradedEffect: { nextEnergy: 4, nextDrawPenalty: 2, exhaust: true }
+  },
+  cramAtDeadline: {
+    id: "cramAtDeadline", name: "佛脚开光Pro", type: "skill", rarity: "rare", cost: 1,
+    text: "下一张攻击牌触发两次。下回合少1点能量。消耗。",
+    upgradedText: "下一张攻击牌触发两次。消耗。",
+    effect: { doubleNextAttack: true, nextEnergyPenalty: 1, exhaust: true },
+    upgradedEffect: { doubleNextAttack: true, exhaust: true }
+  },
   summonPaperCrane: {
     id: "summonPaperCrane", name: "纸鹤点名", type: "skill", rarity: "common", persona: "summoner", cost: 0,
     text: "召唤1只纸灵，最多3只。消耗。",
@@ -627,6 +763,26 @@ export const CARD_ART_DEFS = {
     symbol: "追", caption: "走廊追逐", motif: "speed",
     image: "assets/cards/cant-outrun-me-v1.webp", focus: "54% 52%"
   },
+  tomorrowForSure: { symbol: "明", caption: "计划推到明天", motif: "notes" },
+  fiveMoreMinutes: { symbol: "眯", caption: "课桌短暂充电", motif: "guard" },
+  bellAmbush: { symbol: "铃", caption: "铃响突然出击", motif: "speed" },
+  teacherOvertime: { symbol: "拖", caption: "拖堂积攒节奏", motif: "focus" },
+  dontRush: { symbol: "等", caption: "先按住对方节奏", motif: "balance" },
+  powerSavingMode: { symbol: "省", caption: "关闭后台耗电", motif: "power" },
+  borrowFromTomorrow: { symbol: "借", caption: "透支明日状态", motif: "void" },
+  weekendStudy: { symbol: "周", caption: "周末计划蓄势", motif: "notes" },
+  refuseOverthinking: { symbol: "停", caption: "切断情绪内耗", motif: "clean" },
+  withdrawHomework: { symbol: "撤", caption: "作业消息撤回", motif: "clean" },
+  saveAllForTomorrow: { symbol: "存", caption: "能量装进明天", motif: "power" },
+  ddlPowerSpike: { symbol: "燃", caption: "截止前集中爆发", motif: "impact" },
+  screenshotProof: { symbol: "截", caption: "聊天记录留档", motif: "notes" },
+  dontAtMe: { symbol: "免", caption: "屏蔽消息轰炸", motif: "guard" },
+  oneMoreQuestion: { symbol: "问", caption: "追问打开思路", motif: "focus" },
+  boldIdea: { symbol: "敢", caption: "大胆方案出手", motif: "balance" },
+  highEndRound: { symbol: "端", caption: "高端操作蓄势", motif: "impact" },
+  muteGroupChat: { symbol: "静", caption: "群聊一键清净", motif: "clean" },
+  brainOffline: { symbol: "离", caption: "思绪彻底断线", motif: "void" },
+  cramAtDeadline: { symbol: "抱", caption: "截止线前开卷", motif: "combo" },
   summonPaperCrane: {
     symbol: "召", caption: "纸鹤应声", motif: "notes",
     image: "assets/cards/summon-paper-crane-v1.webp", focus: "50% 50%"
@@ -732,7 +888,11 @@ export const CARD_ART_DEFS = {
 export const PUBLIC_REWARD_CARD_IDS = [
   "catCombo", "classSprint", "stubborn", "lendAHand", "holdOn", "airplaneMode",
   "scratchPaper", "borrowNotes", "clearBacklog", "feedPet", "getInZone", "overthink",
-  "elbowStrike", "cantOutrunMe"
+  "elbowStrike", "cantOutrunMe", "tomorrowForSure", "fiveMoreMinutes", "bellAmbush",
+  "teacherOvertime", "dontRush", "powerSavingMode", "borrowFromTomorrow", "weekendStudy",
+  "refuseOverthinking", "withdrawHomework", "saveAllForTomorrow", "ddlPowerSpike",
+  "screenshotProof", "dontAtMe", "oneMoreQuestion", "boldIdea", "highEndRound",
+  "muteGroupChat", "brainOffline", "cramAtDeadline"
 ];
 
 export const PERSONA_CARD_IDS = Object.freeze({

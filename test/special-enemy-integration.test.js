@@ -7,7 +7,7 @@ const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const indexSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
 test("敌人机制牌接入战场并在结算期间冻结刚刚执行的步骤", () => {
-  assert.match(appSource, /enemyMechanicProgress[\s\S]*?from "\.\/app-flow\.js\?v=1\.8\.62"/);
+  assert.match(appSource, /enemyMechanicProgress[\s\S]*?from "\.\/app-flow\.js\?v=1\.8\.63"/);
   assert.match(appSource, /function enemyMechanicProgressHtml\(enemy, intent, resolution = null\)/);
   assert.match(appSource, /const intentTurn = resolution \? Math\.max\(0, resolution\.turn - 1\) : enemy\?\.intentTurn/);
   assert.match(appSource, /enemyMechanicProgress\(\s*enemy\?\.id,\s*intentTurn,\s*resolution\?\.mechanicState \|\| intent\?\.mechanicState,\s*resolution\?\.intent \|\| intent\s*\)/);
@@ -30,6 +30,6 @@ test("持续递增格与实际动画目标只在敌方结算阶段获得合成�
 test("敌人机制牌 UI 资源使用同一缓存版本", () => {
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];
-  assert.equal(styleVersion, "1.8.62");
+  assert.equal(styleVersion, "1.8.63");
   assert.equal(appVersion, styleVersion);
 });

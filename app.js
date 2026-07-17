@@ -20,17 +20,18 @@ import {
   SAFE_EVENT_IDS,
   SHOP_SCENE,
   SUPPLY_DEFS
-} from "./game-data.js?v=1.8.62";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.62";
-import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js?v=1.8.62";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js?v=1.8.62";
+} from "./game-data.js?v=1.8.63";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.63";
+import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js?v=1.8.63";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatNextEnergyState, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, feedbackEntryDecision, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js?v=1.8.63";
 import {
   STORAGE_RECORD_STATUS,
   createFeedbackReport,
+  createPlaytestSnapshot,
   createSaveBackup,
   inspectStorageRecord,
   parseSaveBackup
-} from "./save-transfer.js?v=1.8.62";
+} from "./save-transfer.js?v=1.8.63";
 import {
   achievementProgress,
   createCareerProfile,
@@ -40,7 +41,8 @@ import {
   recordEnemyEncounter,
   recordSemesterCompletion,
   trialCollectionProgress
-} from "./career.js?v=1.8.62";
+} from "./career.js?v=1.8.63";
+import { requestMobileLandscape } from "./mobile-landscape.js?v=1.8.63";
 
 if (!window.gsap) {
   try {
@@ -53,10 +55,24 @@ if (!window.gsap) {
 
 const app = document.querySelector("#app");
 const toastLiveRegion = document.querySelector("#toast-live-region");
-const APP_VERSION = "1.8.62";
+const mobileLandscapeEnter = document.querySelector("#mobile-landscape-enter");
+const mobileLandscapeStatus = document.querySelector("#mobile-landscape-status");
+const APP_VERSION = "1.8.63";
 const SAVE_KEY = "endless-semester-v2";
 const CAREER_KEY = "endless-semester-career-v1";
 const recentClientErrors = [];
+
+mobileLandscapeEnter?.addEventListener("click", async () => {
+  mobileLandscapeEnter.disabled = true;
+  if (mobileLandscapeStatus) mobileLandscapeStatus.textContent = "正在申请全屏并切换横屏…";
+  const result = await requestMobileLandscape();
+  if (mobileLandscapeStatus) {
+    mobileLandscapeStatus.textContent = result.orientationLocked
+      ? "正在进入 16:9 横屏…"
+      : "浏览器未允许自动旋转，请把手机横过来；旋转后会自动进入游戏。";
+  }
+  mobileLandscapeEnter.disabled = false;
+});
 
 function rememberClientError(type, error) {
   const message = error instanceof Error ? error.message : String(error ?? "未知错误");
@@ -427,7 +443,7 @@ function topBar(mobileTopbarOpen = false) {
   const pet = currentPetDefinition();
   return `
     <header class="topbar${mobileTopbarOpen ? " mobile-menu-open" : ""}">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.8.62</small></button>
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.8.63</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
@@ -669,7 +685,7 @@ function renderIntro() {
         </div>
         <div class="intro-meta-actions">
           <button class="continue-button" data-action="open-archive">生涯档案 · ${career.unlockedAchievements.length}/${Object.keys(ACHIEVEMENT_DEFS).length} 成就</button>
-          <button class="continue-button" data-action="open-library">卡牌图鉴 · ${Object.keys(CARD_DEFS).length} 张正式卡图</button>
+          <button class="continue-button" data-action="open-library">卡牌图鉴 · ${Object.keys(CARD_DEFS).length} 张卡牌</button>
           <button class="continue-button" data-action="open-item-library">物品图鉴 · ${Object.keys(ITEM_DEFS).length} 件随身物品</button>
         </div>
         <p class="prototype-note">本版是完整规则灰盒：无付费、无体力墙、无概率付费抽卡。</p>
@@ -2182,6 +2198,7 @@ function renderCombat() {
   });
   const petChargePercent = Math.round((game.pet.charge / Math.max(1, game.pet.maxCharge)) * 100);
   const energy = combatEnergyState(combat);
+  const nextEnergy = combatNextEnergyState(combat);
   const visibleCombatLog = visibleCombatLogEntries(combat.log);
   const body = `
     ${combat.routeBonusGold ? `<div class="route-threat-contract"><b>高压加练 · 威胁 ${combat.routeThreat}</b><span>你主动选择了本周更危险的对手</span><em>胜利额外 +${combat.routeBonusGold} 币 · 共 ${NORMAL_COMBAT_REWARD_GOLD + combat.routeBonusGold} 币</em></div>` : ""}
@@ -2239,10 +2256,11 @@ function renderCombat() {
             <button class="pet-skill ${!petUnavailable ? "ready" : ""}" data-action="pet-skill" aria-keyshortcuts="G" ${petUnavailable ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">G</kbd>${petButtonText}</button>
           </div>
         </article>
-        <div class="energy-orb" aria-label="当前能量 ${energy.current}，本回合上限 ${energy.maximum}">
+        <div class="energy-orb" aria-label="当前能量 ${energy.current}，本回合上限 ${energy.maximum}${nextEnergy.detail ? `，${nextEnergy.detail}` : ""}">
           <i class="energy-orb-core" aria-hidden="true"></i>
           <span class="energy-orb-value"><b>${energy.current}</b><i>/</i><strong>${energy.maximum}</strong></span>
           <small>能量</small>
+          ${nextEnergy.label ? `<em class="energy-next is-${nextEnergy.tone}" title="${escapeHtml(nextEnergy.detail)}">${nextEnergy.label}</em>` : ""}
         </div>
       </div>
       ${combatSupplyTrayHtml(combatInputLocked || Boolean(combat.pendingDiscard) || combat.status !== "active")}
@@ -2733,6 +2751,10 @@ function renderRules() {
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
     ${game.tarot ? `<div class="rules-note tarot-note"><b>${game.tarot.number} 塔罗契约：${game.tarot.name}</b><span>收益：${game.tarot.boon} 代价：${game.tarot.cost}</span></div>` : ""}
+    <section class="rules-feedback" aria-labelledby="rules-feedback-title">
+      <div><small>公开试玩保障</small><h2 id="rules-feedback-title">刚刚遇到问题？保留当前现场</h2><p>生成带短测试编号、当前页面、战斗瞬间和本地存档的反馈包。内容只在浏览器里生成，不会自动上传。</p></div>
+      <button type="button" class="quiet-button" data-action="open-feedback-report">生成当前现场反馈包</button>
+    </section>
     <button class="primary centered" data-action="close-rules">返回</button>`;
   return page("六条核心规则", "一分钟看懂", body, { description: "所有例外规则都写在卡牌、物品或敌人意图上。" });
 }
@@ -2908,23 +2930,35 @@ function renderCorruptSave() {
 function renderFeedbackReport() {
   const description = context.feedbackDescription || "";
   const reportText = context.reportText || currentFeedbackReport(description, context.issueScreen, context.createdAt);
+  const report = JSON.parse(reportText);
+  const playtest = report.playtest || {};
+  const run = playtest.run;
+  const combat = playtest.combat;
+  const enemyName = combat?.enemyId ? ENEMY_DEFS[combat.enemyId]?.name || combat.enemyId : "无战斗";
+  const returnLabel = context.returnState?.screen === "rules" ? "返回规则" : "返回档案";
   const errorCount = recentClientErrors.length;
   const body = `<section class="save-transfer-editor feedback-report-editor">
-    <div class="save-transfer-explainer"><small>试玩问题复现</small><h2>生成可直接发送的反馈包</h2><p>简单写下你做了什么、看到了什么。反馈包会附带当前版本、问题页面、最近 ${errorCount} 条脚本错误以及本地存档，方便开发者直接复现。</p></div>
+    <div class="save-transfer-explainer"><small>试玩问题复现</small><h2>生成可直接发送的反馈包</h2><p>简单写下你做了什么、看到了什么。反馈包会附带当前版本、问题页面、最近 ${errorCount} 条脚本错误、本地存档和报错瞬间的只读战斗现场，方便开发者直接定位。</p></div>
+    <div class="feedback-report-id" aria-label="本次反馈测试编号">
+      <span><small>测试编号</small><strong>${escapeHtml(report.reportId)}</strong></span>
+      <p>发送问题时先附上这个短编号；同一份反馈包始终使用同一个编号，方便双方核对。</p>
+    </div>
     <label for="feedback-description">问题描述</label>
     <textarea id="feedback-description" class="feedback-description" maxlength="1200" spellcheck="true" placeholder="例如：第 8 周打完精英后，点击刻印卡牌没有进入下一步。">${escapeHtml(description)}</textarea>
     <div class="feedback-report-meta" aria-label="反馈包内容">
       <span><small>游戏版本</small><strong>V${APP_VERSION}</strong></span>
-      <span><small>问题页面</small><strong>${escapeHtml(context.issueScreen || "unknown")}</strong></span>
+      <span><small>现场阶段</small><strong>${escapeHtml(playtest.phase || context.issueScreen || "unknown")}</strong></span>
+      <span><small>学期进度</small><strong>${run ? `第 ${run.semester} 学期 · 第 ${run.week} 周` : "无进行中对局"}</strong></span>
+      <span><small>战斗现场</small><strong>${escapeHtml(combat ? `${enemyName} · 第 ${combat.turn} 回合` : "无战斗")}</strong></span>
       <span><small>最近错误</small><strong>${errorCount} 条</strong></span>
-      <span><small>当前对局</small><strong>${readSave() ? "已包含" : "无进行中对局"}</strong></span>
+      <span><small>设备视口</small><strong>${escapeHtml(report.environment?.viewport || "未知")}</strong></span>
     </div>
     <label for="feedback-report-output">反馈包预览</label>
     <textarea id="feedback-report-output" readonly spellcheck="false">${escapeHtml(reportText)}</textarea>
-    <div class="warning-box">反馈包包含当前对局与生涯解锁数据，但不会自动上传。复制后请只发送给你信任的开发者。</div>
+    <div class="warning-box">反馈包包含当前对局、生涯解锁和设备信息，但不会自动上传。战斗现场只用于诊断，导入存档时仍会从本场安全检查点重新开始。复制后请只发送给你信任的开发者。</div>
     <div class="save-transfer-actions">
       <button type="button" class="primary" data-action="copy-feedback-report">复制最新反馈包</button>
-      <button type="button" class="quiet-button" data-action="close-save-transfer">返回档案</button>
+      <button type="button" class="quiet-button" data-action="close-save-transfer">${returnLabel}</button>
     </div>
   </section>`;
   return page("试玩问题反馈", `V${APP_VERSION} · 本地生成 · 不自动上传`, body, {
@@ -3476,18 +3510,33 @@ function currentSaveBackup() {
 }
 
 function currentFeedbackReport(description = "", issueScreen = screen, createdAt = new Date().toISOString()) {
+  const save = hasActiveRun && game.combat?.status !== "lost" ? game.toJSON() : readSave();
+  const snapshotSource = hasActiveRun && game.combat?.status !== "lost" ? game : save;
+  let intent = null;
+  if (snapshotSource === game && game.combat) {
+    try {
+      intent = game.getIntent();
+    } catch (error) {
+      rememberClientError("feedback.intent", error);
+    }
+  }
   return createFeedbackReport({
     appVersion: APP_VERSION,
     screen: issueScreen,
     description,
-    save: hasActiveRun && game.combat?.status !== "lost" ? game.toJSON() : readSave(),
+    save,
     career,
+    playtest: createPlaytestSnapshot({ game: snapshotSource, screen: issueScreen, intent }),
     errors: recentClientErrors,
     environment: {
       page: `${window.location.pathname}${window.location.search}`,
       viewport: `${window.innerWidth}x${window.innerHeight}`,
       language: navigator.language || null,
-      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+      pixelRatio: window.devicePixelRatio || 1,
+      touchPoints: navigator.maxTouchPoints || 0,
+      platform: navigator.platform || null,
+      userAgent: navigator.userAgent || null
     },
     createdAt
   });
@@ -4817,10 +4866,11 @@ app.addEventListener("click", (event) => {
   } else if (action === "open-save-import") {
     changeScreen("saveImport", { returnState: { screen: "archive", context } });
   } else if (action === "open-feedback-report") {
-    const issueScreen = context.returnState?.screen || "archive";
+    const destination = feedbackEntryDecision(screen, context);
+    const issueScreen = destination.issueScreen;
     const createdAt = new Date().toISOString();
     changeScreen("feedbackReport", {
-      returnState: { screen: "archive", context },
+      returnState: destination.returnState,
       issueScreen,
       createdAt,
       feedbackDescription: "",

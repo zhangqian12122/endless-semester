@@ -108,16 +108,19 @@ test("每张卡牌都有可替换的独立卡面美术标识", () => {
   assert.deepEqual(artIds, cardIds);
   assert.equal(new Set(captions).size, captions.length);
   const formalArtIds = artIds.filter((id) => CARD_ART_DEFS[id].image);
-  const requiredFormalArtIds = [
-    "textbookStrike", "backpackGuard", "payAttention", "classSprint",
-    "scratchPaper", "cramming", "catCombo", "stubborn", "airplaneMode",
-    "lendAHand", "holdOn", "borrowNotes", "clearBacklog", "feedPet",
-    "getInZone", "overthink", "ariesRush", "ariesRebound", "ariesHeat",
-    "ariesUproar", "geminiSwitch", "geminiJuggle", "geminiEcho", "geminiDeadline",
-    "cancerHuddle", "cancerCover", "cancerSteady", "cancerSafe", "todo", "nervous"
-  ];
-  assert.equal(formalArtIds.length, cardIds.length, "三十张卡牌必须全部接入正式卡图");
-  assert.ok(requiredFormalArtIds.every((id) => formalArtIds.includes(id)), "三十张正式卡图未完整接入");
+  const newGrayboxArtIds = [
+    "tomorrowForSure", "fiveMoreMinutes", "bellAmbush", "teacherOvertime", "dontRush",
+    "powerSavingMode", "borrowFromTomorrow", "weekendStudy", "refuseOverthinking",
+    "withdrawHomework", "saveAllForTomorrow", "ddlPowerSpike", "screenshotProof",
+    "dontAtMe", "oneMoreQuestion", "boldIdea", "highEndRound", "muteGroupChat",
+    "brainOffline", "cramAtDeadline"
+  ].sort();
+  assert.deepEqual(
+    artIds.filter((id) => !CARD_ART_DEFS[id].image),
+    newGrayboxArtIds,
+    "本批二十张机制牌应保留独立灰盒标识，等待统一卡图验收"
+  );
+  assert.equal(formalArtIds.length, cardIds.length - newGrayboxArtIds.length, "既有正式卡图不能在扩充牌池时丢失");
   assert.equal(new Set(formalArtIds.map((id) => CARD_ART_DEFS[id].image)).size, formalArtIds.length, "正式卡图路径必须唯一");
   for (const id of artIds) {
     const art = CARD_ART_DEFS[id];
@@ -749,13 +752,14 @@ test("宠物充能入口与能量组合固定在一起，并保留技能详情�
   assert.deepEqual(combatEnergyState({ energy: 4 }), { current: 4, maximum: 4 });
   assert.deepEqual(combatEnergyState({ energy: -2, maxEnergy: -1 }), { current: 0, maximum: 0 });
   assert.match(appSource, /const petChargePercent = Math\.round\(\(game\.pet\.charge \/ Math\.max\(1, game\.pet\.maxCharge\)\) \* 100\)/);
-  assert.match(appSource, /<div class="energy-companion-stack">[\s\S]*?<article class="pet-companion-token[\s\S]*?<div class="energy-orb" aria-label="当前能量 \$\{energy\.current\}，本回合上限 \$\{energy\.maximum\}">/);
+  assert.match(appSource, /<div class="energy-companion-stack">[\s\S]*?<article class="pet-companion-token[\s\S]*?<div class="energy-orb" aria-label="当前能量 \$\{energy\.current\}，本回合上限 \$\{energy\.maximum\}\$\{nextEnergy\.detail/);
   assert.match(appSource, /class="energy-orb-value"><b>\$\{energy\.current\}<\/b><i>\/<\/i><strong>\$\{energy\.maximum\}<\/strong>/);
   assert.match(appSource, /style="--pet-charge:\$\{petChargePercent\}%"/);
   assert.match(appSource, /aria-label="[^\"]*\$\{game\.pet\.charge\}\/\$\{game\.pet\.maxCharge\}"/);
   assert.match(appSource, /class="pet-companion-tooltip" role="tooltip"/);
   assert.match(appSource, /class="pet-skill \$\{!petUnavailable \? "ready" : ""\}" data-action="pet-skill"/);
   assert.match(styles, /\.pet-companion-tooltip \{[^}]*position: absolute;[^}]*bottom: calc\(100% \+ 8px\);[^}]*width: min\(350px, calc\(100vw - 32px\)\);/);
+  assert.match(styles, /\.energy-next\.is-balanced \{[^}]*border-color:[^}]*color:[^}]*background:/);
 });
 
 test("星座与塔罗作为战斗被动图标提供完整可访问说明", () => {
@@ -4069,7 +4073,8 @@ test("普通战橡皮擦重抽会原子替换待结算候选并持久化", () =>
   assert.equal(game.completePendingCombatStart(), true);
   assert.equal(game.addItem("eraser"), true);
   const first = game.prepareNormalCombatReward().choices;
-  assert.deepEqual(first, ["borrowNotes", "airplaneMode", "cancerSteady"]);
+  assert.equal(first.filter((id) => CARD_DEFS[id].archetype === "cancer").length, 1);
+  assert.equal(first.filter((id) => PUBLIC_REWARD_CARD_IDS.includes(id)).length, 2);
 
   const rerolled = game.rerollPendingCombatReward();
   assert.equal(rerolled.ok, true);
@@ -4100,7 +4105,7 @@ test("普通战橡皮擦重抽会原子替换待结算候选并持久化", () =>
 
 test("橡皮擦按候选集合判断变化，单纯换顺序不算新奖励", () => {
   const prepareReward = () => {
-    const game = new SemesterGame(46, "cancer");
+    const game = new SemesterGame(122, "cancer");
     game.chooseTarot("strength");
     const combatStart = game.prepareCombatStart("sleepyBug", "normal");
     game.startCombat(combatStart.enemyId, combatStart.modifiers);

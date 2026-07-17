@@ -18,7 +18,7 @@ import {
   REGULAR_ITEM_IDS,
   PUBLIC_REWARD_CARD_IDS,
   ARCHETYPE_CARD_IDS
-} from "./game-data.js?v=1.8.62";
+} from "./game-data.js?v=1.8.63";
 
 const LEGACY_PET_ID_ALIASES = Object.freeze({ goose: DEFAULT_PET_ID });
 
@@ -1318,6 +1318,13 @@ export class SemesterGame {
       const exclusive = pickWeighted(exclusivePool, choices);
       if (exclusive) choices.push(exclusive);
     }
+    if (choices.length < count && !choices.some((id) => CARD_DEFS[id]?.type === "attack")) {
+      const publicAttack = pickWeighted(
+        publicPool.filter((id) => CARD_DEFS[id]?.type === "attack"),
+        choices
+      );
+      if (publicAttack) choices.push(publicAttack);
+    }
     while (choices.length < count) {
       const publicCard = pickWeighted(publicPool, choices);
       if (!publicCard) break;
@@ -1953,7 +1960,17 @@ export class SemesterGame {
       ? []
       : this.rng.shuffle(PERSONA_CARD_IDS[this.personaId] || []).slice(0, 1);
     const exclusive = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 1);
-    const publicCards = this.rng.shuffle(PUBLIC_REWARD_CARD_IDS).slice(0, personaCards.length ? 1 : 2);
+    const publicCardCount = personaCards.length ? 1 : 2;
+    const shuffledPublicCards = this.rng.shuffle(PUBLIC_REWARD_CARD_IDS);
+    const fixedShopCards = [...personaCards, ...exclusive];
+    const publicCards = [];
+    if (publicCardCount > 0 && !fixedShopCards.some((id) => CARD_DEFS[id]?.type === "attack")) {
+      const publicAttack = shuffledPublicCards.find((id) => CARD_DEFS[id]?.type === "attack");
+      if (publicAttack) publicCards.push(publicAttack);
+    }
+    publicCards.push(...shuffledPublicCards
+      .filter((id) => !publicCards.includes(id))
+      .slice(0, publicCardCount - publicCards.length));
     const cardIds = this.rng.shuffle([...personaCards, ...exclusive, ...publicCards]);
     const itemIds = this.rng.shuffle(this.availableItemIds()).slice(0, 2);
     const supplyIds = this.rng.shuffle(Object.keys(SUPPLY_DEFS));
@@ -2238,6 +2255,8 @@ export class SemesterGame {
       summons: 0,
       enemyAttackDown: 0,
       enemyExposed: 0,
+      nextEnergy: 0,
+      nextEnergyPenalty: 0,
       nextDrawBonus: 0,
       nextDrawPenalty: 0,
       distracted: false,
@@ -2432,6 +2451,8 @@ export class SemesterGame {
 
   startPlayerTurn() {
     const combat = this.requireCombat();
+    const queuedEnergy = nonNegativeInteger(combat.nextEnergy);
+    const queuedEnergyPenalty = nonNegativeInteger(combat.nextEnergyPenalty);
     combat.enemy.interruptDamageThisTurn = 0;
     combat.turn += 1;
     combat.cardsPlayedThisTurn = 0;
@@ -2439,10 +2460,17 @@ export class SemesterGame {
     combat.petChargedThisTurn = false;
     combat.pencilUsed = false;
     combat.notebookUsed = false;
-    combat.energy = 3 + (this.hasItem("allNighter") ? 1 : 0) + (combat.turn === 1 ? this.tarot?.firstTurnEnergy || 0 : 0);
+    combat.energy = 3
+      + (this.hasItem("allNighter") ? 1 : 0)
+      + (combat.turn === 1 ? this.tarot?.firstTurnEnergy || 0 : 0)
+      + queuedEnergy
+      - queuedEnergyPenalty;
     if (combat.turn === 1 && this.hasItem("referenceBooks")) combat.energy -= 1;
     if (combat.turn === 1 && combat.modifiers.affix === "earlyClass") combat.energy -= 1;
-    combat.maxEnergy = Math.max(0, combat.energy);
+    combat.energy = Math.max(0, combat.energy);
+    combat.maxEnergy = combat.energy;
+    combat.nextEnergy = 0;
+    combat.nextEnergyPenalty = 0;
 
     const drawCount = Math.max(
       0,
@@ -2456,6 +2484,15 @@ export class SemesterGame {
     combat.nextDrawBonus = 0;
     combat.nextDrawPenalty = 0;
     const drawResult = this.drawCards(drawCount);
+
+    if (queuedEnergy || queuedEnergyPenalty) {
+      const energyChange = queuedEnergy - queuedEnergyPenalty;
+      const parts = [];
+      if (queuedEnergy) parts.push(`+${queuedEnergy}`);
+      if (queuedEnergyPenalty) parts.push(`-${queuedEnergyPenalty}`);
+      const netText = parts.length > 1 ? `（净 ${energyChange >= 0 ? "+" : ""}${energyChange}）` : "";
+      combat.log.push(`跨回合能量结算：${parts.join(" / ")}${netText}，本回合共 ${combat.energy} 点。`);
+    }
 
     if (combat.turn === 1 && this.hasItem("bandage") && this.hp * 2 <= this.maxHp) {
       combat.playerBlock += 6;
@@ -2703,6 +2740,25 @@ export class SemesterGame {
       notes.push("下一张攻击牌触发两次");
     }
     if (effect.endTurnHpLoss) combat.endTurnHpLoss += effect.endTurnHpLoss;
+    if (effect.energy) {
+      combat.energy += effect.energy;
+      combat.maxEnergy = Math.max(combat.maxEnergy, combat.energy);
+      notes.push(`能量 +${effect.energy}`);
+    }
+    if (effect.nextEnergy) {
+      combat.nextEnergy += effect.nextEnergy;
+      notes.push(`下回合能量 +${effect.nextEnergy}`);
+    }
+    if (effect.nextEnergyPenalty) {
+      combat.nextEnergyPenalty += effect.nextEnergyPenalty;
+      notes.push(`下回合能量 -${effect.nextEnergyPenalty}`);
+    }
+    if (effect.bankEnergy) {
+      const bankedEnergy = Math.max(0, combat.energy);
+      combat.energy = 0;
+      combat.nextEnergy += bankedEnergy;
+      notes.push(`存下 ${bankedEnergy} 点能量`);
+    }
 
     if (resolved.hasDamage) {
       const isAttackCard = definition.type === "attack";
@@ -2780,7 +2836,15 @@ export class SemesterGame {
       combat.exhaustPile.push(...statuses);
       const extra = resolved.statusBlock;
       combat.playerBlock += extra;
-      notes.push(`清理 ${statuses.length} 张状态牌，护甲 +${extra}`);
+      notes.push(extra > 0
+        ? `清理 ${statuses.length} 张状态牌，护甲 +${extra}`
+        : `清理 ${statuses.length} 张状态牌`);
+      if (effect.nextEnergyPerStatus) {
+        const cap = Math.max(0, nonNegativeInteger(effect.nextEnergyStatusCap));
+        const energyGain = Math.min(cap, statuses.length * nonNegativeInteger(effect.nextEnergyPerStatus));
+        combat.nextEnergy += energyGain;
+        notes.push(`下回合能量 +${energyGain}`);
+      }
     }
     if (effect.discard) {
       // A draw-then-discard card may be the only card left in hand while both

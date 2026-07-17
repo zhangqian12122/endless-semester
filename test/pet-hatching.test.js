@@ -6,7 +6,7 @@ import {
   PET_DEFS,
   PET_EGG_DEFS,
   PET_TALENT_DEFS
-} from "../game-data.js?v=1.8.62";
+} from "../game-data.js?v=1.8.63";
 import {
   CHALLENGE_REWARD_DEFS,
   CHALLENGE_RULES,

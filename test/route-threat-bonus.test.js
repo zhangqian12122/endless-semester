@@ -184,5 +184,5 @@ test("地图、战斗与领奖页连续公开同一份高威胁奖励承诺", ()
   const styleVersion = indexSource.match(/styles\.css\?v=([\d.]+)/)?.[1];
   const appVersion = indexSource.match(/app\.js\?v=([\d.]+)/)?.[1];
   assert.equal(styleVersion, appVersion, "脚本与样式缓存版本必须同步");
-  assert.equal(styleVersion, "1.8.62", "风险收益界面上线时必须提升缓存版本");
+  assert.equal(styleVersion, "1.8.63", "风险收益界面上线时必须提升缓存版本");
 });

@@ -1,5 +1,5 @@
-import { cardDefinition } from "./game-engine.js?v=1.8.62";
-import { DEFAULT_PET_ID, PET_DEFS, PET_EGG_DEFS } from "./game-data.js?v=1.8.62";
+import { cardDefinition } from "./game-engine.js?v=1.8.63";
+import { DEFAULT_PET_ID, PET_DEFS, PET_EGG_DEFS } from "./game-data.js?v=1.8.63";
 
 const DEFAULT_PET = PET_DEFS[DEFAULT_PET_ID];
 
@@ -36,7 +36,9 @@ export function cardStyleContribution(card) {
   const expectedDamage = (effect.damage || 0) + (effect.damagePerSummon || 0) * 2;
   if (expectedDamage) scores.offense += 2 + Math.min(4, (expectedDamage * (effect.hits || 1)) / 5);
   if (effect.attackBonus || effect.doubleNextAttack) scores.offense += 4;
-  const expectedBlock = (effect.block || 0) + (effect.blockPerSummon || 0) * 2;
+  const expectedBlock = (effect.block || 0)
+    + (effect.blockPerSummon || 0) * 2
+    + (effect.blockPerStatus || 0) * 2;
   if (expectedBlock) {
     counts.guards += 1;
     scores.defense += 2 + Math.min(4, expectedBlock / 5);
@@ -48,6 +50,16 @@ export function cardStyleContribution(card) {
     counts.cycleCards += 1;
     scores.cycle += (effect.draw || 0) * 2 + (effect.nextDrawBonus || 0) * 1.5 + (definition.cost === 0 ? 1.5 : 0) + (effect.discard ? 1 : 0);
   }
+  if (effect.energy || effect.nextEnergy || effect.bankEnergy || effect.nextEnergyPerStatus) {
+    if (!(effect.draw || effect.nextDrawBonus || definition.cost === 0 || effect.discard)) counts.cycleCards += 1;
+    scores.cycle += (effect.energy || 0) * 2
+      + (effect.nextEnergy || 0) * 1.5
+      + (effect.bankEnergy ? 2 : 0)
+      + (effect.nextEnergyPerStatus || 0);
+  }
+  const resourceDebt = (effect.nextEnergyPenalty || 0) * 2
+    + (effect.nextDrawPenalty || 0) * 1.5;
+  if (resourceDebt) scores.cycle = Math.max(0, scores.cycle - resourceDebt);
   if (effect.petCharge || effect.summon || effect.damagePerSummon || effect.blockPerSummon || effect.consumeSummons) {
     counts.petCards += 1;
     scores.pet += 7 * (effect.petCharge || 0) + (effect.summon || 0) * 6

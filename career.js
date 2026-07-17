@@ -1,4 +1,4 @@
-import { ACHIEVEMENT_DEFS, DEFAULT_PET_ID, ENEMY_DEFS, NORMAL_ENEMY_IDS, PERSONA_DEFS, PET_DEFS } from "./game-data.js?v=1.8.62";
+import { ACHIEVEMENT_DEFS, DEFAULT_PET_ID, ENEMY_DEFS, NORMAL_ENEMY_IDS, PERSONA_DEFS, PET_DEFS } from "./game-data.js?v=1.8.63";
 
 export const CAREER_TRIAL_IDS = Object.freeze(["aries", "gemini", "cancer"]);
 

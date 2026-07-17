@@ -504,6 +504,22 @@ export function combatItemCue(itemId, state = {}) {
 
 export const SEMESTER_WEEK_COUNT = 16;
 
+export function feedbackEntryDecision(currentScreen, currentContext = {}) {
+  const screen = typeof currentScreen === "string" && currentScreen ? currentScreen : "unknown";
+  const context = currentContext && typeof currentContext === "object" && !Array.isArray(currentContext)
+    ? currentContext
+    : {};
+  const parentScreen = typeof context.returnState?.screen === "string" && context.returnState.screen
+    ? context.returnState.screen
+    : null;
+  const issueScreen = ["rules", "archive"].includes(screen) ? parentScreen || screen : screen;
+  const returnScreen = ["rules", "archive"].includes(screen) ? screen : "archive";
+  return {
+    issueScreen,
+    returnState: { screen: returnScreen, context }
+  };
+}
+
 export function semesterCalendarWeeks(semesterPlan, currentWeek, weekCount = SEMESTER_WEEK_COUNT) {
   const total = Math.max(1, Math.floor(Number(weekCount) || SEMESTER_WEEK_COUNT));
   const activeWeek = Math.min(total, Math.max(1, Math.floor(Number(currentWeek) || 1)));
@@ -1683,6 +1699,29 @@ export function combatEnergyState(combat = {}) {
   const current = Math.max(0, Math.floor(safeBattleValue(combat.energy)));
   const recordedMaximum = Math.max(0, Math.floor(safeBattleValue(combat.maxEnergy)));
   return { current, maximum: Math.max(current, recordedMaximum) };
+}
+
+export function combatNextEnergyState(combat = {}) {
+  const bonus = Math.max(0, Math.floor(safeBattleValue(combat.nextEnergy)));
+  const penalty = Math.max(0, Math.floor(safeBattleValue(combat.nextEnergyPenalty)));
+  const net = bonus - penalty;
+  const queued = bonus > 0 || penalty > 0;
+  const label = net > 0
+    ? `下回合 +${net}`
+    : net < 0
+      ? `下回合 ${net}`
+      : queued ? "下回合 ±0" : "";
+  const detailParts = [];
+  if (bonus) detailParts.push(`获得 ${bonus} 点`);
+  if (penalty) detailParts.push(`扣除 ${penalty} 点`);
+  return {
+    bonus,
+    penalty,
+    net,
+    label,
+    detail: queued ? `下回合能量${detailParts.join("、")}，净变化 ${net >= 0 ? "+" : ""}${net} 点` : "",
+    tone: !queued ? "none" : net > 0 ? "bonus" : net < 0 ? "debt" : "balanced"
+  };
 }
 
 function battleMotionType(kind, options, outcome) {
