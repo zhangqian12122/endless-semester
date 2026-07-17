@@ -8,7 +8,7 @@ const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../styles.css", import.meta.url), "utf8");
 const readme = readFileSync(new URL("../README.md", import.meta.url), "utf8");
 
-test("八名正式敌人都有与真实机制对应的应对建议", () => {
+test("所有正式敌人都有与真实机制对应的应对建议", () => {
   const expectedSignals = {
     sleepyBug: /蜷起回合不会攻击.*按头顶公开伤害准备护甲/,
     homeworkBlob: /状态牌/,
@@ -16,8 +16,11 @@ test("八名正式敌人都有与真实机制对应的应对建议", () => {
     phoneSpirit: /走神只让攻击牌每段 -2.*伤害技能与宠物不受影响/,
     groupChat: /手牌、抽牌堆和弃牌堆.*清到 2 张以下.*自然消耗来不及/,
     printerJam: /6 点.*5 点.*打穿/,
+    rollCallWarden: /手牌、抽牌堆与弃牌堆中的待办.*减少连击段数.*整理名册回合不攻击/,
+    clubMegaphone: /三段音浪.*逐段消耗护甲.*展板回合没有攻击/,
     rivalShadow: new RegExp(`${ENEMY_DEFS.rivalShadow.interruptThreshold} 点实际伤害`),
-    finalExam: new RegExp(`新获得的 ${ENEMY_DEFS.finalExam.blankArmor} 点护甲.*大题伤害 -${ENEMY_DEFS.finalExam.blankBreakAttackReduction}`)
+    finalExam: new RegExp(`新获得的 ${ENEMY_DEFS.finalExam.blankArmor} 点护甲.*大题伤害 -${ENEMY_DEFS.finalExam.blankBreakAttackReduction}`),
+    madMilkDragon: /怪笑爆发前清理紧张.*减少连击段数.*蓄泡回合没有攻击/
   };
 
   assert.deepEqual(Object.keys(ENEMY_DEFS).sort(), Object.keys(expectedSignals).sort());

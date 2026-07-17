@@ -1,11 +1,14 @@
 import {
   ARCHETYPE_DEFS,
+  PERSONA_DEFS,
+  PERSONA_CARD_IDS,
   CARD_DEFS,
   ENCHANTMENT_DEFS,
   ENEMY_DEFS,
   EVENT_DEFS,
   FIRST_SEMESTER_NORMAL_ENEMY_POOLS,
   ITEM_DEFS,
+  SUPPLY_DEFS,
   CHALLENGE_SIGNATURE_ITEM_DROPS,
   NORMAL_ENEMY_IDS,
   DEFAULT_PET_ID,
@@ -15,7 +18,7 @@ import {
   REGULAR_ITEM_IDS,
   PUBLIC_REWARD_CARD_IDS,
   ARCHETYPE_CARD_IDS
-} from "./game-data.js";
+} from "./game-data.js?v=1.8.62";
 
 const LEGACY_PET_ID_ALIASES = Object.freeze({ goose: DEFAULT_PET_ID });
 
@@ -72,12 +75,23 @@ function sanitizePetState(raw, id) {
   };
 }
 
+function freezeEliteEnchantCandidateUids(game, pending = game.pendingCombatReward) {
+  if (pending?.type !== "eliteChain" || pending.stage !== "enchant") return [];
+  pending.enchantCardUids = game.enchantableCards().map((card) => card.uid);
+  return [...pending.enchantCardUids];
+}
+
 const DEFAULT_PET = petDefinition();
 
 const STARTING_DECK_CORE = [
   "textbookStrike", "textbookStrike", "textbookStrike", "textbookStrike",
   "backpackGuard", "backpackGuard", "backpackGuard", "backpackGuard",
   "cramming"
+];
+
+const SUMMONER_STARTING_DECK_CORE = [
+  "textbookStrike", "textbookStrike", "textbookStrike",
+  "backpackGuard", "backpackGuard", "backpackGuard"
 ];
 
 const FIXED_ROUTE_WEEKS = new Set([1, 2, 8, 16]);
@@ -286,7 +300,7 @@ function makeRouteNode(type, week, options = {}) {
       1: "教学战：瞌睡虫",
       2: "宠物教学：作业团",
       8: "期中精英：卷王幻影",
-      16: "期末Boss：期末考试"
+      16: `期末Boss：${ENEMY_DEFS[enemy].name}`
     };
     return {
       type,
@@ -356,7 +370,7 @@ function ensureChallengeNodes(plan) {
   return plan;
 }
 
-function normalizeSemesterPlan(data) {
+function normalizeSemesterPlan(data, semester = 1) {
   if (!Array.isArray(data) || data.length !== 17) return null;
   const plan = Array.from({ length: 17 }, () => []);
   let restOptions = 0;
@@ -392,14 +406,22 @@ function normalizeSemesterPlan(data) {
     }
   }
   if (plan[1][0]?.enemy !== "sleepyBug" || plan[2][0]?.enemy !== "homeworkBlob"
-    || plan[8][0]?.enemy !== "rivalShadow" || plan[16][0]?.enemy !== "finalExam") return null;
+    || plan[8][0]?.enemy !== "rivalShadow" || plan[16][0]?.enemy !== semesterBossId(semester)) return null;
   if (restOptions < 2 || shopOptions < 2) return null;
   const normalized = ensureChallengeNodes(plan);
   return normalized ? applyCoreCombatRouteRewards(normalized) : null;
 }
 
-function startingDeckFor(archetypeId) {
+export function semesterBossId(semester = 1) {
+  const resolvedSemester = Math.max(1, Math.floor(Number(semester) || 1));
+  return resolvedSemester % 2 === 0 ? "madMilkDragon" : "finalExam";
+}
+
+function startingDeckFor(archetypeId, personaId = "student") {
   const archetype = ARCHETYPE_DEFS[archetypeId] || ARCHETYPE_DEFS.cancer;
+  if (personaId === "summoner") {
+    return [...SUMMONER_STARTING_DECK_CORE, ...PERSONA_DEFS.summoner.starterCards];
+  }
   return [...STARTING_DECK_CORE, archetype.specialCard];
 }
 
@@ -446,9 +468,9 @@ export function cardDefinition(card) {
   const enchantment = card.enchantment ? ENCHANTMENT_DEFS[card.enchantment] : null;
   const effect = { ...(card.upgraded ? definition.upgradedEffect : definition.effect) };
   let cost = definition.cost;
-  if (enchantment?.id === "ariesFlame" && definition.type === "attack" && effect.damage) effect.damage += 2;
+  if (enchantment?.id === "ariesFlame" && definition.type === "attack" && (effect.damage || effect.damagePerSummon)) effect.damage = (effect.damage || 0) + 2;
   if (enchantment?.id === "geminiQuick" && typeof cost === "number") cost = Math.max(0, cost - 1);
-  if (enchantment?.id === "cancerGuard" && effect.block) effect.block += 3;
+  if (enchantment?.id === "cancerGuard" && (effect.block || effect.blockPerSummon)) effect.block = (effect.block || 0) + 3;
   const baseText = card.upgraded ? definition.upgradedText : definition.text;
   return {
     ...definition,
@@ -461,15 +483,17 @@ export function cardDefinition(card) {
 }
 
 export class SemesterGame {
-  constructor(seed = Date.now(), archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID]) {
+  constructor(seed = Date.now(), archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID], personaId = "student") {
     this.rng = new SeededRandom(seed);
     this.cardSerial = 0;
-    this.resetCampaign(archetypeId, startingPetId, unlockedPetIds);
+    this.resetCampaign(archetypeId, startingPetId, unlockedPetIds, personaId);
   }
 
-  resetCampaign(archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID]) {
+  resetCampaign(archetypeId = "cancer", startingPetId = DEFAULT_PET_ID, unlockedPetIds = [DEFAULT_PET_ID], personaId = "student") {
     if (!ARCHETYPE_DEFS[archetypeId]) throw new Error(`未知星座学生：${archetypeId}`);
+    if (!PERSONA_DEFS[personaId]) throw new Error(`未知人格：${personaId}`);
     this.archetypeId = archetypeId;
+    this.personaId = personaId;
     this.tarotId = null;
     this.semester = 1;
     this.week = 1;
@@ -486,9 +510,11 @@ export class SemesterGame {
     this.maxHp = 50;
     this.hp = 50;
     this.gold = 50;
-    this.deck = startingDeckFor(archetypeId).map((id) => this.createCard(id));
+    this.deck = startingDeckFor(archetypeId, personaId).map((id) => this.createCard(id));
     this.items = [];
     this.backpackCapacity = 6;
+    this.supplies = [];
+    this.supplyCapacity = 2;
     const unlocked = [...new Set([
       DEFAULT_PET_ID,
       ...(Array.isArray(unlockedPetIds) ? unlockedPetIds : [])
@@ -498,6 +524,7 @@ export class SemesterGame {
     this.activePetId = requestedPetId && this.pets[requestedPetId] ? requestedPetId : DEFAULT_PET_ID;
     this.pet = this.pets[this.activePetId];
     this.incubator = null;
+    this.queuedEggIds = [];
     this.stats = {
       combatsStarted: 0,
       combatsCompleted: 0,
@@ -542,6 +569,10 @@ export class SemesterGame {
     return ARCHETYPE_DEFS[this.archetypeId];
   }
 
+  get persona() {
+    return PERSONA_DEFS[this.personaId];
+  }
+
   get tarot() {
     return TAROT_DEFS[this.tarotId] || null;
   }
@@ -570,7 +601,10 @@ export class SemesterGame {
   challengePetRewardState(enemyId = this.combat?.enemy?.id) {
     const canonicalEnemyId = ENEMY_DEFS[enemyId] ? enemyId : null;
     const egg = canonicalEnemyId ? eggDefinitionForEnemy(canonicalEnemyId) : null;
-    const canClaimEgg = Boolean(egg && !this.incubator && !this.hasPet(egg.petId));
+    const eggAlreadyHeld = Boolean(egg && (
+      this.incubator?.eggId === egg.id || this.queuedEggIds.includes(egg.id)
+    ));
+    const canClaimEgg = Boolean(egg && !this.incubator && !eggAlreadyHeld && !this.hasPet(egg.petId));
     return {
       enemyId: canonicalEnemyId,
       eggId: egg?.id || null,
@@ -593,29 +627,55 @@ export class SemesterGame {
 
   claimEgg(eggId) {
     const egg = PET_EGG_DEFS[eggId];
-    if (!egg || this.incubator || this.hasPet(egg.petId)) return null;
+    if (!egg || this.incubator || this.queuedEggIds.includes(egg.id) || this.hasPet(egg.petId)) return null;
     this.incubator = { eggId: egg.id, battles: 0 };
     return { eggId: egg.id, petId: egg.petId, battles: 0, requiredCombats: egg.requiredCombats };
   }
 
-  advanceIncubatorAfterVictory(combat = this.combat) {
-    if (!combat || combat.status !== "won" || combat.petIncubationEvent || !this.incubator) return null;
-    const egg = PET_EGG_DEFS[this.incubator.eggId];
-    if (!egg || this.hasPet(egg.petId)) {
-      this.incubator = null;
-      return null;
+  queueEgg(eggId) {
+    const egg = PET_EGG_DEFS[eggId];
+    if (!egg || this.hasPet(egg.petId) || this.incubator?.eggId === egg.id
+      || this.queuedEggIds.includes(egg.id)) return null;
+    if (!this.incubator) return this.claimEgg(egg.id);
+    this.queuedEggIds.push(egg.id);
+    return { eggId: egg.id, petId: egg.petId, queued: true, position: this.queuedEggIds.length };
+  }
+
+  promoteQueuedEgg() {
+    if (this.incubator) return null;
+    while (this.queuedEggIds.length) {
+      const eggId = this.queuedEggIds.shift();
+      const egg = PET_EGG_DEFS[eggId];
+      if (!egg || this.hasPet(egg.petId)) continue;
+      this.incubator = { eggId: egg.id, battles: 0 };
+      return { eggId: egg.id, petId: egg.petId, battles: 0, requiredCombats: egg.requiredCombats };
     }
+    return null;
+  }
+
+  advanceIncubatorAfterVictory() {
+    // Kept as a no-op for old callers. Incubation is now an explicit rest action,
+    // so neither a victory nor a repeated settlement can advance an egg.
+    return null;
+  }
+
+  resolveRestHatch() {
+    if (this.pendingRest?.stage !== "choice" || !this.incubator) return null;
+    const egg = PET_EGG_DEFS[this.incubator.eggId];
+    if (!egg || this.hasPet(egg.petId)) return null;
     const battles = Math.min(egg.requiredCombats, this.incubator.battles + 1);
     let event;
     if (battles >= egg.requiredCombats) {
       this.pets[egg.petId] = createPetState(egg.petId);
       this.incubator = null;
+      const nextEgg = this.promoteQueuedEgg();
       event = {
         type: "hatched",
         eggId: egg.id,
         petId: egg.petId,
         battles,
-        requiredCombats: egg.requiredCombats
+        requiredCombats: egg.requiredCombats,
+        nextEggId: nextEgg?.eggId || null
       };
     } else {
       this.incubator = { eggId: egg.id, battles };
@@ -627,7 +687,10 @@ export class SemesterGame {
         requiredCombats: egg.requiredCombats
       };
     }
-    combat.petIncubationEvent = event;
+    // Freeze the settled result until the rest node is explicitly completed.
+    // Refreshes can resume this stage, while stale buttons and duplicate clicks
+    // cannot count the same rest twice because the stage is no longer "choice".
+    this.pendingRest = { stage: "hatch", cardUids: [], ...event };
     return event;
   }
 
@@ -648,8 +711,9 @@ export class SemesterGame {
     } else if (choice === "quiz-upgrade") {
       if (!this.deck.some((card) => !card.upgraded)) reason = "没有可升级的牌";
       else if (this.hp <= 5) reason = "至少需要 6 点生命";
-    } else if (choice === "club-pet" && this.gold < 30) {
-      reason = "需要 30 校园币";
+    } else if (choice === "club-pet") {
+      if (this.activePetIsMastered()) reason = "当前伙伴路线已经精通，羁绊不再提供成长";
+      else if (this.gold < 30) reason = "需要 30 校园币";
     } else if (choice === "meal-sale" && this.flags.nextShopHalf) {
       reason = "商店优惠已经生效";
     } else if (choice === "rumor-heal") {
@@ -758,7 +822,9 @@ export class SemesterGame {
     let reason = "";
     if (this.flags.tarotRestUsed) reason = "本学期已经共鸣过";
     else if (rest.hpCost && this.hp <= rest.hpCost) reason = `至少需要 ${rest.hpCost + 1} 点生命`;
-    else if (rest.goldCost && this.gold < rest.goldCost) reason = `需要 ${rest.goldCost} 校园币`;
+    else if (rest.action === "bond" && this.activePetIsMastered() && this.hp >= this.maxHp) {
+      reason = "伙伴已精通且生命已满，本次共鸣没有可获得的收益";
+    } else if (rest.goldCost && this.gold < rest.goldCost) reason = `需要 ${rest.goldCost} 校园币`;
     else if (rest.action === "remove" && this.deck.length <= 5) reason = "卡组已达到最小规模";
     else if (rest.action === "upgrade" && !this.deck.some((card) => !card.upgraded)) reason = "没有可升级的牌";
     return { ...rest, tarotId: tarot.id, available: !reason, reason };
@@ -834,6 +900,49 @@ export class SemesterGame {
     return true;
   }
 
+  addSupply(id) {
+    if (!SUPPLY_DEFS[id] || this.supplies.length >= this.supplyCapacity) return false;
+    this.supplies.push(id);
+    return true;
+  }
+
+  useSupply(id) {
+    const combat = this.combat;
+    const index = this.supplies.indexOf(id);
+    const supply = SUPPLY_DEFS[id];
+    if (!supply || index < 0 || !combat || combat.status !== "active" || combat.pendingDiscard) {
+      return { ok: false, reason: "当前无法使用这件临时用品" };
+    }
+    const effect = supply.effect;
+    this.supplies.splice(index, 1);
+    if (effect.energy) {
+      combat.energy += effect.energy;
+      combat.maxEnergy = Math.max(combat.maxEnergy, combat.energy);
+    }
+    if (effect.block) combat.playerBlock += effect.block;
+    if (effect.petCharge) {
+      this.pet.charge = Math.min(this.pet.maxCharge, this.pet.charge + effect.petCharge);
+    }
+    const drawResult = effect.draw ? this.drawCards(effect.draw) : null;
+    combat.log.push(`${supply.name}：${supply.text}`);
+    return withVisibleDrawResult({ ok: true, id }, drawResult);
+  }
+
+  addSummons(amount = 1) {
+    const combat = this.requireCombat();
+    if (combat.status !== "active") return 0;
+    const before = nonNegativeInteger(combat.summons);
+    combat.summons = Math.min(3, before + nonNegativeInteger(amount));
+    return combat.summons - before;
+  }
+
+  consumeSummons() {
+    const combat = this.requireCombat();
+    const consumed = nonNegativeInteger(combat.summons);
+    combat.summons = 0;
+    return consumed;
+  }
+
   addCard(id, upgraded = false) {
     const card = this.createCard(id, upgraded);
     this.deck.push(card);
@@ -860,9 +969,9 @@ export class SemesterGame {
     const definition = CARD_DEFS[card.id];
     if (!definition || definition.type === "status") return false;
     const effect = card.upgraded ? definition.upgradedEffect : definition.effect;
-    if (this.archetypeId === "aries") return definition.type === "attack" && Boolean(effect.damage);
+    if (this.archetypeId === "aries") return definition.type === "attack" && Boolean(effect.damage || effect.damagePerSummon);
     if (this.archetypeId === "gemini") return typeof definition.cost === "number" && definition.cost > 0;
-    if (this.archetypeId === "cancer") return Boolean(effect.block);
+    if (this.archetypeId === "cancer") return Boolean(effect.block || effect.blockPerSummon);
     return false;
   }
 
@@ -928,7 +1037,7 @@ export class SemesterGame {
     plan[1] = [makeRouteNode("combat", 1, { enemy: "sleepyBug" })];
     plan[2] = [makeRouteNode("combat", 2, { enemy: "homeworkBlob" })];
     plan[8] = [makeRouteNode("combat", 8, { enemy: "rivalShadow" })];
-    plan[16] = [makeRouteNode("combat", 16, { enemy: "finalExam" })];
+    plan[16] = [makeRouteNode("combat", 16, { enemy: semesterBossId(this.semester) })];
 
     const anchors = {
       3: { type: "event", pool: "safe" },
@@ -1112,6 +1221,7 @@ export class SemesterGame {
       this.pendingCombatReward.stage = "enchant";
       this.pendingCombatReward.itemChoices = [];
       this.pendingCombatReward.fallbackGold = 0;
+      freezeEliteEnchantCandidateUids(this);
     }
     if (pending.source === "semester") {
       this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
@@ -1178,9 +1288,11 @@ export class SemesterGame {
     return true;
   }
 
-  rewardCards(count = 3, forcedRarity = null) {
+  rewardCards(count = 3, forcedRarity = null, excludedIds = []) {
     this.rewardIndex += 1;
+    const excluded = new Set(Array.isArray(excludedIds) ? excludedIds : []);
     const eligible = (pool) => pool.filter((id) => {
+      if (excluded.has(id)) return false;
       if (forcedRarity) return CARD_DEFS[id].rarity === forcedRarity;
       if (this.rewardIndex <= 2) return CARD_DEFS[id].rarity !== "rare";
       return true;
@@ -1194,10 +1306,15 @@ export class SemesterGame {
       return this.rng.pick(matching.length ? matching : weighted);
     };
 
+    const personaPool = this.personaId === "student" ? [] : eligible(PERSONA_CARD_IDS[this.personaId] || []);
     const exclusivePool = eligible(ARCHETYPE_CARD_IDS[this.archetypeId]);
     const publicPool = eligible(PUBLIC_REWARD_CARD_IDS);
     const choices = [];
     if (count > 0) {
+      const personaCard = pickWeighted(personaPool, choices);
+      if (personaCard) choices.push(personaCard);
+    }
+    if (choices.length < count) {
       const exclusive = pickWeighted(exclusivePool, choices);
       if (exclusive) choices.push(exclusive);
     }
@@ -1209,6 +1326,12 @@ export class SemesterGame {
     return this.rng.shuffle(choices);
   }
 
+  challengeExclusiveCardIds() {
+    return this.personaId === "student"
+      ? ARCHETYPE_CARD_IDS[this.archetypeId]
+      : (PERSONA_CARD_IDS[this.personaId] || []);
+  }
+
   prepareNormalCombatReward() {
     if (this.pendingCombatReward) {
       if (this.pendingCombatReward.type !== "normalCard") return null;
@@ -1217,6 +1340,7 @@ export class SemesterGame {
         choices: [...(this.pendingCombatReward.choices || [])],
         itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
         usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        enchantCardUids: [...(this.pendingCombatReward.enchantCardUids || [])],
         started: false
       };
     }
@@ -1249,6 +1373,7 @@ export class SemesterGame {
         choices: [...(this.pendingCombatReward.choices || [])],
         itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
         usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        enchantCardUids: [...(this.pendingCombatReward.enchantCardUids || [])],
         started: false
       };
     }
@@ -1273,6 +1398,7 @@ export class SemesterGame {
       usedCardUids: [...new Set(combatUsedCardUids)]
         .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid) && deckUids.has(uid))
         .slice(0, 64),
+      enchantCardUids: [],
       fallbackGold: 0
     };
     combat.rewardPrepared = true;
@@ -1281,6 +1407,7 @@ export class SemesterGame {
       choices: [...this.pendingCombatReward.choices],
       itemChoices: [],
       usedCardUids: [...this.pendingCombatReward.usedCardUids],
+      enchantCardUids: [],
       started: true
     };
   }
@@ -1299,6 +1426,7 @@ export class SemesterGame {
       pending.stage = "enchant";
       pending.itemChoices = [];
       pending.fallbackGold = fallback?.gold || 0;
+      freezeEliteEnchantCandidateUids(this);
     }
     return true;
   }
@@ -1321,6 +1449,7 @@ export class SemesterGame {
     pending.stage = "enchant";
     pending.itemChoices = [];
     pending.fallbackGold = 0;
+    freezeEliteEnchantCandidateUids(this);
     return { id, status: "claimed" };
   }
 
@@ -1330,14 +1459,15 @@ export class SemesterGame {
     pending.stage = "enchant";
     pending.itemChoices = [];
     pending.fallbackGold = 0;
+    freezeEliteEnchantCandidateUids(this);
     return true;
   }
 
   eligiblePendingEliteEnchantCards() {
     const pending = this.pendingCombatReward;
     if (pending?.type !== "eliteChain" || pending.stage !== "enchant") return [];
-    const usedCardUids = Array.isArray(pending.usedCardUids) ? pending.usedCardUids : [];
-    return this.enchantableCards(usedCardUids);
+    const frozenCardUids = Array.isArray(pending.enchantCardUids) ? pending.enchantCardUids : [];
+    return this.enchantableCards(frozenCardUids);
   }
 
   resolvePendingEnchantment(uid = null) {
@@ -1357,42 +1487,55 @@ export class SemesterGame {
       : { status: "enchanted", uid, enchantment: card.enchantment };
   }
 
-  prepareChallengeCombatReward({ affix, trialCompleted = false, trialBonus = 0, enemyId = null } = {}) {
+  prepareChallengeCombatReward({ affix, enemyId = null } = {}) {
     if (this.pendingCombatReward) {
+      if (this.pendingCombatReward.type !== "challengeChain") return null;
       return {
         ...this.pendingCombatReward,
         choices: [...(this.pendingCombatReward.choices || [])],
         itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
         usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        enchantCardUids: [...(this.pendingCombatReward.enchantCardUids || [])],
         started: false
       };
     }
-    if (this.pendingCombatStart || this.pendingShop || this.pendingRest || this.awaitingNextSemester || this.pendingSemesterReward || FIXED_ROUTE_WEEKS.has(this.week)
-      || !CHALLENGE_AFFIX_DEFS[affix]) return null;
-    const completed = trialCompleted === true;
-    const rewardEnemyId = ENEMY_DEFS[enemyId]
-      ? enemyId
-      : (this.combat?.modifiers?.challenge ? this.combat.enemy.id : null);
+    const combat = this.combat;
+    const receipt = combat?.victoryReceipt;
+    const actualAffix = combat?.modifiers?.affix;
+    if (this.pendingCombatStart || this.pendingEventReward || this.pendingShop || this.pendingRest
+      || this.pendingItemReplacement || this.awaitingNextSemester || this.pendingSemesterReward
+      || FIXED_ROUTE_WEEKS.has(this.week) || combat?.status !== "won" || combat.result !== "won"
+      || combat.rewardPrepared === true || combat.modifiers?.challenge !== true
+      || receipt?.outcome !== "challenge" || receipt.week !== this.week
+      || receipt.enemyId !== combat.enemy?.id || ENEMY_DEFS[receipt.enemyId]?.kind !== "normal"
+      || !CHALLENGE_AFFIX_DEFS[actualAffix]
+      || (affix !== undefined && affix !== actualAffix)
+      || (enemyId !== null && enemyId !== receipt.enemyId)) return null;
+    const trial = this.challengeTrialStatus();
+    const completed = trial?.completed === true;
+    const actualTrialBonus = completed
+      ? Math.min(ARCHETYPE_TRIAL_DEFS[this.archetypeId].bonusGold, nonNegativeInteger(combat.trialBonusGold))
+      : 0;
+    const rewardEnemyId = receipt.enemyId;
     const petReward = this.challengePetRewardState(rewardEnemyId);
     const signatureReward = this.challengeSignatureItemRewardState(rewardEnemyId);
     this.pendingCombatReward = {
       type: "challengeChain",
       stage: "route",
       route: null,
-      affix,
+      affix: actualAffix,
       enemyId: petReward.enemyId,
       eggId: petReward.eggId,
       rewardVariant: petReward.rewardVariant,
       signatureItemId: signatureReward.signatureItemId,
       trialCompleted: completed,
-      trialBonus: completed
-        ? Math.min(ARCHETYPE_TRIAL_DEFS[this.archetypeId].bonusGold, nonNegativeInteger(trialBonus))
-        : 0,
+      trialBonus: actualTrialBonus,
       choices: [],
       itemChoices: [],
       usedCardUids: [],
       fallbackGold: 0
     };
+    combat.rewardPrepared = true;
     return { ...this.pendingCombatReward, choices: [], itemChoices: [], usedCardUids: [], started: true };
   }
 
@@ -1407,7 +1550,7 @@ export class SemesterGame {
     pending.fallbackGold = 0;
     if (id === "cards") {
       pending.stage = "card";
-      pending.choices = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 3);
+      pending.choices = this.rng.shuffle(this.challengeExclusiveCardIds()).slice(0, 3);
     } else if (id === "pet") {
       const claimedEgg = pending.rewardVariant === "egg" && pending.eggId
         ? this.claimEgg(pending.eggId)
@@ -1446,6 +1589,7 @@ export class SemesterGame {
         choices: [...(this.pendingCombatReward.choices || [])],
         itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
         usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        enchantCardUids: [...(this.pendingCombatReward.enchantCardUids || [])],
         started: false
       };
     }
@@ -1489,6 +1633,48 @@ export class SemesterGame {
     return true;
   }
 
+  pendingCombatRewardChoicesAreValid(choices) {
+    if (!Array.isArray(choices) || choices.length !== 3 || new Set(choices).size !== choices.length) return false;
+    const personaPool = this.personaId === "student" ? [] : (PERSONA_CARD_IDS[this.personaId] || []);
+    const archetypePool = ARCHETYPE_CARD_IDS[this.archetypeId] || [];
+    const expectedPersonaCards = personaPool.length ? 1 : 0;
+    return choices.every((id) => CARD_DEFS[id]
+        && (personaPool.includes(id) || archetypePool.includes(id) || PUBLIC_REWARD_CARD_IDS.includes(id)))
+      && choices.filter((id) => personaPool.includes(id)).length === expectedPersonaCards
+      && choices.filter((id) => archetypePool.includes(id)).length === 1
+      && choices.filter((id) => PUBLIC_REWARD_CARD_IDS.includes(id)).length === 2 - expectedPersonaCards;
+  }
+
+  rerollPendingCombatReward() {
+    const pending = this.pendingCombatReward;
+    const canReroll = pending?.type === "normalCard"
+      || (pending?.type === "eliteChain" && pending.stage === "card");
+    if (!canReroll) return { ok: false, reason: "当前没有可重抽的战后卡牌奖励。" };
+    if (!this.pendingCombatRewardChoicesAreValid(pending.choices)) {
+      return { ok: false, reason: "当前卡牌候选异常，橡皮擦未消耗。" };
+    }
+    if (!this.hasItem("eraser")) return { ok: false, reason: "没有可用的橡皮擦。" };
+    if (this.flags.eraserUsed) return { ok: false, reason: "本学期的橡皮擦已经使用。" };
+
+    const previousChoices = [...pending.choices];
+    const previousSet = new Set(previousChoices);
+    const previousRngState = this.rng.state;
+    const previousRewardIndex = this.rewardIndex;
+    const choices = this.rewardCards(previousChoices.length, null, previousChoices);
+    const nextSet = new Set(choices);
+    const completeAndDifferent = this.pendingCombatRewardChoicesAreValid(choices)
+      && (nextSet.size !== previousSet.size || choices.some((id) => !previousSet.has(id)));
+    if (!completeAndDifferent) {
+      this.rng.state = previousRngState;
+      this.rewardIndex = previousRewardIndex;
+      return { ok: false, reason: "当前卡池无法生成一组不同的完整候选，橡皮擦未消耗。" };
+    }
+
+    pending.choices = [...choices];
+    this.flags.eraserUsed = true;
+    return { ok: true, choices: [...choices] };
+  }
+
   resolvePendingCardReward(request) {
     if (!request || typeof request !== "object" || Array.isArray(request)
       || !Object.prototype.hasOwnProperty.call(request, "choice")) return null;
@@ -1520,8 +1706,9 @@ export class SemesterGame {
       if (typeof choice !== "string" || !pending.choices.includes(choice)) return null;
       definition = CARD_DEFS[choice];
       if (!definition || definition.type === "status"
-        || (definition.archetype && definition.archetype !== this.archetypeId)) return null;
-      if (source === "challenge" && definition.archetype !== this.archetypeId) return null;
+        || (definition.archetype && definition.archetype !== this.archetypeId)
+        || (definition.persona && definition.persona !== this.personaId)) return null;
+      if (source === "challenge" && !this.challengeExclusiveCardIds().includes(choice)) return null;
       if (source === "event") {
         const filter = EVENT_CARD_REWARD_SOURCES[pending.source];
         const matchesEventPool = filter === "uncommon"
@@ -1549,7 +1736,7 @@ export class SemesterGame {
       this.stats.rewardsSkipped += 1;
     } else {
       this.stats.cardsTaken += 1;
-      if (definition.archetype === this.archetypeId) this.stats.exclusiveTaken += 1;
+      if (definition.archetype === this.archetypeId || definition.persona === this.personaId) this.stats.exclusiveTaken += 1;
       else this.stats.publicTaken += 1;
     }
 
@@ -1751,6 +1938,7 @@ export class SemesterGame {
       ...this.pendingShop,
       cards: this.pendingShop.cards.map((stock) => ({ ...stock })),
       items: this.pendingShop.items.map((stock) => ({ ...stock })),
+      supplies: (this.pendingShop.supplies || []).map((stock) => ({ ...stock })),
       started
     };
   }
@@ -1761,13 +1949,18 @@ export class SemesterGame {
     if (!this.tarotId || !hasShopNode || FIXED_ROUTE_WEEKS.has(this.week) || this.awaitingNextSemester
       || this.pendingSemesterReward || this.pendingCombatReward || this.pendingCombatStart
       || this.pendingEventReward || this.pendingEventId || this.pendingRest || this.pet.pendingMilestone) return null;
+    const personaCards = this.personaId === "student"
+      ? []
+      : this.rng.shuffle(PERSONA_CARD_IDS[this.personaId] || []).slice(0, 1);
     const exclusive = this.rng.shuffle(ARCHETYPE_CARD_IDS[this.archetypeId]).slice(0, 1);
-    const publicCards = this.rng.shuffle(PUBLIC_REWARD_CARD_IDS).slice(0, 2);
-    const cardIds = this.rng.shuffle([...exclusive, ...publicCards]);
+    const publicCards = this.rng.shuffle(PUBLIC_REWARD_CARD_IDS).slice(0, personaCards.length ? 1 : 2);
+    const cardIds = this.rng.shuffle([...personaCards, ...exclusive, ...publicCards]);
     const itemIds = this.rng.shuffle(this.availableItemIds()).slice(0, 2);
+    const supplyIds = this.rng.shuffle(Object.keys(SUPPLY_DEFS));
     this.pendingShop = {
       cards: cardIds.map((id) => ({ id, sold: false })),
       items: itemIds.map((id) => ({ id, sold: false })),
+      supplies: supplyIds.map((id) => ({ id, sold: false })),
       removePrice: 75 + (this.semester - 1) * 15,
       removed: false
     };
@@ -1775,6 +1968,11 @@ export class SemesterGame {
   }
 
   shopPrice(kind, id) {
+    if (kind === "supply") {
+      const base = SUPPLY_DEFS[id]?.price;
+      if (!base) return null;
+      return Math.ceil(base * (this.hasItem("studentId") ? 0.9 : 1));
+    }
     const rarity = kind === "card" ? CARD_DEFS[id]?.rarity : ITEM_DEFS[id]?.rarity;
     const base = kind === "card"
       ? { common: 40, uncommon: 65, rare: 100 }[rarity]
@@ -1800,7 +1998,7 @@ export class SemesterGame {
     this.gold -= price;
     this.addCard(stock.id);
     this.stats.cardsTaken += 1;
-    if (CARD_DEFS[stock.id].archetype === this.archetypeId) this.stats.exclusiveTaken += 1;
+    if (CARD_DEFS[stock.id].archetype === this.archetypeId || CARD_DEFS[stock.id].persona === this.personaId) this.stats.exclusiveTaken += 1;
     else this.stats.publicTaken += 1;
     stock.sold = true;
     return { id: stock.id, price };
@@ -1817,6 +2015,21 @@ export class SemesterGame {
     this.stats.itemsTaken += 1;
     stock.sold = true;
     this.flags.nextShopHalf = false;
+    return { id, price };
+  }
+
+  buyShopSupply(id) {
+    if (this.pendingItemReplacement?.source === "shop") return null;
+    const stock = this.pendingShop?.supplies?.find((entry) => entry.id === id);
+    const price = stock ? this.shopPrice("supply", stock.id) : null;
+    if (!stock || stock.sold || price === null || this.gold < price
+      || this.supplies.length >= this.supplyCapacity) return null;
+    this.gold -= price;
+    if (!this.addSupply(id)) {
+      this.gold += price;
+      return null;
+    }
+    stock.sold = true;
     return { id, price };
   }
 
@@ -1874,6 +2087,13 @@ export class SemesterGame {
 
   eligibleSummaryCards() {
     return this.deck.filter((card) => this.summaryCardProgress(card.uid).upgradeable);
+  }
+
+  semesterUpgradeCandidates() {
+    return this.deck.filter((card) => {
+      const definition = CARD_DEFS[card.id];
+      return Boolean(definition && definition.type !== "status" && !card.upgraded);
+    });
   }
 
   summaryCardProgress(uid) {
@@ -2015,12 +2235,16 @@ export class SemesterGame {
       hand: [],
       pendingDiscard: 0,
       attackBonus: 0,
+      summons: 0,
+      enemyAttackDown: 0,
+      enemyExposed: 0,
       nextDrawBonus: 0,
       nextDrawPenalty: 0,
       distracted: false,
       doubleNextAttack: false,
       endTurnHpLoss: 0,
       petUsed: false,
+      petSkillUses: 0,
       petChargedThisTurn: false,
       petIncubationEvent: null,
       pencilUsed: false,
@@ -2062,9 +2286,14 @@ export class SemesterGame {
     const rivalInterrupt = this.rivalInterruptState(attackBeforeInterrupt);
     const examBlank = this.finalExamBlankState(attackBeforeInterrupt);
     const counterplay = rivalInterrupt || examBlank;
+    const attackAfterCounterplay = counterplay?.attackAfter ?? attackBeforeInterrupt;
+    const attackDownApplied = Boolean(attackBeforeInterrupt && combat.enemyAttackDown > 0);
     return {
       ...intent,
-      attack: counterplay?.attackAfter ?? attackBeforeInterrupt,
+      attack: attackAfterCounterplay === undefined
+        ? undefined
+        : Math.max(0, attackAfterCounterplay - combat.enemyAttackDown),
+      attackDownApplied,
       mechanicState: counterplay || intent.mechanicState
     };
   }
@@ -2160,6 +2389,7 @@ export class SemesterGame {
       mechanicState: {
         type: scaling.type,
         label: scaling.label,
+        ...(scaling.type === "statusHits" && scaling.statusId === "todo" ? { statusId: "todo" } : {}),
         value,
         cap,
         sourceCount
@@ -2284,11 +2514,18 @@ export class SemesterGame {
     const distracted = typeof options.distracted === "boolean" ? options.distracted : combat.distracted;
     const damageModifiers = [];
     const blockModifiers = [];
-    let baseDamage = effect.damage || 0;
+    const summonCount = nonNegativeInteger(combat.summons);
+    const hasDamageEffect = Boolean(effect.damage || (effect.damagePerSummon && summonCount > 0));
+    let baseDamage = (effect.damage || 0) + summonCount * (effect.damagePerSummon || 0);
+    if (effect.damagePerSummon) damageModifiers.push(`纸灵 ${summonCount} 只：基础 ${baseDamage}`);
 
     if (effect.safeDamage && !this.getIntent().attack) {
       baseDamage = effect.safeDamage;
       damageModifiers.push(`敌人未攻击：基础 ${baseDamage}`);
+    }
+    if (isAttackCard && baseDamage > 0 && combat.enemyExposed) {
+      baseDamage += combat.enemyExposed;
+      damageModifiers.push(`露怯 +${combat.enemyExposed}`);
     }
     let damagePerHit = Math.max(
       0,
@@ -2297,19 +2534,19 @@ export class SemesterGame {
     if (isAttackCard && combat.attackBonus) damageModifiers.push(`攻击加成 +${combat.attackBonus}`);
     if (isAttackCard && distracted) damageModifiers.push("走神 -2");
 
-    const ariesBonus = Boolean(effect.damage && isAttackCard && this.archetypeId === "aries" && !combat.archetypeAttackUsed);
+    const ariesBonus = Boolean(hasDamageEffect && isAttackCard && this.archetypeId === "aries" && !combat.archetypeAttackUsed);
     if (ariesBonus) {
       damagePerHit += 2;
       damageModifiers.push("白羊首击 +2");
     }
-    const pencilBonus = Boolean(effect.damage && isAttackCard && this.hasItem("autoPencil") && !combat.pencilUsed);
+    const pencilBonus = Boolean(hasDamageEffect && isAttackCard && this.hasItem("autoPencil") && !combat.pencilUsed);
     if (pencilBonus) {
       damagePerHit += 1;
       damageModifiers.push("自动铅笔 +1");
     }
 
-    let hits = effect.damage ? effect.hits || 1 : 0;
-    const doubleAttack = Boolean(effect.damage && isAttackCard && combat.doubleNextAttack);
+    let hits = hasDamageEffect ? effect.hits || 1 : 0;
+    const doubleAttack = Boolean(hasDamageEffect && isAttackCard && combat.doubleNextAttack);
     if (doubleAttack) {
       hits *= 2;
       damageModifiers.push("双倍攻击");
@@ -2328,8 +2565,11 @@ export class SemesterGame {
       healthDamage += hitDamage;
     }
 
-    const notebookBonus = Boolean(effect.block && this.hasItem("thickNotebook") && !combat.notebookUsed);
-    const baseBlock = (effect.block || 0) + (notebookBonus ? 2 : 0);
+    const summonBlock = summonCount * (effect.blockPerSummon || 0);
+    const hasBlockEffect = Boolean(effect.block || (effect.blockPerSummon && summonCount > 0));
+    const notebookBonus = Boolean(hasBlockEffect && this.hasItem("thickNotebook") && !combat.notebookUsed);
+    const baseBlock = (effect.block || 0) + summonBlock + (notebookBonus ? 2 : 0);
+    if (effect.blockPerSummon) blockModifiers.push(`纸灵 ${summonCount} 只：护甲 +${summonBlock}`);
     if (notebookBonus) blockModifiers.push("厚笔记本 +2");
     const statusCount = effect.exhaustStatuses
       ? combat.hand.filter((held) => CARD_DEFS[held.id].type === "status").length
@@ -2339,7 +2579,7 @@ export class SemesterGame {
 
     return {
       cost: definition.cost,
-      hasDamage: Boolean(effect.damage),
+      hasDamage: hasDamageEffect,
       damagePerHit,
       hits,
       attackTotal,
@@ -2464,7 +2704,7 @@ export class SemesterGame {
     }
     if (effect.endTurnHpLoss) combat.endTurnHpLoss += effect.endTurnHpLoss;
 
-    if (effect.damage) {
+    if (resolved.hasDamage) {
       const isAttackCard = definition.type === "attack";
       const damagePerHit = resolved.damagePerHit;
       if (resolved.ariesBonus) {
@@ -2491,7 +2731,7 @@ export class SemesterGame {
       }
     }
 
-    if (effect.block) {
+    if (resolved.baseBlock > 0) {
       const amount = resolved.baseBlock;
       if (resolved.notebookBonus) {
         combat.notebookUsed = true;
@@ -2499,6 +2739,23 @@ export class SemesterGame {
       }
       combat.playerBlock += amount;
       notes.push(`获得 ${amount} 护甲`);
+    }
+    if (effect.enemyAttackDown) {
+      const before = combat.enemyAttackDown;
+      combat.enemyAttackDown = Math.min(3, before + effect.enemyAttackDown);
+      notes.push(`敌人下次攻击每段 -${combat.enemyAttackDown}`);
+    }
+    if (effect.enemyExposed) {
+      combat.enemyExposed = Math.max(combat.enemyExposed, effect.enemyExposed);
+      notes.push(`敌人露怯 ${combat.enemyExposed}`);
+    }
+    if (effect.summon) {
+      const added = this.addSummons(effect.summon);
+      notes.push(`召唤纸灵 +${added}（${combat.summons}/3）`);
+    }
+    if (effect.consumeSummons) {
+      const consumed = this.consumeSummons();
+      notes.push(`消耗 ${consumed} 只纸灵`);
     }
     if (effect.selfDamage) {
       this.hp -= effect.selfDamage;
@@ -2557,12 +2814,15 @@ export class SemesterGame {
     const { skill } = pet;
     if (combat.status !== "active") return { ok: false, reason: "战斗已经结束" };
     if (combat.pendingDiscard) return { ok: false, reason: "请先选择一张牌弃掉" };
-    if (combat.petUsed) return { ok: false, reason: "本场已经用过宠物技能" };
     if (this.pet.charge < this.pet.maxCharge) return { ok: false, reason: "宠物充能未满" };
     if (combat.energy < skill.energyCost) return { ok: false, reason: `需要 ${skill.energyCost} 点能量` };
 
     combat.energy -= skill.energyCost;
-    combat.petUsed = true;
+    combat.petSkillUses = nonNegativeInteger(combat.petSkillUses) + 1;
+    // Active-combat UI historically treated petUsed as a one-use lock. Keep
+    // that compatibility field false until settlement so a recharged pet can
+    // act again, then expose the old "used at least once" boolean in summary.
+    combat.petUsed = false;
     this.stats.petUses += 1;
     this.pet.charge = 0;
     const preview = this.petSkillPreview();
@@ -2652,6 +2912,7 @@ export class SemesterGame {
       return { ok: true, endTurnResult, enemyResult: null };
     }
     combat.distracted = false;
+    combat.enemyExposed = 0;
     const enemyResult = this.executeEnemyTurn(resolvedIntent);
     const drawResult = combat.status === "active" ? this.startPlayerTurn() : null;
     return withVisibleDrawResult({ ok: true, endTurnResult, enemyResult }, drawResult);
@@ -2719,6 +2980,10 @@ export class SemesterGame {
         notes.push("错题本：下回合多抽 1 张");
       }
     }
+    if (intent.attackDownApplied) {
+      combat.enemyAttackDown = 0;
+      notes.push("肘击压制已在本次攻击后消耗");
+    }
     if (intent.block) {
       combat.enemy.block += intent.block;
       result.block = { gained: intent.block };
@@ -2762,12 +3027,14 @@ export class SemesterGame {
       this.hp = 0;
       combat.status = "lost";
       combat.result = "lost";
+      combat.petUsed = combat.petUsed === true || nonNegativeInteger(combat.petSkillUses) > 0;
       this.stats.combatsCompleted += 1;
       this.stats.combatTurns += combat.turn;
       combat.log.push("体力耗尽，本次挑战结束。");
     } else if (combat.enemy.hp <= 0 && combat.status === "active") {
       combat.status = "won";
       combat.result = "won";
+      combat.petUsed = combat.petUsed === true || nonNegativeInteger(combat.petSkillUses) > 0;
       combat.victoryReceipt = combat.rewardSource ? { ...combat.rewardSource } : null;
       this.stats.combatsCompleted += 1;
       this.stats.combatsWon += 1;
@@ -2783,7 +3050,6 @@ export class SemesterGame {
       const pet = this.getPetDefinition();
       this.pet.bond += pet.victoryBond;
       this.updatePetMilestone();
-      this.advanceIncubatorAfterVictory(combat);
       for (const uid of combat.usedCardUids) {
         if (this.deck.some((card) => card.uid === uid)) {
           this.cardCombatUses[uid] = (this.cardCombatUses[uid] || 0) + 1;
@@ -2812,7 +3078,7 @@ export class SemesterGame {
       cardsPlayed: combat.cardsPlayed,
       damageDealt: combat.damageDealt,
       hpLost: Math.max(0, combat.startingHp - this.hp),
-      petUsed: combat.petUsed,
+      petUsed: combat.petUsed === true || nonNegativeInteger(combat.petSkillUses) > 0,
       petIncubationEvent: combat.petIncubationEvent ? { ...combat.petIncubationEvent } : null,
       hatchedPetId: combat.petIncubationEvent?.type === "hatched"
         ? combat.petIncubationEvent.petId
@@ -2831,20 +3097,39 @@ export class SemesterGame {
       || this.pendingShop || this.pendingRest || this.pendingItemReplacement
       || combat?.status !== "won" || combat.result !== "won" || combat.rewardPrepared === true
       || receipt?.outcome !== "boss" || receipt.week !== 16 || receipt.week !== this.week
-      || receipt.enemyId !== "finalExam" || receipt.enemyId !== combat.enemy?.id
+      || receipt.enemyId !== semesterBossId(this.semester) || receipt.enemyId !== combat.enemy?.id
       || ENEMY_DEFS[receipt.enemyId]?.kind !== "boss") return null;
     this.gold += 50;
     const itemChoices = [...new Set(itemIds)]
       .filter((id) => ITEM_DEFS[id]?.rarity === "boss" && !this.hasItem(id));
     let fallbackGold = 0;
-    if (itemChoices.length) {
+    if (!itemChoices.length) {
+      fallbackGold = this.claimItemRewardFallback("boss")?.gold || 0;
+    }
+    const egg = eggDefinitionForEnemy(receipt.enemyId);
+    const canRewardEgg = Boolean(egg && !this.hasPet(egg.petId)
+      && this.incubator?.eggId !== egg.id && !this.queuedEggIds.includes(egg.id));
+    if (canRewardEgg) {
+      this.pendingSemesterReward = { stage: "bossEgg", eggId: egg.id, itemChoices, fallbackGold };
+    } else if (itemChoices.length) {
       this.pendingSemesterReward = { stage: "bossItem", itemChoices };
     } else {
-      fallbackGold = this.claimItemRewardFallback("boss")?.gold || 0;
       this.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold };
     }
     combat.rewardPrepared = true;
     return { ...this.pendingSemesterReward, itemChoices: [...this.pendingSemesterReward.itemChoices], started: true };
+  }
+
+  resolvePendingSemesterEgg() {
+    const pending = this.pendingSemesterReward;
+    const egg = PET_EGG_DEFS[pending?.eggId];
+    if (pending?.stage !== "bossEgg" || !egg || this.hasPet(egg.petId)) return null;
+    const result = this.queueEgg(egg.id);
+    if (!result) return null;
+    this.pendingSemesterReward = pending.itemChoices?.length
+      ? { stage: "bossItem", itemChoices: [...pending.itemChoices] }
+      : { stage: "summaryUpgrade", itemChoices: [], fallbackGold: nonNegativeInteger(pending.fallbackGold) };
+    return { ...result, stage: this.pendingSemesterReward.stage };
   }
 
   resolvePendingSemesterItem(id) {
@@ -2876,9 +3161,9 @@ export class SemesterGame {
     if (this.week !== 16 || this.awaitingNextSemester
       || this.pendingSemesterReward?.stage !== "summaryUpgrade"
       || this.pendingItemReplacement) return false;
-    const eligible = this.eligibleSummaryCards();
-    if (eligible.length) {
-      if (typeof uid !== "string" || !eligible.some((card) => card.uid === uid)
+    const candidates = this.semesterUpgradeCandidates();
+    if (candidates.length) {
+      if (typeof uid !== "string" || !candidates.some((card) => card.uid === uid)
         || !this.upgradeCard(uid)) return false;
     } else if (uid !== undefined && uid !== null) {
       return false;
@@ -2928,6 +3213,7 @@ export class SemesterGame {
       rngState: this.rng.state,
       cardSerial: this.cardSerial,
       archetypeId: this.archetypeId,
+      personaId: this.personaId,
       tarotId: this.tarotId,
       semester: this.semester,
       week: this.week,
@@ -2940,7 +3226,8 @@ export class SemesterGame {
         ...this.pendingCombatReward,
         choices: [...(this.pendingCombatReward.choices || [])],
         itemChoices: [...(this.pendingCombatReward.itemChoices || [])],
-        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])]
+        usedCardUids: [...(this.pendingCombatReward.usedCardUids || [])],
+        enchantCardUids: [...(this.pendingCombatReward.enchantCardUids || [])]
       } : null,
       pendingCombatStart: this.pendingCombatStart ? {
         ...this.pendingCombatStart,
@@ -2955,7 +3242,8 @@ export class SemesterGame {
       pendingShop: this.pendingShop ? {
         ...this.pendingShop,
         cards: this.pendingShop.cards.map((stock) => ({ ...stock })),
-        items: this.pendingShop.items.map((stock) => ({ ...stock }))
+        items: this.pendingShop.items.map((stock) => ({ ...stock })),
+        supplies: (this.pendingShop.supplies || []).map((stock) => ({ ...stock }))
       } : null,
       pendingRest: this.pendingRest ? {
         ...this.pendingRest,
@@ -2970,12 +3258,15 @@ export class SemesterGame {
       deck: this.deck.map((card) => ({ ...card })),
       items: [...this.items],
       backpackCapacity: this.backpackCapacity,
+      supplies: [...this.supplies],
+      supplyCapacity: this.supplyCapacity,
       pet: { ...this.pet },
       pets: Object.fromEntries(
         this.ownedPetIds().map((id) => [id, { ...this.pets[id] }])
       ),
       activePetId: this.activePetId,
       incubator: this.incubator ? { ...this.incubator } : null,
+      queuedEggIds: [...this.queuedEggIds],
       cardCombatUses: { ...this.cardCombatUses },
       cardCombatUsesSemester: this.semester,
       flags: { ...this.flags },
@@ -2994,7 +3285,8 @@ export class SemesterGame {
     if (!data || data.version !== 2 || !ARCHETYPE_DEFS[data.archetypeId]) {
       throw new Error("存档版本不兼容");
     }
-    const game = new SemesterGame(1, data.archetypeId);
+    const personaId = PERSONA_DEFS[data.personaId] ? data.personaId : "student";
+    const game = new SemesterGame(1, data.archetypeId, DEFAULT_PET_ID, [DEFAULT_PET_ID], personaId);
     const loadRepairs = [];
     game.rng.state = Number(data.rngState) >>> 0;
     game.cardSerial = Math.min(1_000_000_000, nonNegativeInteger(data.cardSerial));
@@ -3014,7 +3306,21 @@ export class SemesterGame {
     const savedSemesterReward = data.pendingSemesterReward;
     game.pendingSemesterReward = null;
     if (!game.awaitingNextSemester && game.week === 16 && savedSemesterReward && typeof savedSemesterReward === "object") {
-      if (savedSemesterReward.stage === "bossItem") {
+      if (savedSemesterReward.stage === "bossEgg") {
+        const egg = PET_EGG_DEFS[savedSemesterReward.eggId];
+        const itemChoices = Array.isArray(savedSemesterReward.itemChoices)
+          ? [...new Set(savedSemesterReward.itemChoices)]
+            .filter((id) => ITEM_DEFS[id]?.rarity === "boss")
+          : [];
+        if (egg) {
+          game.pendingSemesterReward = {
+            stage: "bossEgg",
+            eggId: egg.id,
+            itemChoices,
+            fallbackGold: nonNegativeInteger(savedSemesterReward.fallbackGold)
+          };
+        }
+      } else if (savedSemesterReward.stage === "bossItem") {
         const itemChoices = Array.isArray(savedSemesterReward.itemChoices)
           ? [...new Set(savedSemesterReward.itemChoices)]
             .filter((id) => ITEM_DEFS[id]?.rarity === "boss")
@@ -3046,11 +3352,13 @@ export class SemesterGame {
     const savedCombatChoices = Array.isArray(savedCombatReward?.choices)
       ? [...new Set(savedCombatReward.choices)].filter((id) => {
         const card = CARD_DEFS[id];
-        return card && (!card.archetype || card.archetype === game.archetypeId);
+        return card
+          && (!card.archetype || card.archetype === game.archetypeId)
+          && (!card.persona || card.persona === game.personaId);
       }).slice(0, 3)
       : [];
     const savedExclusiveChoices = savedCombatChoices
-      .filter((id) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(id));
+      .filter((id) => game.challengeExclusiveCardIds().includes(id));
     if (!game.awaitingNextSemester && !game.pendingSemesterReward && game.week < 16) {
       if (savedCombatReward?.type === "normalCard" && savedCombatChoices.length) {
         const savedBonusGold = savedCombatReward.bonusGold === HIGH_THREAT_ROUTE_BONUS_GOLD
@@ -3072,6 +3380,11 @@ export class SemesterGame {
             .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid))
             .slice(0, 64)
           : [];
+        const enchantCardUids = Array.isArray(savedCombatReward.enchantCardUids)
+          ? [...new Set(savedCombatReward.enchantCardUids)]
+            .filter((uid) => typeof uid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(uid))
+            .slice(0, 64)
+          : null;
         const stageIsValid = savedCombatReward.stage === "enchant"
           || (savedCombatReward.stage === "card" && savedCombatChoices.length)
           || (savedCombatReward.stage === "item" && itemChoices.length);
@@ -3082,6 +3395,7 @@ export class SemesterGame {
             choices: savedCombatReward.stage === "card" ? savedCombatChoices : [],
             itemChoices: savedCombatReward.stage === "item" ? itemChoices : [],
             usedCardUids,
+            enchantCardUids: savedCombatReward.stage === "enchant" ? enchantCardUids : [],
             fallbackGold: savedCombatReward.stage === "enchant"
               ? nonNegativeInteger(savedCombatReward.fallbackGold)
               : 0
@@ -3237,7 +3551,7 @@ export class SemesterGame {
         game.deck.push(card);
       }
     }
-    const starterIds = startingDeckFor(data.archetypeId);
+    const starterIds = startingDeckFor(data.archetypeId, game.personaId);
     if (!game.deck.length) {
       game.deck = starterIds.map((id) => game.createCard(id));
       rebuiltDeck = true;
@@ -3263,6 +3577,15 @@ export class SemesterGame {
     } else if (data.items !== undefined && !Array.isArray(data.items)) {
       loadRepairs.push("重置异常物品列表");
     }
+    game.supplyCapacity = 2;
+    game.supplies = Array.isArray(data.supplies)
+      ? data.supplies.filter((id) => SUPPLY_DEFS[id]).slice(0, game.supplyCapacity)
+      : [];
+    if (Array.isArray(data.supplies) && data.supplies.length !== game.supplies.length) {
+      loadRepairs.push(`清理 ${data.supplies.length - game.supplies.length} 件异常临时用品`);
+    } else if (data.supplies !== undefined && !Array.isArray(data.supplies)) {
+      loadRepairs.push("重置异常临时用品列表");
+    }
     const savedPet = data.pet && typeof data.pet === "object" && !Array.isArray(data.pet) ? data.pet : {};
     const savedPets = data.pets && typeof data.pets === "object" && !Array.isArray(data.pets)
       ? data.pets
@@ -3283,7 +3606,6 @@ export class SemesterGame {
         restoredPets[id] = sanitizePetState(rawPet, id);
       }
     }
-
     const legacyPetId = canonicalPetId(savedPet.id) || DEFAULT_PET_ID;
     if (!savedPets) {
       restoredPets[legacyPetId] = sanitizePetState(savedPet, legacyPetId);
@@ -3318,6 +3640,19 @@ export class SemesterGame {
         && battles < egg.requiredCombats;
       if (incubatorIsValid) game.incubator = { eggId: egg.id, battles };
       else loadRepairs.push("清理异常宠物孵化状态");
+    }
+    game.queuedEggIds = [];
+    if (Array.isArray(data.queuedEggIds)) {
+      const seenEggIds = new Set(game.incubator ? [game.incubator.eggId] : []);
+      for (const eggId of data.queuedEggIds) {
+        const egg = PET_EGG_DEFS[eggId];
+        if (!egg || seenEggIds.has(egg.id) || game.hasPet(egg.petId)) continue;
+        seenEggIds.add(egg.id);
+        game.queuedEggIds.push(egg.id);
+      }
+      if (game.queuedEggIds.length !== data.queuedEggIds.length) loadRepairs.push("清理异常宠物蛋队列");
+    } else if (data.queuedEggIds !== undefined) {
+      loadRepairs.push("重置异常宠物蛋队列");
     }
 
     const pendingChallenge = game.pendingCombatReward?.type === "challengeChain"
@@ -3358,7 +3693,21 @@ export class SemesterGame {
       game.pendingCombatReward.usedCardUids = game.pendingCombatReward.usedCardUids
         .filter((uid) => deckUids.has(uid));
       if (game.pendingCombatReward.usedCardUids.length !== savedCandidateCount) {
-        loadRepairs.push("清理异常精英刻印候选");
+        loadRepairs.push("清理异常精英出牌记录");
+      }
+      if (game.pendingCombatReward.stage === "enchant") {
+        const frozenCardUids = game.pendingCombatReward.enchantCardUids;
+        if (Array.isArray(frozenCardUids)) {
+          const canonicalCardUids = game.enchantableCards(frozenCardUids).map((card) => card.uid);
+          if (JSON.stringify(canonicalCardUids) !== JSON.stringify(frozenCardUids)) {
+            loadRepairs.push("清理异常精英刻印候选");
+          }
+          game.pendingCombatReward.enchantCardUids = canonicalCardUids;
+        } else {
+          freezeEliteEnchantCandidateUids(game);
+        }
+      } else {
+        game.pendingCombatReward.enchantCardUids = [];
       }
     }
     let repairedEventCandidates = false;
@@ -3493,7 +3842,7 @@ export class SemesterGame {
     game.rewardIndex = Math.max(0, Number(data.rewardIndex) || 0);
     game.tutorialSeen = Boolean(data.tutorialSeen);
     const savedRngState = game.rng.state;
-    game.semesterPlan = normalizeSemesterPlan(data.semesterPlan) || game.generateSemesterPlan();
+    game.semesterPlan = normalizeSemesterPlan(data.semesterPlan, game.semester) || game.generateSemesterPlan();
     game.rng.state = savedRngState;
     if (data.stats && typeof data.stats === "object") {
       const defaults = game.stats;
@@ -3530,30 +3879,43 @@ export class SemesterGame {
       let restoredShop = null;
       const rawCards = Array.isArray(savedShop?.cards) ? savedShop.cards : [];
       const rawItems = Array.isArray(savedShop?.items) ? savedShop.items : [];
+      const rawSupplies = Array.isArray(savedShop?.supplies)
+        ? savedShop.supplies
+        : Object.keys(SUPPLY_DEFS).map((id) => ({ id, sold: false }));
       const cards = rawCards.filter((stock) => stock && typeof stock.sold === "boolean"
-        && CARD_DEFS[stock.id] && (!CARD_DEFS[stock.id].archetype || CARD_DEFS[stock.id].archetype === game.archetypeId))
+        && CARD_DEFS[stock.id]
+        && (!CARD_DEFS[stock.id].archetype || CARD_DEFS[stock.id].archetype === game.archetypeId)
+        && (!CARD_DEFS[stock.id].persona || CARD_DEFS[stock.id].persona === game.personaId))
         .map((stock) => ({ id: stock.id, sold: stock.sold }));
       const items = rawItems.filter((stock) => stock && typeof stock.sold === "boolean"
         && REGULAR_ITEM_IDS.includes(stock.id) && ITEM_DEFS[stock.id])
         .map((stock) => ({ id: stock.id, sold: stock.sold }));
+      const supplies = rawSupplies.filter((stock) => stock && typeof stock.sold === "boolean" && SUPPLY_DEFS[stock.id])
+        .map((stock) => ({ id: stock.id, sold: stock.sold }));
       const cardIds = new Set(cards.map((stock) => stock.id));
       const itemIds = new Set(items.map((stock) => stock.id));
+      const supplyIds = new Set(supplies.map((stock) => stock.id));
+      const expectedPersonaCards = game.personaId === "student" ? 0 : 1;
       const cardPoolIsValid = cards.length === 3 && cardIds.size === 3
         && cards.filter((stock) => ARCHETYPE_CARD_IDS[game.archetypeId].includes(stock.id)).length === 1
-        && cards.filter((stock) => PUBLIC_REWARD_CARD_IDS.includes(stock.id)).length === 2;
+        && cards.filter((stock) => (PERSONA_CARD_IDS[game.personaId] || []).includes(stock.id)).length === expectedPersonaCards
+        && cards.filter((stock) => PUBLIC_REWARD_CARD_IDS.includes(stock.id)).length === 2 - expectedPersonaCards;
       const itemPoolIsValid = items.length <= 2 && itemIds.size === items.length
         && items.every((stock) => stock.sold || !game.hasItem(stock.id));
+      const supplyPoolIsValid = supplies.length === Object.keys(SUPPLY_DEFS).length
+        && supplyIds.size === supplies.length;
       const canRestoreShop = !game.awaitingNextSemester && !game.pendingSemesterReward
         && !game.pendingCombatReward && !game.pendingEventReward && !game.pendingEventId
         && !game.pet.pendingMilestone && (savedCombatStart === undefined || savedCombatStart === null)
         && !FIXED_ROUTE_WEEKS.has(game.week) && game.tarotId
         && game.semesterPlan[game.week]?.some((node) => node.type === "shop")
         && savedShop.removePrice === 75 + (game.semester - 1) * 15
-        && typeof savedShop.removed === "boolean" && cardPoolIsValid && itemPoolIsValid;
+        && typeof savedShop.removed === "boolean" && cardPoolIsValid && itemPoolIsValid && supplyPoolIsValid;
       if (canRestoreShop) {
         restoredShop = {
           cards,
           items,
+          supplies,
           removePrice: savedShop.removePrice,
           removed: savedShop.removed
         };
@@ -3608,6 +3970,38 @@ export class SemesterGame {
         expectedCardUids = [];
         stageIsValid = Boolean(game.pet.pendingMilestone) && savedRest.bond === 2 && savedRest.healed === 0;
         restDetails = { bond: 2, healed: 0 };
+      } else if (stage === "hatch") {
+        expectedCardUids = [];
+        const egg = PET_EGG_DEFS[savedRest.eggId];
+        const battles = nonNegativeInteger(savedRest.battles);
+        const progressIsValid = egg
+          && savedRest.petId === egg.petId
+          && savedRest.requiredCombats === egg.requiredCombats
+          && Number.isInteger(savedRest.battles)
+          && battles > 0
+          && battles <= egg.requiredCombats;
+        const nextEgg = savedRest.nextEggId === null || savedRest.nextEggId === undefined
+          ? null
+          : PET_EGG_DEFS[savedRest.nextEggId] || null;
+        const nextEggStateIsValid = nextEgg
+          ? game.incubator?.eggId === nextEgg.id && game.incubator.battles === 0
+          : !game.incubator;
+        const isHatched = progressIsValid && battles === egg.requiredCombats
+          && savedRest.type === "hatched" && nextEggStateIsValid && game.hasPet(egg.petId);
+        const isProgress = progressIsValid && battles < egg.requiredCombats
+          && savedRest.type === "progress" && !game.hasPet(egg.petId)
+          && game.incubator?.eggId === egg.id && game.incubator.battles === battles;
+        stageIsValid = Boolean(isHatched || isProgress);
+        if (stageIsValid) {
+          restDetails = {
+            type: savedRest.type,
+            eggId: egg.id,
+            petId: egg.petId,
+            battles,
+            requiredCombats: egg.requiredCombats,
+            ...(savedRest.type === "hatched" ? { nextEggId: nextEgg?.id || null } : {})
+          };
+        }
       } else if (stage === "tarotRemove") {
         expectedCardUids = game.deck.map((card) => card.uid);
         stageIsValid = game.tarot?.rest.action === "remove" && game.flags.tarotRestUsed && game.deck.length > 5;

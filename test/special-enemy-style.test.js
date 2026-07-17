@@ -44,12 +44,14 @@ test("configured mechanic meters use distinct translucent themes", () => {
 test("default four-cell、alarm three-cell 与 rival ten-cell tracks preserve states", () => {
   const track = rule(".mechanic-progress-track");
   const alarmTrack = rule(".enemy-mechanic-progress.kind-alarmClock .mechanic-progress-track");
+  const megaphoneTrack = rule(".enemy-mechanic-progress.kind-clubMegaphone .mechanic-progress-track");
   const rivalTrack = rule(".enemy-mechanic-progress.kind-rivalShadow .mechanic-progress-track");
   const complete = rule(".mechanic-progress-track > b.is-complete");
   const current = rule(".mechanic-progress-track > b.is-current");
 
   assert.match(track, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(alarmTrack, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(megaphoneTrack, /grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(rivalTrack, /grid-template-columns:\s*repeat\(10,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(complete, /background:\s*var\(--mechanic-accent\)/);
   assert.match(current, /background:\s*var\(--mechanic-current\)/);
@@ -74,4 +76,11 @@ test("mechanic progress reserves compositor hints only during enemy resolution",
   assert.match(resolving, /will-change:\s*transform/);
   assert.doesNotMatch(styles, /\.enemy-mechanic-progress[^{}]*\{[^}]*animation\s*:/);
   assert.doesNotMatch(styles, /\.enemy-mechanic-progress[^{}]*\{[^}]*transition\s*:\s*(?:top|right|bottom|left|width|height|margin|padding)/);
+});
+
+test("compact challenge layouts keep mechanic intent left of the enemy label", () => {
+  assert.match(
+    styles,
+    /\.combat-page:has\(\.challenge-contract\) \.enemy-fighter:has\(\.enemy-mechanic-progress\) \.enemy-intent-token,[\s\S]*?\.combat-page:has\(\.route-threat-contract\) \.enemy-fighter:has\(\.enemy-mechanic-progress\) \.enemy-intent-token\s*\{[^}]*left:\s*25%[^}]*transform:\s*translateX\(-100%\)[^}]*\}/
+  );
 });

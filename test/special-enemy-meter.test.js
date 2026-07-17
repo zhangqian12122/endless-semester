@@ -7,11 +7,39 @@ import { CHALLENGE_RULES, SemesterGame } from "../game-engine.js";
 
 test("未配置常驻进度的普通敌人继续返回空", () => {
   for (const enemyId of NORMAL_ENEMY_IDS) {
-    if (enemyId === "alarmClock") continue;
+    if (["alarmClock", "clubMegaphone"].includes(enemyId)) continue;
     assert.equal(enemyMechanicProgress(enemyId, 7), null, `${enemyId} 不应生成常驻进度`);
   }
   assert.equal(enemyMechanicProgress("", 0), null);
   assert.equal(enemyMechanicProgress(undefined, 0), null);
+});
+
+test("招新喇叭精用三格公开广播、轰炸与展板掩护", () => {
+  assert.deepEqual(enemyMechanicProgress("clubMegaphone", 0, null, { attack: 4, hits: 3 }), {
+    kind: "cycle",
+    title: "社团音浪",
+    label: "第1轮 · 1/3 · 广播",
+    detail: "当前：循环广播（攻击 4×3，合计 12）；下一步：报名轰炸",
+    segments: ["current", "upcoming", "upcoming"]
+  });
+  assert.deepEqual(enemyMechanicProgress("clubMegaphone", 1, null, {
+    attack: 6,
+    addStatus: { id: "nervous", count: 1, zone: "discard" }
+  }), {
+    kind: "cycle",
+    title: "社团音浪",
+    label: "第1轮 · 2/3 · 轰炸",
+    detail: "当前：报名轰炸（攻击 6，向弃牌堆加入 1 张紧张）；下一步：展板掩护",
+    segments: ["done", "current", "upcoming"]
+  });
+  assert.deepEqual(enemyMechanicProgress("clubMegaphone", 2, null, { block: 7, debuff: "distracted" }), {
+    kind: "cycle",
+    title: "社团音浪",
+    label: "第1轮 · 3/3 · 掩护",
+    detail: "当前：展板掩护（获得 7 点护甲并施加走神，不攻击）；下一步：循环广播（第2轮）",
+    segments: ["done", "done", "current"]
+  });
+  assert.equal(enemyMechanicProgress("clubMegaphone", 3).label, "第2轮 · 1/3 · 广播");
 });
 
 test("闹钟怪用三格公开倒计时预告行动语义，不把基础伤害伪装成真实数值", () => {

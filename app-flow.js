@@ -79,6 +79,18 @@ export function enemyIntentDetailLines(intent = {}, cardNameFor = (id) => id) {
       lines.push("破题窗口尚未开启：需先结算上一道填空题");
     }
   }
+  if (intent.mechanicState?.type === "statusHits") {
+    const cap = Math.max(1, resolvedIntentValue(intent.mechanicState, "cap") ?? 1);
+    const sourceCount = resolvedIntentValue(intent.mechanicState, "sourceCount") ?? 0;
+    const value = Math.min(cap, resolvedIntentValue(intent.mechanicState, "value") ?? 0);
+    const label = String(intent.mechanicState.label || "状态加段");
+    const statusId = typeof intent.scaling?.statusId === "string" ? intent.scaling.statusId : "状态牌";
+    const resolvedName = typeof cardNameFor === "function" ? cardNameFor(statusId) : statusId;
+    const statusName = String(resolvedName || statusId);
+    lines.push(value > 0
+      ? `${label} ${value}/${cap}：战斗区有 ${sourceCount} 张「${statusName}」，本次追加 ${value} 段（共 ${hits} 段）`
+      : `${label} 0/${cap}：战斗区没有「${statusName}」提供额外连击`);
+  }
   if (intent.debuff === "distracted") {
     lines.push("施加走神：下回合你的攻击每段 -2");
   } else if (intent.debuff) {
@@ -121,7 +133,18 @@ const ALARM_CLOCK_METER_STEPS = Object.freeze([
     next: "蓄响（防御）"
   })
 ]);
+const CLUB_MEGAPHONE_METER_STEPS = Object.freeze([
+  Object.freeze({ name: "循环广播", shortName: "广播" }),
+  Object.freeze({ name: "报名轰炸", shortName: "轰炸" }),
+  Object.freeze({ name: "展板掩护", shortName: "掩护" })
+]);
 const SPECIAL_ENEMY_METER_STEPS = Object.freeze(["发卷", "选择题", "填空题", "大题"]);
+const MILK_DRAGON_METER_STEPS = Object.freeze([
+  Object.freeze({ name: "魔性开嗓", shortName: "开嗓" }),
+  Object.freeze({ name: "奶泡头槌", shortName: "头槌" }),
+  Object.freeze({ name: "憋笑蓄泡", shortName: "蓄泡" }),
+  Object.freeze({ name: "哈哈哈连震", shortName: "爆笑" })
+]);
 const MAX_SPECIAL_ENEMY_TURN = Math.floor((Number.MAX_SAFE_INTEGER - 6) / 2);
 
 function normalizedIntentTurn(intentTurn) {
@@ -167,6 +190,37 @@ export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = n
     };
   }
 
+  if (enemyId === "clubMegaphone") {
+    const stepCount = CLUB_MEGAPHONE_METER_STEPS.length;
+    const stepIndex = turn % stepCount;
+    const round = Math.floor(turn / stepCount) + 1;
+    const step = CLUB_MEGAPHONE_METER_STEPS[stepIndex];
+    const nextStep = CLUB_MEGAPHONE_METER_STEPS[(stepIndex + 1) % stepCount];
+    const attack = resolvedIntentValue(resolvedIntent, "attack");
+    const hits = Math.max(1, resolvedIntentValue(resolvedIntent, "hits") ?? 1);
+    const block = resolvedIntentValue(resolvedIntent, "block");
+    const statusCount = resolvedIntentValue(resolvedIntent?.addStatus, "count") ?? 1;
+    let effect = "";
+    if (stepIndex === 0) {
+      const perHit = attack ?? 4;
+      const actualHits = hits > 1 ? hits : 3;
+      effect = `攻击 ${perHit}×${actualHits}，合计 ${perHit * actualHits}`;
+    } else if (stepIndex === 1) {
+      effect = `攻击 ${attack ?? 6}，向弃牌堆加入 ${statusCount} 张紧张`;
+    } else {
+      effect = `获得 ${block ?? 7} 点护甲并施加走神，不攻击`;
+    }
+    return {
+      kind: "cycle",
+      title: "社团音浪",
+      label: `第${round}轮 · ${stepIndex + 1}/3 · ${step.shortName}`,
+      detail: `当前：${step.name}（${effect}）；下一步：${nextStep.name}${stepIndex === stepCount - 1 ? `（第${round + 1}轮）` : ""}`,
+      segments: CLUB_MEGAPHONE_METER_STEPS.map((_, index) => (
+        index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
+      ))
+    };
+  }
+
   if (enemyId === "rivalShadow") {
     const action = turn + 1;
     const baseDamage = 6 + turn * 2;
@@ -185,6 +239,56 @@ export function enemyMechanicProgress(enemyId, intentTurn = 0, mechanicState = n
         : `0/${cap} · 当前攻击 ${attackBefore}`,
       detail: `第${action}次加速，基础伤害 ${baseDamage}；本回合累计实际生命伤害，达到 ${cap} 后当前攻击 -3，下回合重置。`,
       segments: Array.from({ length: cap }, (_, index) => index < value ? "done" : "upcoming")
+    };
+  }
+
+  if (enemyId === "madMilkDragon") {
+    const stepCount = MILK_DRAGON_METER_STEPS.length;
+    const stepIndex = turn % stepCount;
+    const round = Math.floor(turn / stepCount) + 1;
+    const currentStep = MILK_DRAGON_METER_STEPS[stepIndex];
+    const nextStepIndex = (stepIndex + 1) % stepCount;
+    const nextRound = stepIndex === stepCount - 1 ? round + 1 : round;
+    const nextStep = MILK_DRAGON_METER_STEPS[nextStepIndex];
+    const segments = MILK_DRAGON_METER_STEPS.map((_, index) => (
+      index < stepIndex ? "done" : index === stepIndex ? "current" : "upcoming"
+    ));
+    const addStatus = resolvedIntent?.addStatus && typeof resolvedIntent.addStatus === "object"
+      ? resolvedIntent.addStatus
+      : null;
+    const statusCount = resolvedIntentValue(addStatus, "count") ?? 2;
+    const attack = resolvedIntentValue(resolvedIntent, "attack");
+    const hits = resolvedIntentValue(resolvedIntent, "hits");
+    const block = resolvedIntentValue(resolvedIntent, "block");
+    const cap = Math.max(1, resolvedIntentValue(mechanicState, "cap") ?? 3);
+    const sourceCount = resolvedIntentValue(mechanicState, "sourceCount") ?? 0;
+    const value = Math.min(cap, resolvedIntentValue(mechanicState, "value") ?? 0);
+    const perHit = attack ?? (stepIndex === 1 ? 5 : 3);
+    const actualHits = Math.max(1, hits ?? (stepIndex === 1 ? 2 : 3 + value));
+    const nextSuffix = nextRound === round ? "" : `（第${nextRound}轮）`;
+    let detail = "";
+
+    if (stepIndex === 0) {
+      detail = `当前：${currentStep.name}（向弃牌堆加入 ${statusCount} 张紧张，不攻击）；下一步：${nextStep.name}`;
+    } else if (stepIndex === 1) {
+      detail = `当前：${currentStep.name}（攻击 ${perHit}×${actualHits}，合计 ${perHit * actualHits}）；下一步：${nextStep.name}`;
+    } else if (stepIndex === 2) {
+      const debuff = resolvedIntent?.debuff === "distracted"
+        ? "走神"
+        : typeof resolvedIntent?.debuff === "string" && resolvedIntent.debuff
+        ? resolvedIntent.debuff
+        : "走神";
+      detail = `当前：${currentStep.name}（获得 ${block ?? 9} 点护甲并施加${debuff}，不攻击）；下一步：${nextStep.name}`;
+    } else {
+      detail = `当前：${currentStep.name}（攻击 ${perHit}×${actualHits}，合计 ${perHit * actualHits}；${sourceCount} 张紧张追加 ${value} 段）；下一步：${nextStep.name}${nextSuffix}`;
+    }
+
+    return {
+      kind: "cycle",
+      title: "魔笑四拍",
+      label: `第${round}轮 · ${stepIndex + 1}/4 · ${currentStep.shortName}${stepIndex === 3 ? ` · 笑压 ${value}/${cap}` : ""}`,
+      detail,
+      segments
     };
   }
 
@@ -322,6 +426,7 @@ export const CARD_LIBRARY_FILTERS = Object.freeze([
   "aries",
   "gemini",
   "cancer",
+  "summoner",
   "status"
 ]);
 
@@ -335,7 +440,8 @@ export function cardLibraryIds(cardDefs, filter = "all") {
     .filter((card) => {
       if (normalized === "all") return true;
       if (normalized === "status") return card.type === "status";
-      if (normalized === "public") return !card.archetype && card.type !== "status";
+      if (normalized === "public") return !card.archetype && !card.persona && card.type !== "status";
+      if (normalized === "summoner") return card.persona === "summoner";
       return card.archetype === normalized;
     })
     .map((card) => card.id);
@@ -588,7 +694,7 @@ function enemyPlannedActionPhrase(plan) {
   return `${action.source === "pet" ? "发动" : "打出"}「${name}」`;
 }
 
-function enemyPlannedCounterplayCue(plan, mode = "counter") {
+function enemyPlannedCounterplayCue(plan, mode = "counter", enemyId = "") {
   if (!plan || typeof plan !== "object") return null;
   const actionPhrase = enemyPlannedActionPhrase(plan);
   const projection = plan.projection && typeof plan.projection === "object" ? plan.projection : {};
@@ -619,10 +725,11 @@ function enemyPlannedCounterplayCue(plan, mode = "counter") {
   }
 
   if (plan.kind === "statusHits") {
+    const attackName = enemyId === "madMilkDragon" ? "怪笑连震" : "轰炸";
     return makeEnemyCounterplayCue(
       "counter",
       "本回合 · 可直接降段",
-      `${actionPhrase}可清理 ${counterplayInteger(projection.cleared)} 张状态，轰炸 ${counterplayInteger(projection.hitsBefore)}→${counterplayInteger(projection.hitsAfter)} 段。`
+      `${actionPhrase}可清理 ${counterplayInteger(projection.cleared)} 张状态，${attackName} ${counterplayInteger(projection.hitsBefore)}→${counterplayInteger(projection.hitsAfter)} 段。`
     );
   }
   if (plan.kind === "enemyBlockAttack") {
@@ -682,9 +789,11 @@ function enemyPlannedCounterplayCue(plan, mode = "counter") {
   return null;
 }
 
-function unresolvedImmediateCounterplayDetail(mechanicState, distracted) {
+function unresolvedImmediateCounterplayDetail(mechanicState, distracted, enemyId = "") {
   if (mechanicState?.type === "statusHits" && counterplayInteger(mechanicState.value) > 0) {
-    return "当前没有单张牌或宠物能直接压低轰炸段数";
+    return enemyId === "madMilkDragon"
+      ? "当前没有单张牌或宠物能直接压低怪笑连击段数"
+      : "当前没有单张牌或宠物能直接压低轰炸段数";
   }
   if (mechanicState?.type === "enemyBlockAttack" && counterplayInteger(mechanicState.sourceCount) > 0) {
     return "当前没有单张牌或宠物能直接降低蓄压重击";
@@ -754,19 +863,19 @@ export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
     );
   }
 
-  const finishCue = enemyPlannedCounterplayCue(immediatePlan.finish, "finish");
+  const finishCue = enemyPlannedCounterplayCue(immediatePlan.finish, "finish", id);
   if (finishCue) return finishCue;
 
   // 可安全斩杀和真实脱险优先于理论机制；仍无解时绝不能盖住致命信息。
   if (String(risk.state || "") === "lethal") {
-    return enemyPlannedCounterplayCue(immediatePlan.rescue, "rescue") || defenseCue;
+    return enemyPlannedCounterplayCue(immediatePlan.rescue, "rescue", id) || defenseCue;
   }
 
-  const plannedCounterCue = enemyPlannedCounterplayCue(immediatePlan.counter);
+  const plannedCounterCue = enemyPlannedCounterplayCue(immediatePlan.counter, "counter", id);
   if (plannedCounterCue) return plannedCounterCue;
 
   if (settings.actionsEvaluated === true) {
-    const unavailableDetail = unresolvedImmediateCounterplayDetail(mechanicState, settings.distracted);
+    const unavailableDetail = unresolvedImmediateCounterplayDetail(mechanicState, settings.distracted, id);
     if (unavailableDetail || String(risk.state || "") === "hit" || defenseCue.tone === "danger") {
       return enemyUnavailableImmediateCue(defenseCue, risk, unavailableDetail);
     }
@@ -774,18 +883,38 @@ export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
 
   if (mechanicState?.type === "statusHits") {
     const sourceCount = counterplayInteger(mechanicState.sourceCount);
-    const cap = counterplayInteger(mechanicState.cap);
+    const cap = Math.max(1, counterplayInteger(mechanicState.cap, id === "madMilkDragon" ? 3 : 1));
     const value = counterplayInteger(mechanicState.value);
+    if (id === "madMilkDragon") {
+      if (value > 0) {
+        const clearNeeded = Math.max(1, sourceCount - cap + 1);
+        return makeEnemyCounterplayCue(
+          "counter",
+          "本回合 · 止住怪笑",
+          `当前笑压 ${Math.min(cap, value)}/${cap}，共 ${hits} 段；主动清理 ${clearNeeded} 张紧张可少 1 段。`
+        );
+      }
+      return appendEnemyCounterplayDetail(defenseCue, "当前没有紧张为怪笑加段", {
+        label: "本回合 · 无笑压加段"
+      });
+    }
     if (value > 0) {
       const clearNeeded = Math.max(1, sourceCount - cap + 1);
+      if (id === "rollCallWarden") {
+        return makeEnemyCounterplayCue(
+          "counter",
+          "本回合 · 清理缺席",
+          `主动清理 ${clearNeeded} 张待办可少 1 段；三个牌区都会计入。`
+        );
+      }
       return makeEnemyCounterplayCue(
         "counter",
         "本回合 · 压低未读",
         `主动清理 ${clearNeeded} 张紧张可少 1 段；自然消耗来不及。`
       );
     }
-    return appendEnemyCounterplayDetail(defenseCue, "当前没有紧张加段", {
-      label: "本回合 · 无未读加段"
+    return appendEnemyCounterplayDetail(defenseCue, id === "rollCallWarden" ? "当前没有待办加段" : "当前没有紧张加段", {
+      label: id === "rollCallWarden" ? "本回合 · 无缺席加段" : "本回合 · 无未读加段"
     });
   }
 
@@ -863,7 +992,7 @@ export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
     );
   }
 
-  const step = turn % (id === "finalExam" ? 4 : 3);
+  const step = turn % (["finalExam", "madMilkDragon"].includes(id) ? 4 : 3);
   if (id === "sleepyBug") {
     if (step === 1) return noAttackWindow("本回合 · 抢输出", "敌人本回合不攻击；别叠下回合会清零的护甲，直接输出。");
     return appendEnemyCounterplayDetail(defenseCue, step === 0 ? "撑过后是安全输出窗口" : "这是本轮最高伤害");
@@ -891,11 +1020,41 @@ export function enemyIntentCounterplayCue(enemyId, intent = {}, options = {}) {
     if (step === 0) return noAttackWindow("本回合 · 提前输出", `敌人本回合不攻击；结算后会留下 ${counterplayInteger(resolvedIntent.block)} 点蓄压护甲。`);
     return defenseCue;
   }
+  if (id === "rollCallWarden") {
+    if (step === 0) return noAttackWindow("本回合 · 抢先清理", "突然点名不攻击；1张待办会洗入抽牌堆。");
+    if (step === 2) return noAttackWindow("本回合 · 集中输出", `整理名册不攻击；结算后获得 ${counterplayInteger(resolvedIntent.block)} 点护甲。`);
+    return defenseCue;
+  }
+  if (id === "clubMegaphone") {
+    if (step === 1) return appendEnemyCounterplayDetail(defenseCue, "新紧张会进入弃牌堆");
+    if (step === 2) return noAttackWindow("本回合 · 破展板", `展板掩护不攻击；会获得 ${counterplayInteger(resolvedIntent.block)} 点护甲并施加走神。`);
+    return defenseCue;
+  }
   if (id === "finalExam") {
     if (step === 0) return noAttackWindow("本回合 · 抢输出", "发卷不会攻击；2 张紧张会洗入抽牌堆。");
     if (step === 1) return appendEnemyCounterplayDetail(defenseCue, "撑过后会进入填空题");
     if (step === 2) return appendEnemyCounterplayDetail(defenseCue, `结算后会留下 ${counterplayInteger(resolvedIntent.block)} 点护甲，下回合先破甲`);
     return defenseCue;
+  }
+  if (id === "madMilkDragon") {
+    if (step === 0) {
+      const addStatus = resolvedIntent.addStatus && typeof resolvedIntent.addStatus === "object"
+        ? resolvedIntent.addStatus
+        : null;
+      const statusCount = Math.max(1, counterplayInteger(addStatus?.count, 2));
+      return noAttackWindow(
+        "本回合 · 抢输出",
+        `魔性开嗓不攻击；${statusCount} 张紧张会进入弃牌堆，下一拍是奶泡头槌。`
+      );
+    }
+    if (step === 1) return appendEnemyCounterplayDetail(defenseCue, "撑过头槌后是无攻击的蓄泡窗口");
+    if (step === 2) {
+      return noAttackWindow(
+        "本回合 · 破甲清牌",
+        `憋笑蓄泡不攻击；会获得 ${counterplayInteger(resolvedIntent.block, 9)} 点护甲并施加走神，下一拍爆笑前优先清紧张。`
+      );
+    }
+    return appendEnemyCounterplayDetail(defenseCue, "紧张会让怪笑连震追加段数；能清则先清");
   }
 
   const fallback = String(settings.fallback || "").trim();

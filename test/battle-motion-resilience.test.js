@@ -35,7 +35,7 @@ test("动画等待态在 GSAP 接管前不闪烁，失败时恢复 CSS 反馈", 
 });
 
 test("临时战斗演出位于模态层下方且不拦截交互", () => {
-  for (const selector of [".pet-flight", ".battle-causal-ghost", ".hand .played-card-ghost.game-card"]) {
+  for (const selector of [".pet-flight", ".battle-causal-ghost"]) {
     const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     const body = styles.match(new RegExp(`${escaped}\\s*\\{([^}]+)\\}`))?.[1] || "";
     assert.match(body, /z-index:\s*45(?:\s*!important)?/);

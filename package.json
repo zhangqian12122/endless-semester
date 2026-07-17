@@ -1,6 +1,6 @@
 {
   "name": "endless-semester-graybox",
-  "version": "1.8.0",
+  "version": "1.8.62",
   "description": "学生、星座与宠物羁绊主题的浏览器卡牌构筑游戏灰盒",
   "private": true,
   "type": "module",

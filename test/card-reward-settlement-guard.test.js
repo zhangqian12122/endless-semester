@@ -1,8 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { ARCHETYPE_CARD_IDS, CARD_DEFS } from "../game-data.js";
-import { CHALLENGE_AFFIX_DEFS, NORMAL_COMBAT_REWARD_GOLD, SemesterGame } from "../game-engine.js";
+import { ARCHETYPE_CARD_IDS, CARD_DEFS, DEFAULT_PET_ID, PERSONA_CARD_IDS } from "../game-data.js";
+import {
+  CHALLENGE_AFFIX_DEFS,
+  CHALLENGE_REWARD_DEFS,
+  CHALLENGE_RULES,
+  NORMAL_COMBAT_REWARD_GOLD,
+  SemesterGame
+} from "../game-engine.js";
 
 const appSource = readFileSync(new URL("../app.js", import.meta.url), "utf8");
 
@@ -14,6 +20,8 @@ function namedFunctionSource(name) {
 }
 
 const finishCardRewardSource = namedFunctionSource("finishCardReward");
+const renderCardRewardSource = namedFunctionSource("renderCardReward");
+const resumeChallengeCombatRewardSource = namedFunctionSource("resumeChallengeCombatReward");
 
 function rewardHarness(game, choices, onDone) {
   const initialContext = { choices: [...choices], onDone };
@@ -63,6 +71,45 @@ function normalPendingGame(seed) {
     bonusGold: 0
   };
   return { game, choices };
+}
+
+function prepareWonChallenge(game, affix, enemyId = "phoneSpirit") {
+  if (!game.tarotId) game.chooseTarot("chariot");
+  game.semesterPlan[game.week] = [{
+    type: "combat",
+    enemy: enemyId,
+    label: "测试挑战",
+    challenge: true,
+    affix
+  }];
+  const pendingStart = game.prepareCombatStart(enemyId, "challenge", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix
+  });
+  assert.ok(pendingStart);
+  const combat = game.startCombat(pendingStart.enemyId, pendingStart.modifiers);
+  combat.enemy.hp = 0;
+  assert.equal(game.checkCombatEnd(), "won");
+  assert.equal(game.completePendingCombatStart(), true);
+  const pendingReward = game.prepareChallengeCombatReward({ affix, enemyId });
+  assert.ok(pendingReward);
+  return pendingReward;
+}
+
+function challengeCardPendingGame(seed, personaId = "student") {
+  const game = new SemesterGame(seed, "cancer", DEFAULT_PET_ID, [DEFAULT_PET_ID], personaId);
+  game.week = 3;
+  const affix = Object.keys(CHALLENGE_AFFIX_DEFS)[0];
+  prepareWonChallenge(game, affix);
+  const goldBeforeRoute = game.gold;
+  assert.equal(game.choosePendingChallengeReward("cards"), true);
+  return {
+    game,
+    choices: [...game.pendingCombatReward.choices],
+    goldBeforeRoute
+  };
 }
 
 test("普通战奖励拒绝不在当前候选中的卡牌 id，且不消费待领奖状态", () => {
@@ -224,11 +271,65 @@ test("事件奖励跳过后，旧候选回调不能反悔补领或重复推进",
   assert.equal(game.pendingEventReward, null);
 });
 
-test("挑战卡牌奖励刷新恢复后允许合法选择一次，随后拒绝陈旧重复回调", () => {
+test("召唤人格的挑战专属卡候选可领取一次，随后拒绝重复领取", () => {
+  const { game, choices, goldBeforeRoute } = challengeCardPendingGame(1807, "summoner");
+  assert.equal(choices.length, 3);
+  assert.equal(
+    choices.every((id) => PERSONA_CARD_IDS.summoner.includes(id)),
+    true,
+    "召唤人格的挑战专属路线应展示人格专属牌"
+  );
+  assert.equal(game.gold, goldBeforeRoute + CHALLENGE_REWARD_DEFS.cards.gold);
+
+  const chosenId = choices[0];
+  const copiesBefore = game.deck.filter((card) => card.id === chosenId).length;
+  const statsBefore = rewardStats(game);
+  assert.equal(game.resolvePendingCardReward({ source: "challenge", choice: chosenId })?.choice, chosenId);
+  assert.equal(game.deck.filter((card) => card.id === chosenId).length, copiesBefore + 1);
+  assert.equal(game.stats.rewardsSeen, statsBefore.rewardsSeen + 1);
+  assert.equal(game.stats.cardsTaken, statsBefore.cardsTaken + 1);
+  assert.equal(game.stats.exclusiveTaken, statsBefore.exclusiveTaken + 1);
+  assert.equal(game.pendingCombatReward, null);
+
+  const settled = game.toJSON();
+  assert.equal(game.resolvePendingCardReward({ source: "challenge", choice: chosenId }), null);
+  assert.deepEqual(game.toJSON(), settled, "重复领取不能再次加牌、加统计或发放路线金币");
+});
+
+test("召唤人格的挑战专属卡阶段刷新后保留候选、路线与已发金币", () => {
+  const { game: original, choices, goldBeforeRoute } = challengeCardPendingGame(1808, "summoner");
+  const goldAfterRoute = original.gold;
+  assert.equal(goldAfterRoute, goldBeforeRoute + CHALLENGE_REWARD_DEFS.cards.gold);
+
+  const restored = SemesterGame.fromJSON(original.toJSON());
+  assert.equal(restored.personaId, "summoner");
+  assert.equal(restored.pendingCombatReward?.type, "challengeChain");
+  assert.equal(restored.pendingCombatReward?.stage, "card");
+  assert.equal(restored.pendingCombatReward?.route, "cards");
+  assert.deepEqual(restored.pendingCombatReward?.choices, choices);
+  assert.equal(restored.gold, goldAfterRoute, "刷新不能重复发放或吞掉挑战路线金币");
+
+  const chosenId = choices.at(-1);
+  const copiesBefore = restored.deck.filter((card) => card.id === chosenId).length;
+  assert.equal(restored.resolvePendingCardReward({ source: "challenge", choice: chosenId })?.choice, chosenId);
+  assert.equal(restored.deck.filter((card) => card.id === chosenId).length, copiesBefore + 1);
+  assert.equal(restored.pendingCombatReward, null);
+});
+
+test("卡牌奖励页把人格专属牌与星座牌、普池牌分开说明", () => {
+  assert.match(renderCardRewardSource, /CARD_DEFS\[id\]\.persona === game\.personaId/);
+  assert.match(renderCardRewardSource, /张\$\{game\.persona\.name\}专属/);
+  assert.match(renderCardRewardSource, /不会出现其他星座或人格专属牌/);
+  assert.match(resumeChallengeCombatRewardSource, /game\.personaId === "student" \? "本星座" : game\.persona\.name/);
+  assert.doesNotMatch(resumeChallengeCombatRewardSource, /挑战奖励 · 本星座专属池/);
+});
+
+test("默认 student 的挑战卡牌奖励刷新恢复后仍使用星座池并只结算一次", () => {
   const original = new SemesterGame(1805, "cancer");
+  assert.equal(original.personaId, "student");
   original.week = 3;
   const affix = Object.keys(CHALLENGE_AFFIX_DEFS)[0];
-  assert.ok(original.prepareChallengeCombatReward({ affix }));
+  prepareWonChallenge(original, affix);
   assert.equal(original.choosePendingChallengeReward("cards"), true);
 
   const restored = SemesterGame.fromJSON(original.toJSON());

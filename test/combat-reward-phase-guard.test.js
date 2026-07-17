@@ -38,7 +38,8 @@ function rewardState(game) {
     gold: game.gold,
     rngState: game.rng.state,
     rewardIndex: game.rewardIndex,
-    pendingCombatReward: game.pendingCombatReward
+    pendingCombatReward: game.pendingCombatReward,
+    rewardPrepared: game.combat?.rewardPrepared ?? null
   };
 }
 
@@ -46,6 +47,12 @@ function assertNormalRewardRejected(game, message) {
   const before = rewardState(game);
   assert.equal(game.prepareNormalCombatReward(), null, message);
   assert.deepEqual(rewardState(game), before, `${message}，且不能改动金币、随机数或奖励状态`);
+}
+
+function assertChallengeRewardRejected(game, options, message) {
+  const before = rewardState(game);
+  assert.equal(game.prepareChallengeCombatReward(options), null, message);
+  assert.deepEqual(rewardState(game), before, `${message}，且不能改动随机数、金币或奖励凭证`);
 }
 
 function findChallenge(game) {
@@ -182,4 +189,80 @@ test("挑战胜利不能冒充普通战领取基础或高压奖励", () => {
   winCombat(game);
   assert.equal(game.completePendingCombatStart(), true);
   assertNormalRewardRejected(game, "挑战胜利只能进入挑战奖励链");
+});
+
+test("未打、进行中与战败的挑战都不能建立奖励链", () => {
+  const noCombat = readyGame(1750);
+  const noCombatNode = findChallenge(noCombat);
+  noCombat.week = noCombatNode.week;
+  assertChallengeRewardRejected(noCombat, {
+    affix: noCombatNode.node.affix,
+    enemyId: noCombatNode.node.enemy
+  }, "没有挑战胜利事实时不能发奖");
+
+  const active = readyGame(1751);
+  const activeNode = findChallenge(active);
+  active.week = activeNode.week;
+  startCheckedCombat(active, activeNode.node.enemy, "challenge", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix: activeNode.node.affix
+  });
+  assert.equal(active.completePendingCombatStart(), true);
+  assertChallengeRewardRejected(active, {
+    affix: activeNode.node.affix,
+    enemyId: activeNode.node.enemy
+  }, "挑战仍在进行时不能发奖");
+
+  const lost = readyGame(1752);
+  const lostNode = findChallenge(lost);
+  lost.week = lostNode.week;
+  startCheckedCombat(lost, lostNode.node.enemy, "challenge", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix: lostNode.node.affix
+  });
+  loseCombat(lost);
+  assert.equal(lost.completePendingCombatStart(), true);
+  assertChallengeRewardRejected(lost, {
+    affix: lostNode.node.affix,
+    enemyId: lostNode.node.enemy
+  }, "挑战战败不能发奖");
+});
+
+test("挑战奖励必须匹配胜利凭证，并且真实胜利只准备一次", () => {
+  const game = readyGame(1760);
+  const { week, node } = findChallenge(game);
+  game.week = week;
+  startCheckedCombat(game, node.enemy, "challenge", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix: node.affix
+  });
+  winCombat(game);
+  assert.equal(game.completePendingCombatStart(), true);
+
+  assertChallengeRewardRejected(game, { affix: node.affix, enemyId: "sleepyBug" === node.enemy ? "alarmClock" : "sleepyBug" }, "错误敌人不能冒领挑战奖励");
+  const wrongAffix = node.affix === "deadline" ? "backlog" : "deadline";
+  assertChallengeRewardRejected(game, { affix: wrongAffix, enemyId: node.enemy }, "错误词缀不能冒领挑战奖励");
+
+  const summary = game.combatSummary();
+  const first = game.prepareChallengeCombatReward({
+    affix: summary.challengeAffix,
+    enemyId: summary.enemyId,
+    trialCompleted: summary.challengeTrial?.completed,
+    trialBonus: summary.challengeTrialBonus
+  });
+  assert.equal(first?.started, true);
+  assert.equal(first?.enemyId, node.enemy);
+  assert.equal(first?.affix, node.affix);
+  assert.equal(game.combat.rewardPrepared, true);
+
+  const afterFirst = rewardState(game);
+  const repeated = game.prepareChallengeCombatReward();
+  assert.equal(repeated?.started, false);
+  assert.deepEqual(rewardState(game), afterFirst, "重复准备挑战奖励不能重抽或改写凭证");
 });

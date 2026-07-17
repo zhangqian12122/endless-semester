@@ -18,7 +18,9 @@ function winUsingCard(game, card) {
 function enterNextSemester(game) {
   game.week = 16;
   game.pendingSemesterReward = { stage: "summaryUpgrade", itemChoices: [], fallbackGold: 0 };
-  assert.equal(game.completeCurrentSemester(), true);
+  const candidate = game.semesterUpgradeCandidates()[0];
+  assert.ok(candidate, "测试卡组应至少保留一张可升级牌");
+  assert.equal(game.completeCurrentSemester(candidate.uid), true);
   assert.equal(game.startNextSemester(), true);
 }
 

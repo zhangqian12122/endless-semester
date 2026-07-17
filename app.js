@@ -10,25 +10,37 @@ import {
   ENCHANTMENT_DEFS,
   EVENT_DEFS,
   ITEM_DEFS,
+  PERSONA_DEFS,
+  PERSONA_CARD_IDS,
   PET_EGG_DEFS,
   PET_DEFS,
   PET_TALENT_DEFS,
   RARITY_LABELS,
   PUBLIC_REWARD_CARD_IDS,
   SAFE_EVENT_IDS,
-  SHOP_SCENE
-} from "./game-data.js";
-import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.49";
-import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js";
-import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js";
+  SHOP_SCENE,
+  SUPPLY_DEFS
+} from "./game-data.js?v=1.8.62";
+import { ARCHETYPE_TRIAL_DEFS, CHALLENGE_AFFIX_DEFS, CHALLENGE_REWARD_DEFS, CHALLENGE_RULES, HIGH_THREAT_ROUTE_BONUS_GOLD, NORMAL_COMBAT_REWARD_GOLD, TAROT_DEFS, SemesterGame, cardDefinition } from "./game-engine.js?v=1.8.62";
+import { analyzeBuild, BUILD_STYLE_DEFS, challengeRewardGuidance, choiceGuidance, evaluateCardFit } from "./build-analysis.js?v=1.8.62";
+import { CARD_LIBRARY_FILTERS, COMBAT_SHORTCUT_ACTION, END_TURN_ACTION, ITEM_LIBRARY_FILTERS, NEW_GAME_START, SEMESTER_WEEK_COUNT, battleFeedbackFromDelta, cardLibraryIds, combatCardTacticalCue, combatDirectActionPreview, combatEnergyState, combatImmediateCounterplayPlan, combatItemCue, combatMechanicStatusCleared, combatShortcutCommand, endTurnDecision, endTurnRiskGuidance, enemyHitPulseSequence, enemyIntentCounterplayCue, enemyIntentDetailLines, enemyMechanicProgress, enemyResolutionSnapshot, enemyResolveDuration, enemyStatusCausalPlacements, finalizeCombatPersistence, handCardPose, itemLibraryIds, newGameStartDecision, normalizeCardLibraryFilter, normalizeItemLibraryFilter, semesterCalendarWeeks, shouldShowCombatCardPreview } from "./app-flow.js?v=1.8.62";
+import {
+  STORAGE_RECORD_STATUS,
+  createFeedbackReport,
+  createSaveBackup,
+  inspectStorageRecord,
+  parseSaveBackup
+} from "./save-transfer.js?v=1.8.62";
 import {
   achievementProgress,
   createCareerProfile,
   normalizeCareerProfile,
+  canSelectPersona,
   recordCareerCombat,
   recordEnemyEncounter,
+  recordSemesterCompletion,
   trialCollectionProgress
-} from "./career.js";
+} from "./career.js?v=1.8.62";
 
 if (!window.gsap) {
   try {
@@ -40,15 +52,36 @@ if (!window.gsap) {
 }
 
 const app = document.querySelector("#app");
+const toastLiveRegion = document.querySelector("#toast-live-region");
+const APP_VERSION = "1.8.62";
 const SAVE_KEY = "endless-semester-v2";
 const CAREER_KEY = "endless-semester-career-v1";
+const recentClientErrors = [];
+
+function rememberClientError(type, error) {
+  const message = error instanceof Error ? error.message : String(error ?? "未知错误");
+  const stack = error instanceof Error ? error.stack : null;
+  recentClientErrors.push({ type, message, stack, occurredAt: new Date().toISOString() });
+  if (recentClientErrors.length > 5) recentClientErrors.splice(0, recentClientErrors.length - 5);
+}
+
+window.addEventListener("error", (event) => {
+  rememberClientError("window.error", event.error || event.message);
+});
+
+window.addEventListener("unhandledrejection", (event) => {
+  rememberClientError("unhandledrejection", event.reason);
+});
+const storageFailures = { run: null, career: null };
 let game = new SemesterGame();
 let career = readCareer();
+let hasActiveRun = false;
 let screen = "intro";
 let context = {};
 let toast = "";
 let selectedArchetype = "cancer";
 let selectedPetId = "offlineDuck";
+let selectedPersonaId = "student";
 let tutorialStep = -1;
 let pileView = null;
 let battleFeedbackTimer = null;
@@ -58,6 +91,11 @@ let battleMotionTimeline = null;
 let battleMotionMedia = null;
 let lastAnimatedFeedbackId = 0;
 let semesterCalendarOpen = false;
+let mobileTopbarOpen = false;
+let encounterStageView = "scene";
+let encounterStageFrame = null;
+let toastAnnouncementFrame = null;
+let shopDetailState = null;
 
 const ICONS = {
   combat: "⚔",
@@ -84,8 +122,11 @@ const ENEMY_ART = {
   phoneSpirit: { mark: "99+", caption: "注意力捕手" },
   groupChat: { mark: "99+", caption: "群聊风暴" },
   printerJam: { mark: "卡纸", caption: "办公室异兽" },
+  rollCallWarden: { mark: "到", caption: "缺席追查者" },
+  clubMegaphone: { mark: "播", caption: "社团音浪" },
   rivalShadow: { mark: "S+", caption: "内卷投影" },
-  finalExam: { mark: "期末", caption: "终极试卷" }
+  finalExam: { mark: "期末", caption: "终极试卷" },
+  madMilkDragon: { mark: "HA", caption: "失控奶泡异兽" }
 };
 
 const CHARACTER_ASSET_PATHS = Object.freeze({
@@ -101,8 +142,11 @@ const CHARACTER_ASSET_PATHS = Object.freeze({
     phoneSpirit: "assets/characters/enemy-phoneSpirit-v1.webp",
     groupChat: "assets/characters/enemy-groupChat-v1.webp",
     printerJam: "assets/characters/enemy-printerJam-v1.webp",
+    rollCallWarden: "assets/characters/enemy-rollCallWarden-v1.webp",
+    clubMegaphone: "assets/characters/enemy-clubMegaphone-v1.webp",
     rivalShadow: "assets/characters/enemy-rivalShadow-v1.webp",
-    finalExam: "assets/characters/enemy-finalExam-v1.webp"
+    finalExam: "assets/characters/enemy-finalExam-v1.webp",
+    madMilkDragon: "assets/characters/enemy-madMilkDragon-v1.webp"
   })
 });
 
@@ -119,6 +163,16 @@ function selectedPetDefinition() {
   const available = unlockedPetIds();
   if (!available.includes(selectedPetId)) selectedPetId = "offlineDuck";
   return PET_DEFS[selectedPetId] || PET_DEFS.offlineDuck;
+}
+
+function unlockedPersonaIds() {
+  return Object.keys(PERSONA_DEFS).filter((id) => canSelectPersona(career, id));
+}
+
+function selectedPersonaDefinition() {
+  const available = unlockedPersonaIds();
+  if (!available.includes(selectedPersonaId)) selectedPersonaId = "student";
+  return PERSONA_DEFS[selectedPersonaId] || PERSONA_DEFS.student;
 }
 
 function petEggDefinition(eggId) {
@@ -171,7 +225,10 @@ function petVisualId(pet) {
 function petEggHtml(eggId, className = "pet-egg") {
   const egg = petEggDefinition(eggId);
   if (!egg) return "";
-  return `<span class="${escapeHtml(className)} egg-${escapeHtml(eggVisualId(egg))}" aria-hidden="true"><i></i><b></b></span>`;
+  const asset = egg.assets?.egg;
+  return `<span class="${escapeHtml(className)} egg-${escapeHtml(eggVisualId(egg))} ${asset ? "has-image" : ""}" aria-hidden="true">
+    ${asset ? `<img src="${escapeHtml(asset)}" alt="" loading="lazy" onerror="this.remove();this.parentElement.classList.remove('has-image')">` : ""}<i></i><b></b>
+  </span>`;
 }
 
 function incubatorStatusHtml(location = "map") {
@@ -179,13 +236,13 @@ function incubatorStatusHtml(location = "map") {
   const egg = petEggDefinition(incubator?.eggId);
   if (!incubator || !egg) return "";
   const required = eggRequiredCombats(egg);
-  const battles = Math.min(required, Math.max(0, Number(incubator.battles) || 0));
+  const hatchCount = Math.min(required, Math.max(0, Number(incubator.battles) || 0));
   const hatchling = PET_DEFS[egg.petId];
-  const percent = Math.round((battles / required) * 100);
-  return `<section class="incubator-status location-${escapeHtml(location)}" aria-label="${escapeHtml(`${egg.name}孵化进度 ${battles}/${required}`)}">
+  const percent = Math.round((hatchCount / required) * 100);
+  return `<section class="incubator-status location-${escapeHtml(location)}" aria-label="${escapeHtml(`${egg.name}孵化进度 ${hatchCount}/${required}`)}">
     ${petEggHtml(egg.id)}
-    <div><small>随身孵化位 · 不占书包</small><strong>${escapeHtml(egg.name)}</strong><p>再完成 ${required - battles} 场有效战斗，孵化为${escapeHtml(hatchling?.name || "动物幼崽")}。</p></div>
-    <span><b>${battles}/${required}</b><i aria-hidden="true"><em style="width:${percent}%"></em></i></span>
+    <div><small>休息区孵化位 · 不占书包${game.queuedEggIds.length ? ` · 后续排队 ${game.queuedEggIds.length} 枚` : ""}</small><strong>${escapeHtml(egg.name)}</strong><p>还需在休息节点主动孵化 ${required - hatchCount} 次，才能得到${escapeHtml(hatchling?.name || "动物幼崽")}。</p></div>
+    <span><b>${hatchCount}/${required}</b><i aria-hidden="true"><em style="width:${percent}%"></em></i></span>
   </section>`;
 }
 
@@ -219,11 +276,52 @@ function sceneBannerHtml(scene = {}, options = {}) {
   </section>`;
 }
 
+function encounterStageHtml({ id, sceneHtml, decisionHtml, decisionLabel = "选择" }) {
+  const safeId = escapeHtml(id);
+  const activeView = encounterStageView === "decision" ? "decision" : "scene";
+  const tabHtml = (view, label) => {
+    const selected = activeView === view;
+    return `<button type="button" id="${safeId}-${view}-tab" role="tab" data-action="switch-encounter-stage" data-stage-view="${view}"
+      aria-selected="${selected}" aria-controls="${safeId}-${view}-panel" tabindex="${selected ? "0" : "-1"}">${escapeHtml(label)}</button>`;
+  };
+  const panelHtml = (view, html) => `<div class="encounter-stage-panel is-${view}" id="${safeId}-${view}-panel" role="tabpanel"
+    data-stage-panel="${view}" aria-labelledby="${safeId}-${view}-tab" tabindex="-1">${html}</div>`;
+
+  return `<section class="encounter-stage" data-encounter-stage="${safeId}">
+    <div class="encounter-stage-tabs" role="tablist" aria-label="场景与${escapeHtml(decisionLabel)}">
+      ${tabHtml("scene", "场景")}
+      ${tabHtml("decision", decisionLabel)}
+    </div>
+    <div class="encounter-stage-track" data-encounter-stage-track>
+      ${panelHtml("scene", sceneHtml)}
+      ${panelHtml("decision", decisionHtml)}
+    </div>
+  </section>`;
+}
+
+function clearToastAnnouncement() {
+  if (!toastLiveRegion) return;
+  if (toastAnnouncementFrame !== null) window.cancelAnimationFrame(toastAnnouncementFrame);
+  toastAnnouncementFrame = null;
+  toastLiveRegion.textContent = "";
+}
+
+function announceToast(message) {
+  if (!toastLiveRegion) return;
+  clearToastAnnouncement();
+  toastAnnouncementFrame = window.requestAnimationFrame(() => {
+    toastAnnouncementFrame = null;
+    toastLiveRegion.textContent = String(message);
+  });
+}
+
 function setToast(message) {
   toast = message;
+  announceToast(message);
   window.clearTimeout(setToast.timer);
   setToast.timer = window.setTimeout(() => {
     toast = "";
+    clearToastAnnouncement();
     render();
   }, 2200);
 }
@@ -251,13 +349,27 @@ function cardArtHtml(card, definition) {
   </span>`;
 }
 
-function readSave() {
+function validStoredRun(data) {
+  if (!(data?.version === 2 && ARCHETYPE_DEFS[data.archetypeId] && Array.isArray(data.deck))) return false;
   try {
-    const data = JSON.parse(localStorage.getItem(SAVE_KEY));
-    return data?.version === 2 && ARCHETYPE_DEFS[data.archetypeId] && Array.isArray(data.deck) ? data : null;
+    SemesterGame.fromJSON(data);
+    return true;
   } catch {
-    return null;
+    return false;
   }
+}
+
+function readSaveState() {
+  try {
+    return inspectStorageRecord(localStorage.getItem(SAVE_KEY), validStoredRun);
+  } catch (error) {
+    return { status: "unavailable", value: null, raw: null, reason: error instanceof Error ? error.message : "storage-unavailable" };
+  }
+}
+
+function readSave() {
+  const state = readSaveState();
+  return state.status === STORAGE_RECORD_STATUS.valid ? state.value : null;
 }
 
 function readCareer() {
@@ -272,64 +384,110 @@ function saveGame() {
   if (game.combat?.status === "lost") return;
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify(game.toJSON()));
-  } catch {
+    storageFailures.run = null;
+    return true;
+  } catch (error) {
+    storageFailures.run = { occurredAt: new Date().toISOString(), message: error instanceof Error ? error.message : "本地存档写入失败" };
+    rememberClientError("storage.run.write", error);
     setToast("浏览器未允许本地存档，本次仍可继续游玩");
+    return false;
   }
 }
 
 function saveCareer() {
   try {
     localStorage.setItem(CAREER_KEY, JSON.stringify(career));
-  } catch {
-    // 生涯档案不可用不影响当前对局。
+    storageFailures.career = null;
+    return true;
+  } catch (error) {
+    storageFailures.career = { occurredAt: new Date().toISOString(), message: error instanceof Error ? error.message : "生涯档案写入失败" };
+    rememberClientError("storage.career.write", error);
+    setToast("生涯进度尚未保存，请先不要关闭页面");
+    return false;
   }
 }
 
 function clearSave() {
   try {
     localStorage.removeItem(SAVE_KEY);
-  } catch {
-    // 存储不可用时仍允许当前局继续运行。
+    storageFailures.run = null;
+    return true;
+  } catch (error) {
+    storageFailures.run = { occurredAt: new Date().toISOString(), message: error instanceof Error ? error.message : "本地存档清理失败" };
+    rememberClientError("storage.run.clear", error);
+    return false;
   }
 }
 
-function topBar() {
+function topBar(mobileTopbarOpen = false) {
   if (screen === "intro" || (["library", "itemLibrary"].includes(screen) && context.returnState?.screen === "intro")) return "";
   const hpPercent = Math.max(0, (game.hp / game.maxHp) * 100);
   const bondStage = game.pet.bond >= 25 ? "生死之交" : game.pet.bond >= 10 ? "默契搭档" : game.pet.bond >= 3 ? "熟悉伙伴" : "刚认识";
   const petTalent = game.pet.talent ? PET_TALENT_DEFS[game.pet.talent] : null;
   const pet = currentPetDefinition();
   return `
-    <header class="topbar">
-      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.8 休息共鸣</small></button>
+    <header class="topbar${mobileTopbarOpen ? " mobile-menu-open" : ""}">
+      <button class="brand" data-action="map" title="当前学期">无限学期 <small>V1.8.62</small></button>
       <div class="resource health-resource" title="生命会在战斗之间保留">
         <span>♥ ${game.hp}/${game.maxHp}</span>
         <i><b style="width:${hpPercent}%"></b></i>
       </div>
       <div class="resource resource-stat campus-coin-resource" aria-label="校园币：${game.gold}">
-        <span class="resource-icon campus-coin-icon" aria-hidden="true"></span><span>${game.gold} 校园币</span>
+        <span class="resource-icon campus-coin-icon" aria-hidden="true"></span><span>${game.gold}<span class="resource-unit"> 校园币</span></span>
       </div>
-      <div class="resource resource-stat deck-resource" aria-label="卡组：${game.deck.length} 张牌">
-        <span class="resource-icon deck-stack-icon" aria-hidden="true"></span><span>${game.deck.length} 张牌</span>
-      </div>
-      <div class="resource resource-stat items-resource" aria-label="随身物品：${game.items.length} 件，容量 ${game.backpackCapacity} 件">
-        <span class="resource-icon backpack-icon" aria-hidden="true"></span><span>${game.items.length}/${game.backpackCapacity} 物品</span>
-      </div>
-      <div class="resource pet-resource">${pet.shortName}羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
-      <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
-      ${game.tarot ? `<div class="resource tarot-resource">${game.tarot.number} · ${game.tarot.name}</div>` : ""}
-      ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
-      ${screen !== "stats" ? '<button class="quiet-button" data-action="open-stats">战绩</button>' : ""}
-      ${screen !== "archive" ? '<button class="quiet-button" data-action="open-archive">档案</button>' : ""}
-      ${screen !== "library" ? '<button class="quiet-button" data-action="open-library">卡牌</button>' : ""}
-      ${screen !== "itemLibrary" ? '<button class="quiet-button" data-action="open-item-library">物品</button>' : ""}
-      ${screen !== "deck" ? '<button class="quiet-button" data-action="open-deck">查看构筑</button>' : ""}
+      ${screen !== "combat" ? `
+        <button type="button" class="mobile-topbar-toggle" data-action="toggle-mobile-topbar" aria-expanded="${mobileTopbarOpen}" aria-controls="mobile-topbar-menu">
+          <span aria-hidden="true">•••</span><b>更多</b>
+        </button>
+        <div id="mobile-topbar-menu" class="mobile-topbar-menu"${mobileTopbarOpen ? ' role="dialog" aria-modal="true" aria-label="更多状态与入口" data-action="close-mobile-topbar" data-dismiss="backdrop"' : ""}>
+          <div class="mobile-topbar-panel">
+            ${mobileTopbarOpen ? '<button type="button" class="mobile-topbar-close" data-action="close-mobile-topbar" autofocus><span>更多</span><b aria-hidden="true">×</b></button>' : ""}
+            <div class="resource resource-stat deck-resource" aria-label="卡组：${game.deck.length} 张牌">
+              <span class="resource-icon deck-stack-icon" aria-hidden="true"></span><span>${game.deck.length} 张牌</span>
+            </div>
+            <div class="resource resource-stat items-resource" aria-label="随身物品：${game.items.length} 件，容量 ${game.backpackCapacity} 件">
+              <span class="resource-icon backpack-icon" aria-hidden="true"></span><span>${game.items.length}/${game.backpackCapacity} 物品</span>
+            </div>
+            <div class="resource pet-resource">${pet.shortName}羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
+            <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
+            ${game.tarot ? `<div class="resource tarot-resource">${game.tarot.number} · ${game.tarot.name}</div>` : ""}
+            ${screen !== "rules" ? '<button class="quiet-button" data-action="open-rules">规则</button>' : ""}
+            ${screen !== "stats" ? '<button class="quiet-button" data-action="open-stats">战绩</button>' : ""}
+            ${screen !== "deck" ? `<button class="quiet-button" data-action="open-deck">卡牌</button>` : ""}
+            ${screen !== "items" ? '<button class="quiet-button" data-action="open-items">物品</button>' : ""}
+          </div>
+        </div>
+      ` : `
+        <div class="resource resource-stat deck-resource" aria-label="手牌：${game.combat?.hand.length || 0} 张">
+          <span class="resource-icon deck-stack-icon" aria-hidden="true"></span><span>${game.combat?.hand.length || 0} 手牌</span>
+        </div>
+        <div class="resource resource-stat items-resource" aria-label="随身物品：${game.items.length} 件，容量 ${game.backpackCapacity} 件">
+          <span class="resource-icon backpack-icon" aria-hidden="true"></span><span>${game.items.length}/${game.backpackCapacity} 物品</span>
+        </div>
+        <div class="resource pet-resource">${pet.shortName}羁绊 ${game.pet.bond} · ${petTalent ? `${petTalent.name} Lv.${game.pet.talentLevel}` : bondStage}</div>
+        <div class="resource sign-resource">${game.archetype.sign} ${game.archetype.label}</div>
+        ${game.tarot ? `<div class="resource tarot-resource">${game.tarot.number} · ${game.tarot.name}</div>` : ""}
+        <button class="quiet-button" data-action="open-rules">规则</button>
+        <button class="quiet-button" data-action="open-stats">战绩</button>
+        <button class="quiet-button" data-action="open-deck">手牌</button>
+        <button class="quiet-button" data-action="open-items">物品</button>
+      `}
     </header>`;
+}
+
+function storageFailureWarning() {
+  const failed = [storageFailures.run ? "本局进度" : "", storageFailures.career ? "生涯解锁" : ""].filter(Boolean);
+  if (!failed.length) return "";
+  return `<aside class="storage-failure-warning" role="alert">
+    <span><b>进度尚未保存</b><small>${failed.join("、")}写入失败。请保持页面开启，并先导出当前内存存档。</small></span>
+    <button type="button" class="quiet-button" data-action="open-emergency-save">立即备份</button>
+  </aside>`;
 }
 
 function page(title, eyebrow, body, options = {}) {
   return `
-    ${topBar()}
+    ${topBar(mobileTopbarOpen)}
+    ${storageFailureWarning()}
     <section class="page ${options.className || ""}">
       <div class="page-heading">
         <p class="eyebrow">${eyebrow || ""}</p>
@@ -338,7 +496,7 @@ function page(title, eyebrow, body, options = {}) {
       </div>
       ${body}
     </section>
-    ${toast ? `<div class="toast">${escapeHtml(toast)}</div>` : ""}`;
+    ${toast ? `<div class="toast" aria-hidden="true">${escapeHtml(toast)}</div>` : ""}`;
 }
 
 function combatCardPreviewHtml(preview) {
@@ -367,8 +525,9 @@ function cardHtml(card, options = {}) {
   const cost = definition.cost === null ? "—" : definition.cost;
   const fit = options.fit;
   const tacticalCue = options.tacticalCue;
-  const summaryProgress = options.summaryProgress?.current > 0 ? options.summaryProgress : null;
-  const typeLabel = definition.type === "attack" ? "攻击" : definition.type === "status" ? "状态" : "技能";
+  const displayName = `${definition.displayName}${instance.upgraded && !String(definition.displayName).trimEnd().endsWith("+") ? "+" : ""}`;
+  const typeLabel = ({ attack: "攻击", skill: "技能", power: "能力", ability: "能力", status: "状态" })[definition.type] || "技能";
+  const rarityLabel = definition.rarity === "status" ? "" : rarityName(definition.rarity);
   const extraClass = options.className ? ` ${escapeHtml(options.className)}` : "";
   const tacticalClass = tacticalCue ? ` tactical-${escapeHtml(tacticalCue.tone)}` : "";
   const pressed = typeof options.pressed === "boolean" ? ` aria-pressed="${options.pressed}"` : "";
@@ -378,57 +537,22 @@ function cardHtml(card, options = {}) {
   const rewardAttributes = options.rewardSource && options.rewardToken
     ? ` data-reward-source="${escapeHtml(options.rewardSource)}" data-reward-token="${escapeHtml(options.rewardToken)}"`
     : "";
+  const ariaKeyShortcut = options.ariaKeyShortcut || options.shortcut;
   return `
     <button type="button" class="game-card type-${definition.type} rarity-${definition.rarity} ${owner ? `exclusive-card exclusive-${owner.id}` : ""} ${playable ? "" : "disabled"}${extraClass}${tacticalClass}"
       title="${owner ? `${owner.name}专属 · ` : ""}${rarityName(definition.rarity)}${definition.enchantment ? ` · ${definition.enchantment.name}` : ""}"
-      data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}"${rewardAttributes}${pressed} ${handStyle} ${options.shortcut ? `aria-keyshortcuts="${options.shortcut}"` : ""} ${playable ? "" : "disabled"}>
-      <span class="card-cost" aria-label="费用 ${cost}"><b>${cost}</b></span>
+      data-action="${action}" data-uid="${instance.uid}" data-id="${instance.id}"${rewardAttributes}${pressed} ${handStyle} ${ariaKeyShortcut ? `aria-keyshortcuts="${escapeHtml(ariaKeyShortcut)}"` : ""} ${options.ariaHidden ? 'aria-hidden="true"' : ""} ${playable ? "" : "disabled"}>
+      <span class="card-cost" data-cost="${cost}" aria-label="费用 ${cost}"><b>${cost}</b></span>
       ${options.shortcut ? `<kbd class="card-shortcut" aria-hidden="true">${options.shortcut}</kbd>` : ""}
       ${definition.enchantment ? `<span class="card-enchantment" title="${definition.enchantment.text}">${definition.enchantment.sign}</span>` : ""}
-      <span class="card-name"><strong>${definition.displayName}</strong></span>
+      <span class="card-name"><strong>${displayName}</strong></span>
       ${cardArtHtml(instance, definition)}
-      <span class="card-type-banner"><i aria-hidden="true"></i><b>${owner ? `${owner.sign} · ` : ""}${typeLabel}${summaryProgress ? `<span class="card-summary-dots" title="本学期主力进度 ${summaryProgress.current}/${summaryProgress.target}" aria-label="本学期主力进度 ${summaryProgress.current}/${summaryProgress.target}">${Array.from({ length: summaryProgress.target }, (_, index) => `<i class="${index < summaryProgress.current ? "filled" : ""}" aria-hidden="true"></i>`).join("")}</span>` : ""}</b><i aria-hidden="true"></i></span>
+      <span class="card-type-banner"><i aria-hidden="true"></i><b>${owner ? `${owner.sign} · ` : ""}${typeLabel}${rarityLabel ? `<small class="card-rarity-label">${rarityLabel}</small>` : ""}</b><i aria-hidden="true"></i></span>
       ${tacticalCue ? `<span class="card-tactical-cue cue-${escapeHtml(tacticalCue.tone)}" title="${escapeHtml(tacticalCue.detail)}" aria-hidden="true"><b>${escapeHtml(tacticalCue.label)}</b></span><span class="sr-only card-tactical-description">${escapeHtml(tacticalCue.detail)}</span>` : ""}
       <span class="card-text">${definition.displayText}</span>
       ${combatCardPreviewHtml(options.combatPreview)}
       ${fit ? `<span class="card-fit fit-${fit.id}"><b>${fit.label}</b><em>${fit.reason}</em></span>` : ""}
     </button>`;
-}
-
-function summaryProgressCard(card) {
-  const definition = CARD_DEFS[card?.id];
-  if (!card || card.upgraded || !definition || definition.type === "status") return null;
-  return {
-    card,
-    name: definition.name,
-    ...game.summaryCardProgress(card.uid)
-  };
-}
-
-function summaryProgressPipsHtml(progress) {
-  return `<i class="summary-progress-pips" aria-hidden="true">${Array.from({ length: progress.target }, (_, index) => `<b class="${index < progress.current ? "filled" : ""}"></b>`).join("")}</i>`;
-}
-
-function summaryProgressBadgeHtml(card) {
-  const progress = summaryProgressCard(card);
-  if (!progress) return "";
-  const settled = game.awaitingNextSemester;
-  const state = settled ? "settled" : progress.upgradeable ? "ready" : progress.current > 0 ? "active" : "idle";
-  const detail = settled
-    ? "本学期已结算；进入下一学期后从 0/3 重新累计"
-    : progress.upgradeable
-    ? "已达到期末主力升级条件"
-    : progress.current > 0
-    ? `本学期再在 ${progress.remaining} 场胜利中使用即可达标`
-    : "在一场胜利中使用后开始累计";
-  return `<div class="summary-card-progress ${state}" title="${escapeHtml(detail)}" aria-label="${escapeHtml(`${progress.name}，主力进度 ${progress.current}/${progress.target}。${detail}`)}">
-    <span>${settled ? "已结算" : "主力"} <b>${progress.current}/${progress.target}</b></span>
-    ${summaryProgressPipsHtml(progress)}
-  </div>`;
-}
-
-function deckCardHtml(card) {
-  return `<div class="deck-card-slot">${cardHtml(card, { playable: false })}${summaryProgressBadgeHtml(card)}</div>`;
 }
 
 const ITEM_ICON_FALLBACK = Object.freeze({
@@ -444,7 +568,7 @@ function itemIconHtml(item, className = "item-icon") {
 function itemHtml(id, options = {}) {
   const item = ITEM_DEFS[id];
   return `
-    <button class="item-tile rarity-${item.rarity} ${options.className || ""}" data-action="${options.action || "choose-item"}" data-id="${id}"
+    <button class="item-tile rarity-${item.rarity} ${options.className || ""}" data-action="${options.action || "choose-item"}" data-id="${id}" ${options.ariaKeyShortcut ? `aria-keyshortcuts="${escapeHtml(options.ariaKeyShortcut)}"` : ""}
       ${options.disabled ? "disabled" : ""}>
       ${itemIconHtml(item)}
       <span><small>${rarityName(item.rarity)}物品 · ${item.timing}${item.source ? ` · ${item.source}` : ""}</small><strong>${item.name}</strong><em>${item.text}</em></span>
@@ -453,12 +577,15 @@ function itemHtml(id, options = {}) {
 }
 
 function renderIntro() {
-  const saved = readSave();
+  const storedSave = readSaveState();
+  const saved = storedSave.status === STORAGE_RECORD_STATUS.valid ? storedSave.value : null;
+  const blockedByStoredSave = [STORAGE_RECORD_STATUS.corrupt, "unavailable"].includes(storedSave.status);
   const pet = selectedPetDefinition();
+  const persona = selectedPersonaDefinition();
   const availablePets = unlockedPetIds();
   const savedAtSemesterEnd = saved?.awaitingNextSemester === true && Number(saved.week) === 16;
   const savedAtSemesterReward = Number(saved?.week) === 16
-    && ["bossItem", "summaryUpgrade"].includes(saved?.pendingSemesterReward?.stage);
+    && ["bossEgg", "bossItem", "summaryUpgrade"].includes(saved?.pendingSemesterReward?.stage);
   const savedAtCombatReward = Number(saved?.week) < 16
     && ["normalCard", "eliteChain", "challengeChain", "eventItem"].includes(saved?.pendingCombatReward?.type);
   const savedAtCombatStart = Number(saved?.week) <= 16
@@ -469,7 +596,7 @@ function renderIntro() {
   const savedAtItemReplacement = ["combat", "event", "semester", "shop"].includes(saved?.pendingItemReplacement?.source)
     && Boolean(ITEM_DEFS[saved?.pendingItemReplacement?.incoming]);
   const savedAtRest = Number(saved?.week) < 16
-    && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond"].includes(saved?.pendingRest?.stage);
+    && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond", "hatch"].includes(saved?.pendingRest?.stage);
   const savedAtPetMilestone = Number(saved?.week) < 16 && ["choose", "upgrade", "master"].includes(saved?.pet?.pendingMilestone);
   const savedAtShop = Number(saved?.week) < 16 && Array.isArray(saved?.pendingShop?.cards);
   const continueProgress = savedAtItemReplacement
@@ -497,6 +624,11 @@ function renderIntro() {
     <section class="intro-shell">
       <div class="notebook-lines"></div>
       <div class="intro-copy">
+        ${storageFailureWarning()}
+        ${blockedByStoredSave ? `<aside class="corrupt-save-warning" role="alert">
+          <span><small>检测到异常存档</small><strong>${storedSave.status === "unavailable" ? "浏览器暂时拒绝读取本地存档" : "旧存档无法安全读取，但原始数据仍然保留"}</strong><p>为避免覆盖现有数据，开始新游戏已暂时锁定。请先查看、复制或明确丢弃异常存档。</p></span>
+          <button type="button" class="quiet-button" data-action="open-corrupt-save">处理异常存档</button>
+        </aside>` : ""}
         <p class="eyebrow">学生 × 卡牌构筑 × 宠物羁绊</p>
         <h1>无限学期</h1>
         <p class="intro-lead">上课、摸鱼、打期末。每张牌一句话看懂，但每个选择都会改变你的构筑。</p>
@@ -508,6 +640,16 @@ function renderIntro() {
             <button data-action="select-archetype" data-id="${archetype.id}" class="archetype-option ${selectedArchetype === archetype.id ? "selected" : ""}">
               <span>${archetype.sign}</span><strong>${archetype.name}</strong><small>${archetype.label}</small><em>${archetype.text}</em><b>特性牌：${archetype.specialCardLabel}</b>
             </button>`).join("")}
+        </div>
+        <div class="starting-pet-heading persona-heading"><div><small>本局人格</small><strong>选择这次开学的玩法核心</strong></div><span>第二学期通关后解锁召唤人格</span></div>
+        <div class="persona-picker" role="group" aria-label="选择本局人格">
+          ${Object.values(PERSONA_DEFS).map((option) => {
+            const unlocked = canSelectPersona(career, option.id);
+            const selected = selectedPersonaId === option.id;
+            return `<button class="persona-option ${selected ? "selected" : ""} ${unlocked ? "" : "locked"}" data-action="select-persona" data-id="${escapeHtml(option.id)}" aria-pressed="${selected}" ${unlocked ? "" : "disabled"}>
+              <span>${unlocked ? option.icon : "锁"}</span><strong>${escapeHtml(option.name)}</strong><small>${unlocked ? escapeHtml(option.label) : `完成第 ${option.unlockSemester} 学期解锁`}</small><em>${escapeHtml(option.text)}</em>
+            </button>`;
+          }).join("")}
         </div>
         <div class="starting-pet-heading"><div><small>开局伙伴</small><strong>选择本局参战宠物</strong></div><span>开始后锁定，直到下一局才能更换</span></div>
         <div class="starting-pet-picker" role="group" aria-label="选择本局参战宠物">
@@ -521,11 +663,15 @@ function renderIntro() {
             </button>`;
           }).join("")}
         </div>
-        <button class="primary big" data-action="new-game">${saved ? "开始新游戏（覆盖当前进度）" : "开始第一学期"}</button>
-        ${saved ? `<button class="continue-button" data-action="continue-game">${continueProgress}<br><small>${ARCHETYPE_DEFS[saved.archetypeId].name} · ${saved.deck.length} 张牌</small></button>` : ""}
-        <button class="continue-button" data-action="open-archive">生涯档案 · ${career.unlockedAchievements.length}/${Object.keys(ACHIEVEMENT_DEFS).length} 成就</button>
-        <button class="continue-button" data-action="open-library">卡牌图鉴 · ${Object.keys(CARD_DEFS).length} 张正式卡图</button>
-        <button class="continue-button" data-action="open-item-library">物品图鉴 · ${Object.keys(ITEM_DEFS).length} 件随身物品</button>
+        <div class="intro-run-actions">
+          <button class="primary big" data-action="new-game" ${blockedByStoredSave ? "disabled" : ""}>${blockedByStoredSave ? "请先处理异常存档" : saved ? `以${persona.name}开始新游戏（覆盖当前进度）` : `以${persona.name}开始第一学期`}</button>
+          ${saved ? `<button class="continue-button" data-action="continue-game">${continueProgress}<br><small>${ARCHETYPE_DEFS[saved.archetypeId].name} · ${saved.deck.length} 张牌</small></button>` : ""}
+        </div>
+        <div class="intro-meta-actions">
+          <button class="continue-button" data-action="open-archive">生涯档案 · ${career.unlockedAchievements.length}/${Object.keys(ACHIEVEMENT_DEFS).length} 成就</button>
+          <button class="continue-button" data-action="open-library">卡牌图鉴 · ${Object.keys(CARD_DEFS).length} 张正式卡图</button>
+          <button class="continue-button" data-action="open-item-library">物品图鉴 · ${Object.keys(ITEM_DEFS).length} 件随身物品</button>
+        </div>
         <p class="prototype-note">本版是完整规则灰盒：无付费、无体力墙、无概率付费抽卡。</p>
       </div>
       <aside class="intro-card-stack">
@@ -540,7 +686,7 @@ function renderNewGameConfirm() {
   const saved = context.saved;
   const savedAtSemesterEnd = saved?.awaitingNextSemester === true && Number(saved.week) === 16;
   const savedAtSemesterReward = Number(saved?.week) === 16
-    && ["bossItem", "summaryUpgrade"].includes(saved?.pendingSemesterReward?.stage);
+    && ["bossEgg", "bossItem", "summaryUpgrade"].includes(saved?.pendingSemesterReward?.stage);
   const savedAtCombatReward = Number(saved?.week) < 16
     && ["normalCard", "eliteChain", "challengeChain", "eventItem"].includes(saved?.pendingCombatReward?.type);
   const savedAtCombatStart = Number(saved?.week) <= 16
@@ -551,7 +697,7 @@ function renderNewGameConfirm() {
   const savedAtItemReplacement = ["combat", "event", "semester", "shop"].includes(saved?.pendingItemReplacement?.source)
     && Boolean(ITEM_DEFS[saved?.pendingItemReplacement?.incoming]);
   const savedAtRest = Number(saved?.week) < 16
-    && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond"].includes(saved?.pendingRest?.stage);
+    && ["choice", "upgrade", "pet", "tarotRemove", "tarotUpgrade", "tarotBond", "hatch"].includes(saved?.pendingRest?.stage);
   const savedAtPetMilestone = Number(saved?.week) < 16 && ["choose", "upgrade", "master"].includes(saved?.pet?.pendingMilestone);
   const savedAtShop = Number(saved?.week) < 16 && Array.isArray(saved?.pendingShop?.cards);
   const oldArchetype = ARCHETYPE_DEFS[saved?.archetypeId];
@@ -763,7 +909,22 @@ function setIntentDetailsOpen(button, open) {
 function characterAssetHtml(src, className = "character-asset", alt = "") {
   if (!src) return "";
   return `<img class="${escapeHtml(className)}" src="${escapeHtml(src)}" alt="${escapeHtml(alt)}" draggable="false" decoding="async"
-    onload="this.parentElement.classList.add('asset-ready')" onerror="this.remove()">`;
+    onload="this.parentElement.classList.add('asset-ready')" onerror="const host=this.parentElement;this.remove();host?.querySelector('.avatar-fallback')?.removeAttribute('hidden')">`;
+}
+
+function supplyIconHtml(supply, className = "supply-icon") {
+  return `<span class="${className} ${supply.art ? "has-image" : ""}" aria-hidden="true">${supply.art
+    ? `<img src="${escapeHtml(supply.art)}" alt="" loading="lazy" onerror="this.remove()">`
+    : escapeHtml(supply.icon)}</span>`;
+}
+
+function supplyHtml(id, options = {}) {
+  const supply = SUPPLY_DEFS[id];
+  if (!supply) return "";
+  return `<button class="supply-tile ${options.className || ""}" data-action="${options.action || "use-supply"}" data-id="${escapeHtml(id)}" ${options.ariaKeyShortcut ? `aria-keyshortcuts="${escapeHtml(options.ariaKeyShortcut)}"` : ""} ${options.disabled ? "disabled" : ""}>
+    ${supplyIconHtml(supply)}<span><small>一次性用品</small><strong>${escapeHtml(supply.name)}</strong><em>${escapeHtml(supply.text)}</em></span>
+    ${options.price !== undefined ? `<b>${typeof options.price === "number" ? `${options.price} 币` : escapeHtml(options.price)}</b>` : ""}
+  </button>`;
 }
 
 function renderStudentAvatar() {
@@ -771,7 +932,7 @@ function renderStudentAvatar() {
   return `<div class="student-avatar student-jiahao student-${game.archetypeId}" role="img" aria-label="嘉豪，${game.archetype.name}战斗形象">
     <span class="avatar-halo"></span>
     ${characterAssetHtml(asset, "character-asset", "嘉豪战斗形象")}
-    <span class="avatar-fallback student-avatar-fallback" aria-hidden="true">
+    <span class="avatar-fallback student-avatar-fallback" aria-hidden="true"${asset ? " hidden" : ""}>
       <span class="student-backpack"></span>
       <span class="student-body"><i class="student-collar"></i><b>${game.archetype.sign}</b></span>
       <span class="student-head">
@@ -789,7 +950,7 @@ function renderEnemyAvatar(enemy) {
   return `<div class="enemy-avatar enemy-${enemy.id}" role="img" aria-label="${enemy.name}战斗形象">
     <span class="avatar-halo"></span>
     ${characterAssetHtml(asset)}
-    <span class="avatar-fallback enemy-avatar-fallback" aria-hidden="true">
+    <span class="avatar-fallback enemy-avatar-fallback" aria-hidden="true"${asset ? " hidden" : ""}>
       <span class="enemy-body"><i class="enemy-eye eye-left"></i><i class="enemy-eye eye-right"></i><i class="enemy-mouth"></i></span>
       <strong class="enemy-mark">${art.mark}</strong>
     </span>
@@ -800,16 +961,18 @@ function renderEnemyAvatar(enemy) {
 function renderBattlePet() {
   const pet = currentPetDefinition();
   const visual = petVisualId(pet);
+  const asset = pet.assets.battle;
+  const fallbackState = asset ? " hidden" : "";
   const fallback = visual === "sleepyBugCub"
-    ? `<span class="avatar-fallback battle-pet-fallback pet-cub-full-fallback" aria-hidden="true"><i class="pet-cub-body"><b></b><em></em></i><i class="pet-cub-face"><b></b><em></em></i></span>`
-    : `<span class="avatar-fallback battle-pet-fallback pet-full-fallback" aria-hidden="true">
+    ? `<span class="avatar-fallback battle-pet-fallback pet-cub-full-fallback" aria-hidden="true"${fallbackState}><i class="pet-cub-body"><b></b><em></em></i><i class="pet-cub-face"><b></b><em></em></i></span>`
+    : `<span class="avatar-fallback battle-pet-fallback pet-full-fallback" aria-hidden="true"${fallbackState}>
         <i class="battle-pet-body"><b></b></i>
         <i class="pet-head"><b></b><em></em><strong></strong></i>
         <i class="battle-pet-legs"></i>
       </span>`;
   return `<div class="battle-pet pet-${escapeHtml(visual)}" role="img" aria-label="战斗伙伴${pet.name}">
     <span class="battle-pet-halo" aria-hidden="true"></span>
-    ${characterAssetHtml(pet.assets.battle, "character-asset battle-pet-asset", `${pet.name}战斗形象`)}
+    ${characterAssetHtml(asset, "character-asset battle-pet-asset", `${pet.name}战斗形象`)}
     ${fallback}
   </div>`;
 }
@@ -822,11 +985,13 @@ function renderPetFace() {
 function renderPetFaceFor(petId) {
   const pet = PET_DEFS[petId] || PET_DEFS.offlineDuck;
   const visual = petVisualId(pet);
+  const asset = pet.assets.icon;
+  const fallbackState = asset ? " hidden" : "";
   const fallback = visual === "sleepyBugCub"
-    ? '<span class="avatar-fallback pet-icon-fallback pet-cub-icon-fallback"><i class="pet-cub-face"><b></b><em></em></i></span>'
-    : '<span class="avatar-fallback pet-icon-fallback"><i class="pet-head"><b></b><em></em><strong></strong></i></span>';
+    ? `<span class="avatar-fallback pet-icon-fallback pet-cub-icon-fallback"${fallbackState}><i class="pet-cub-face"><b></b><em></em></i></span>`
+    : `<span class="avatar-fallback pet-icon-fallback"${fallbackState}><i class="pet-head"><b></b><em></em><strong></strong></i></span>`;
   return `<span class="pet-face pet-${escapeHtml(visual)}" aria-hidden="true">
-    ${characterAssetHtml(pet.assets.icon, "character-asset pet-icon-asset")}
+    ${characterAssetHtml(asset, "character-asset pet-icon-asset")}
     ${fallback}
   </span>`;
 }
@@ -846,12 +1011,13 @@ function combatPassiveTrayHtml(tarot) {
 }
 
 function captureBattleMotionOrigin(element, kind = "card") {
-  const visual = kind === "pet" ? element?.querySelector?.(".pet-face") : element;
+  if (kind !== "pet") return null;
+  const visual = element?.querySelector?.(".pet-face");
   if (!(visual instanceof HTMLElement)) return null;
   const rect = visual.getBoundingClientRect();
   if (!rect.width || !rect.height) return null;
   return {
-    kind: kind === "pet" ? "pet" : "card",
+    kind: "pet",
     left: rect.left,
     top: rect.top,
     width: rect.width,
@@ -861,7 +1027,7 @@ function captureBattleMotionOrigin(element, kind = "card") {
 }
 
 function createBattleMotionGhost(origin) {
-  if (!origin?.html) return null;
+  if (origin?.kind !== "pet" || !origin.html) return null;
   const template = document.createElement("template");
   template.innerHTML = origin.html.trim();
   const ghost = template.content.firstElementChild;
@@ -871,7 +1037,7 @@ function createBattleMotionGhost(origin) {
   ghost.removeAttribute("style");
   ghost.setAttribute("aria-hidden", "true");
   ghost.setAttribute("tabindex", "-1");
-  ghost.classList.add(origin.kind === "pet" ? "pet-flight" : "played-card-ghost");
+  ghost.classList.add("pet-flight");
   document.body.append(ghost);
   return ghost;
 }
@@ -1023,7 +1189,9 @@ function enemyBattleMotionProfile(feedback) {
     alarmClock: "alarm-ring",
     phoneSpirit: "phone-vibrate",
     groupChat: "chat-pop",
-    printerJam: "printer-feed"
+    printerJam: "printer-feed",
+    rollCallWarden: "roll-call-snap",
+    clubMegaphone: "megaphone-blast"
   };
   if (regularProfiles[feedback?.enemyId]) return regularProfiles[feedback.enemyId];
   return attacksPlayer ? "default-attack" : "default-skill";
@@ -1136,6 +1304,39 @@ function regularEnemyBattleMotionRecipe(profile, attacksPlayer) {
         steps: [
           { position: "windup", vars: { y: 5, rotation: 2, scaleX: 1.07, scaleY: .9, duration: .14, ease: "power2.in" } },
           { position: "windup+=.14", vars: { y: -4, rotation: -1, scaleX: .95, scaleY: 1.08, duration: .1, ease: "power2.out" } }
+        ],
+        impactAt: .24, settleDelay: 0, settleDuration: .16
+      }
+    },
+    "roll-call-snap": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 7, y: -3, rotation: 5, scaleX: .94, scaleY: 1.04, duration: .12, ease: "power2.in" } },
+          { position: "windup+=.12", vars: { x: -33, y: 3, rotation: -6, scaleX: 1.08, scaleY: .95, duration: .13, ease: "power4.in" } }
+        ],
+        impactAt: .25, settleDelay: .04, settleDuration: .17
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { x: 2, y: -9, rotation: -4, scaleX: .97, scaleY: 1.08, duration: .13, ease: "power2.out" } },
+          { position: "windup+=.13", vars: { x: -5, y: 5, rotation: 3, scaleX: 1.06, scaleY: .91, duration: .11, ease: "power3.in" } }
+        ],
+        impactAt: .24, settleDelay: 0, settleDuration: .16
+      }
+    },
+    "megaphone-blast": {
+      attack: {
+        steps: [
+          { position: "windup", vars: { x: 9, y: 1, rotation: 4, scaleX: .9, scaleY: 1.05, duration: .1, ease: "power2.in" } },
+          { position: "windup+=.1", vars: { x: -31, y: -2, rotation: -4, scaleX: 1.12, scaleY: .94, duration: .12, ease: "power4.in" } },
+          { position: "windup+=.22", vars: { x: -23, y: 1, rotation: 2, scaleX: 1.05, scaleY: .98, duration: .07, ease: "power1.out" } }
+        ],
+        impactAt: .29, settleDelay: .03, settleDuration: .16
+      },
+      skill: {
+        steps: [
+          { position: "windup", vars: { x: 3, y: 2, rotation: -5, scaleX: 1.13, scaleY: .96, duration: .14, ease: "back.out(1.25)" } },
+          { position: "windup+=.14", vars: { x: -7, y: -3, rotation: 5, scaleX: .96, scaleY: 1.07, duration: .1, ease: "power2.inOut" } }
         ],
         impactAt: .24, settleDelay: 0, settleDuration: .16
       }
@@ -1723,7 +1924,8 @@ function registerEnemyEncounter() {
 
 function recordCurrentCombat() {
   const combat = game.combat;
-  if (!combat || combat.status === "active" || combat.careerRecorded) return;
+  if (!combat || combat.status === "active") return false;
+  if (combat.careerRecorded) return true;
   const summary = game.combatSummary();
   const newAchievements = recordCareerCombat(career, summary);
   combat.summary = summary;
@@ -1756,6 +1958,7 @@ function recordCurrentCombat() {
     game.prepareNormalCombatReward();
     saveGame();
   }
+  return true;
 }
 
 function finishPlayerTurn() {
@@ -1811,98 +2014,12 @@ function finishPlayerTurn() {
       });
     }
   }
-  recordCurrentCombat();
+  const combatFinished = recordCurrentCombat();
+  if (combatFinished) {
+    resolveCombatResult();
+    return;
+  }
   render();
-}
-
-function combatRecapAdvice(summary) {
-  if (summary.result === "lost" && summary.cardsPlayed < summary.turns * 2) {
-    return `本场平均每回合只打出 ${(summary.cardsPlayed / summary.turns).toFixed(1)} 张牌。优先花完能量，再考虑保留手牌。`;
-  }
-  if (summary.result === "lost" && summary.hpLost >= 12) {
-    return "生命损失较高。先按公开意图准备等量护甲，再用剩余能量输出。";
-  }
-  if (summary.result === "won" && summary.hpLost === 0) {
-    return "无伤胜利：当前防御节奏有效，可以继续围绕主力牌精简构筑。";
-  }
-  if (summary.turns >= 6) return "战斗拖得较久。增加稳定抽牌或移除低贡献牌，会比单纯拿高费牌更有效。";
-  return `本场用 ${summary.turns} 回合结束战斗，损失 ${summary.hpLost} 生命。下一次保持输出，同时按公开意图补足护甲。`;
-}
-
-function petIncubationRecapHtml(combat) {
-  const event = combat.petIncubationEvent || combat.summary?.petIncubationEvent;
-  const egg = petEggDefinition(event?.eggId);
-  if (!event || !egg) return "";
-  const required = Math.max(1, Number(event.requiredCombats) || eggRequiredCombats(egg));
-  const battles = Math.min(required, Math.max(0, Number(event.battles) || 0));
-  if (event.type === "hatched") {
-    const pet = PET_DEFS[event.petId || egg.petId];
-    return `<div class="incubation-recap hatched">
-      ${pet ? renderPetFaceFor(pet.id) : petEggHtml(egg.id)}
-      <div><small>孵化完成</small><b>${escapeHtml(pet?.name || "动物幼崽")}出生了</b><span>已永久解锁，下一局可在开始界面选择；本局伙伴不变。</span></div>
-      <strong>${required}/${required}</strong>
-    </div>`;
-  }
-  return `<div class="incubation-recap progress">
-    ${petEggHtml(egg.id)}
-    <div><small>携带战斗完成</small><b>${escapeHtml(egg.name)}孵化进度 +1</b><span>当前 ${battles}/${required}，失败不会倒扣进度。</span></div>
-    <strong>${battles}/${required}</strong>
-  </div>`;
-}
-
-function combatSummaryProgressHtml(combat) {
-  if (combat.status !== "won") return "";
-  const usedCardUids = combat.usedCardUids instanceof Set
-    ? combat.usedCardUids
-    : new Set(Array.isArray(combat.usedCardUids) ? combat.usedCardUids : []);
-  const entries = game.deck
-    .filter((card) => usedCardUids.has(card.uid))
-    .map(summaryProgressCard)
-    .filter(Boolean)
-    .sort((left, right) => Number(right.upgradeable) - Number(left.upgradeable)
-      || right.current - left.current
-      || left.name.localeCompare(right.name, "zh-CN"));
-  if (!entries.length) return "";
-  const visible = entries.slice(0, 4);
-  const hiddenCount = entries.length - visible.length;
-  return `<section class="summary-progress-recap" aria-label="本场主力牌进度">
-    <div><small>本场主力进度</small><p>每张卡组副本独立累计，同一副本每场胜利最多记 1 次；本学期累计 3 场后可参加期末升级。</p></div>
-    <div class="summary-progress-recap-list">
-      ${visible.map((progress) => `<span class="${progress.upgradeable ? "ready" : ""}"><b>${escapeHtml(progress.name)}</b><em>${progress.current}/${progress.target}</em><i>${progress.upgradeable ? "已达标" : `还差 ${progress.remaining} 场`}</i></span>`).join("")}
-      ${hiddenCount > 0 ? `<span class="more"><b>另有 ${hiddenCount} 张</b><i>本场已计入</i></span>` : ""}
-    </div>
-  </section>`;
-}
-
-function renderCombatResult(combat) {
-  const summary = combat.summary || game.combatSummary();
-  const trial = summary.challengeTrial;
-  const enemy = ENEMY_DEFS[summary.enemyId];
-  const build = analyzeBuild(game);
-  const unlocked = (combat.newAchievements || []).map((id) => ACHIEVEMENT_DEFS[id]).filter(Boolean);
-  return `<div class="result-overlay" role="dialog" aria-modal="true" aria-labelledby="combat-result-title" aria-describedby="combat-result-description">
-    <div class="result-card recap-card ${combat.status}" tabindex="-1" autofocus>
-      <small>${combat.status === "won" ? "战斗复盘" : "挑战复盘"}</small>
-      <h2 id="combat-result-title">${combat.status === "won" ? "胜利" : "体力耗尽"}</h2>
-      <p class="recap-enemy" id="combat-result-description">对阵 ${enemy.name} · ${enemy.pattern}</p>
-      <div class="recap-stats">
-        <span><b>${summary.turns}</b>回合</span>
-        <span><b>${summary.cardsPlayed}</b>出牌</span>
-        <span><b>${summary.damageDealt}</b>伤害</span>
-        <span><b>${summary.hpLost}</b>掉血</span>
-      </div>
-      ${combat.status === "won" && summary.routeBonusGold ? `<div class="route-threat-payout"><b>高压加练完成</b><span>基础 ${NORMAL_COMBAT_REWARD_GOLD} + 加练 ${summary.routeBonusGold} · 共 ${NORMAL_COMBAT_REWARD_GOLD + summary.routeBonusGold} 校园币已到账</span></div>` : ""}
-      <div class="recap-advice"><small>复盘建议</small><p>${combatRecapAdvice(summary)}</p><em>敌人提示：${enemy.tip}</em></div>
-      <div class="recap-build"><b>${build.primary.sign} ${build.primary.label}</b><span>当前短板：${build.risk}。${build.suggestion}</span></div>
-      ${combatSummaryProgressHtml(combat)}
-      ${combat.modifiers.challenge && combat.status === "won" ? `<div class="challenge-payout"><b>挑战完成 · ${CHALLENGE_AFFIX_DEFS[combat.modifiers.affix].name}</b><span>专属牌 / 宠物 / 物品，选择一种奖励方向</span></div>` : ""}
-      ${trial ? `<div class="challenge-trial-result ${trial.completed ? "success" : "missed"}"><b>${trial.icon} ${trial.name} · ${trial.completed ? "完成" : "未完成"}</b><span>${trial.completed ? `额外 ${summary.challengeTrialBonus} 校园币已到账` : `${trial.progress}；不影响挑战基础奖励`}</span></div>` : ""}
-      ${combat.status === "won" ? petIncubationRecapHtml(combat) : ""}
-      ${combat.newEnemy ? '<div class="discovery-note">新敌人已收录进校园档案</div>' : ""}
-      ${unlocked.length ? `<div class="unlocked-row"><small>新成就</small>${unlocked.map((achievement) => `<span><b>${achievement.icon}</b>${achievement.name}</span>`).join("")}</div>` : ""}
-      <div class="recap-actions"><button class="quiet-button" data-action="open-archive">查看档案</button><button class="primary" data-action="combat-result">${combat.status === "won" ? "领取战利品" : "返回标题"}</button></div>
-    </div>
-  </div>`;
 }
 
 function combatRelicRowHtml() {
@@ -1956,7 +2073,7 @@ function renderCombat() {
     petPreview.draw ? `抽 ${petPreview.draw}` : "",
     petPreview.nextDrawBonus ? `下回合抽牌 +${petPreview.nextDrawBonus}` : ""
   ].filter(Boolean).join(" · ");
-  const petReady = game.pet.charge >= game.pet.maxCharge && !combat.petUsed;
+  const petReady = game.pet.charge >= game.pet.maxCharge;
   const petCost = Math.max(0, Number(petPreview.skill?.energyCost) || 0);
   const petUnavailable = combatInputLocked
     || Boolean(combat.pendingDiscard)
@@ -1965,9 +2082,7 @@ function renderCombat() {
     || combat.status !== "active";
   const petAvailabilityText = combat.status !== "active"
     ? "战斗已经结束"
-    : combat.petUsed
-      ? "本场已经出手"
-      : combatInputLocked
+    : combatInputLocked
         ? "敌方行动结算中，暂不可发动"
         : combat.pendingDiscard
           ? "请先完成弃牌"
@@ -1980,9 +2095,7 @@ function renderCombat() {
     ? "发动技能"
     : combat.status !== "active"
       ? "战斗已结束"
-      : combat.petUsed
-        ? "本场已使用"
-        : combatInputLocked
+      : combatInputLocked
           ? "敌方行动中"
           : combat.pendingDiscard
             ? "先完成弃牌"
@@ -2090,7 +2203,7 @@ function renderCombat() {
           <span class="block-shield ${combat.playerBlock > 0 ? "has-block" : "is-empty"}" aria-label="当前护甲 ${combat.playerBlock}"><b>${combat.playerBlock}</b></span>
           <div class="hpbar"><i style="width:${playerHp}%"></i><b>${game.hp}/${game.maxHp}</b></div>
         </div>
-        <div class="status-row">${combat.distracted ? '<span class="status negative">走神：攻击每段 -2</span>' : '<span class="status">状态正常</span>'}</div>
+        <div class="status-row">${combat.distracted ? '<span class="status negative">走神：攻击每段 -2</span>' : '<span class="status">状态正常</span>'}${combat.summons ? `<span class="status summon-status">纸灵 ${combat.summons}/3</span>` : ""}</div>
       </section>
 
       <section class="battle-center">
@@ -2109,18 +2222,19 @@ function renderCombat() {
           <div class="hpbar enemy-hp"><i style="width:${enemyHp}%"></i><b>${combat.enemy.hp}/${combat.enemy.maxHp}</b></div>
         </div>
         <p>${combat.enemy.subtitle}</p>
+        <div class="status-row enemy-status-row">${combat.enemyAttackDown ? `<span class="status negative">压制：下次攻击 -${combat.enemyAttackDown}/段</span>` : ""}${combat.enemyExposed ? `<span class="status exposed">露怯：后续攻击 +${combat.enemyExposed}/段</span>` : ""}</div>
       </section>
     </div>
 
     <section class="combat-action-dock" aria-label="战斗操作区">
     <div class="combat-controls">
       <div class="energy-companion-stack">
-        <article class="pet-companion-token ${petReady ? "ready" : ""} ${combat.petUsed ? "used" : ""}" tabindex="0" style="--pet-charge:${petChargePercent}%" aria-label="查看宠物技能，当前充能 ${game.pet.charge}/${game.pet.maxCharge}">
+        <article class="pet-companion-token ${petReady ? "ready" : ""}" tabindex="0" style="--pet-charge:${petChargePercent}%" aria-label="查看宠物技能，当前充能 ${game.pet.charge}/${game.pet.maxCharge}">
           ${renderPetFace()}<b>${game.pet.charge}/${game.pet.maxCharge}</b>
           <div class="pet-companion-tooltip" role="tooltip">
             <small>战斗伙伴 · 当前充能 ${game.pet.charge}/${game.pet.maxCharge}</small>
             <strong>${currentPetDefinition().skill.name}${petPreview.talent ? ` · ${petPreview.talent.name}` : ""}</strong>
-            <p>${petCost} 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 每场一次</p>
+            <p>${petCost} 能量 · ${petPreview.damage} 伤害${petExtras ? ` · ${petExtras}` : ""} · 出手后充能归零</p>
             <em>${petAvailabilityText}</em>
             <button class="pet-skill ${!petUnavailable ? "ready" : ""}" data-action="pet-skill" aria-keyshortcuts="G" ${petUnavailable ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">G</kbd>${petButtonText}</button>
           </div>
@@ -2131,6 +2245,7 @@ function renderCombat() {
           <small>能量</small>
         </div>
       </div>
+      ${combatSupplyTrayHtml(combatInputLocked || Boolean(combat.pendingDiscard) || combat.status !== "active")}
       <button class="end-turn state-${combatInputLocked ? "resolving" : turnRisk.state}" data-action="end-turn" aria-keyshortcuts="E" aria-label="${combatInputLocked ? "敌方行动正在结算" : `结束回合，${escapeHtml(turnRisk.buttonDetail)}`}" ${combatInputLocked || combat.status !== "active" || combat.pendingDiscard ? "disabled" : ""}><kbd class="control-shortcut" aria-hidden="true">E</kbd><span>${combatInputLocked ? "等待结算" : "结束回合"}<small>${combatInputLocked ? "敌方行动中" : escapeHtml(turnRisk.buttonDetail)}</small></span></button>
     </div>
     <div class="pile-counts" aria-label="战斗牌堆">
@@ -2150,8 +2265,7 @@ function renderCombat() {
           combatPreview,
           tacticalCue,
           handPose: handCardPose(index, combat.hand.length),
-          shortcut: index < 9 ? index + 1 : null,
-          summaryProgress: summaryProgressCard(card)
+          shortcut: index < 9 ? index + 1 : null
         });
       }).join("")}
     </div>
@@ -2159,9 +2273,8 @@ function renderCombat() {
     ${pileView ? renderPileOverlay(combat) : ""}
     ${tutorialStep >= 0 && combat.status === "active" ? renderTutorial() : ""}
     ${context.confirmLethalEndTurn && combat.status === "active" ? renderLethalEndTurnConfirm(incomingDamage) : ""}
-    ${combat.status !== "active" ? renderCombatResult(combat) : ""}
   `;
-  return `${topBar()}<main class="combat-page" aria-busy="${combatInputLocked}">${body}</main>${toast ? `<div class="toast">${escapeHtml(toast)}</div>` : ""}`;
+  return `${topBar()}<main class="combat-page" aria-busy="${combatInputLocked}">${body}</main>${toast ? `<div class="toast" aria-hidden="true">${escapeHtml(toast)}</div>` : ""}`;
 }
 
 function renderPileOverlay(combat) {
@@ -2188,7 +2301,7 @@ function renderTutorial() {
   const steps = [
     { number: "01", title: "先看意图，再出牌", text: "首场前 3 张手牌固定为攻击、防御与主角特性牌。敌人头顶图标公开它的下一步；获得 5 护甲就能完全挡住“攻击 5”。" },
     { number: "02", title: "一回合：你出牌，敌人行动", text: "卡牌左上角是费用；玩家回合开始抽 5 张并获得 3 能量。出牌后点“结束回合”，敌人按头顶意图行动，再进入下一回合；护甲会在下个玩家回合开始时清空。" },
-    { number: "03", title: `让${currentPetDefinition().name}一起打`, text: "每回合第一次打出攻击牌，宠物充能 +1。充满后花 1 能量出手，每场一次。" }
+    { number: "03", title: `让${currentPetDefinition().name}一起打`, text: "每回合第一次打出攻击牌，宠物充能 +1。充满后花 1 能量出手，充能归零后可以重新积累。" }
   ];
   const step = steps[tutorialStep];
   return `<div class="tutorial-overlay">
@@ -2196,6 +2309,18 @@ function renderTutorial() {
       <small id="tutorial-progress">新生教学 ${step.number}/03</small><h2 id="tutorial-title">${step.title}</h2><p id="tutorial-description">${step.text}</p>
       <div><button class="quiet-button" data-action="skip-tutorial">跳过教学</button><button class="primary" data-action="tutorial-next" autofocus>${tutorialStep === steps.length - 1 ? "明白，开始战斗" : "下一条"}</button></div>
     </section>
+  </div>`;
+}
+
+function combatSupplyTrayHtml(inputLocked = false) {
+  if (!game.supplies.length) return '<div class="combat-supply-tray is-empty" aria-label="临时用品栏为空"><small>用品</small><span>0/2</span></div>';
+  return `<div class="combat-supply-tray" aria-label="临时用品 ${game.supplies.length}/${game.supplyCapacity}">
+    <small>用品</small>${game.supplies.map((id, index) => {
+      const supply = SUPPLY_DEFS[id];
+      return `<button data-action="use-supply" data-id="${escapeHtml(id)}" data-index="${index}" ${inputLocked ? "disabled" : ""} aria-label="使用${escapeHtml(supply.name)}：${escapeHtml(supply.text)}">
+        ${supplyIconHtml(supply, "combat-supply-icon")}<span>${escapeHtml(supply.name)}</span>
+      </button>`;
+    }).join("")}<b>${game.supplies.length}/${game.supplyCapacity}</b>
   </div>`;
 }
 
@@ -2271,7 +2396,7 @@ function renderChallengeReward() {
             ? itemIconHtml(rewardSignatureItem, "item-icon challenge-signature-icon")
             : escapeHtml(reward.icon);
         const reason = isEggReward
-          ? `来源公开：${ENEMY_DEFS[pending.enemyId]?.name || "本场怪物"}。领取后携带完成 ${eggRequiredCombats(rewardEgg)} 场有效战斗即可孵化。`
+          ? `来源公开：${ENEMY_DEFS[pending.enemyId]?.name || "本场怪物"}。领取后需在休息节点主动孵化 ${eggRequiredCombats(rewardEgg)} 次。`
           : isSignatureItemReward
             ? `招牌来源：${rewardSource.enemy?.name || "本场怪物"}。${rewardSignatureItem.text}`
           : guide.reason;
@@ -2288,11 +2413,18 @@ function renderChallengeReward() {
 }
 
 function renderCardReward() {
-  const exclusiveCount = context.choices.filter((id) => CARD_DEFS[id].archetype === game.archetypeId).length;
-  const publicCount = context.choices.length - exclusiveCount;
+  const archetypeCount = context.choices.filter((id) => CARD_DEFS[id].archetype === game.archetypeId).length;
+  const personaCount = context.choices.filter((id) => CARD_DEFS[id].persona === game.personaId).length;
+  const publicCount = context.choices.length - archetypeCount - personaCount;
+  const poolLabels = [
+    personaCount ? `${personaCount} 张${game.persona.name}专属` : "",
+    archetypeCount ? `${archetypeCount} 张本星座专属` : "",
+    publicCount ? `${publicCount} 张普池` : ""
+  ].filter(Boolean);
+  const poolMark = personaCount ? game.persona.icon : game.archetype.sign;
   const body = `
     <div class="choice-copy"><p>${context.message || "选一张加入构筑，也可以跳过。"}</p></div>
-    <div class="pool-composition"><b>${game.archetype.sign} 当前奖励构成</b><span>${exclusiveCount} 张本星座专属</span><span>${publicCount} 张普池</span><em>不会出现其他星座专属牌</em></div>
+    <div class="pool-composition"><b>${poolMark} 当前奖励构成</b>${poolLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join("")}<em>不会出现其他星座或人格专属牌</em></div>
     ${choiceAdviceHtml(context.choices)}
     <div class="card-choice-row">${context.choices.map((id) => cardHtml(id, {
       action: "take-reward-card",
@@ -2348,6 +2480,26 @@ function renderReplaceItem() {
   return page("整理书包", shopPurchase ? `容量 ${game.items.length}/${game.backpackCapacity} · 尚未扣款` : "容量已满", body, { className: "replace-item-page" });
 }
 
+function renderBossEggReward() {
+  const pending = game.pendingSemesterReward;
+  const egg = petEggDefinition(pending?.eggId);
+  if (pending?.stage !== "bossEgg" || !egg) {
+    return page("奖励状态已变化", "期末战利品", '<button class="primary centered" data-action="resume-semester-reward">继续结算</button>');
+  }
+  const hatchling = PET_DEFS[egg.petId];
+  const queueText = game.incubator
+    ? `当前孵化位已有${petEggDefinition(game.incubator.eggId)?.name || "另一枚蛋"}，本蛋会进入等待队列。`
+    : "领取后会放入休息区孵化位。";
+  const body = `<section class="boss-egg-reward">
+    <div class="boss-egg-visual">${petEggHtml(egg.id, "pet-egg boss-egg")}</div>
+    <div><small>魔笑奶团龙 · 限定掉落</small><h2>${escapeHtml(egg.name)}</h2><p>在休息节点主动照料 3 次，孵化为${escapeHtml(hatchling?.name || "奶团龙幼崽")}。不会自动替换当前参战宠物。</p><em>${escapeHtml(queueText)}</em></div>
+  </section><button class="primary big centered" data-action="claim-boss-egg">收下奶龙蛋</button>`;
+  return page("Boss 战利品", `第 ${game.semester} 学期 · 独特伙伴蛋`, body, {
+    className: "boss-egg-reward-page",
+    description: "蛋是新的养成路线，不占随身物品容量。"
+  });
+}
+
 function renderSelection() {
   const cards = context.cards || game.deck;
   const body = `
@@ -2368,46 +2520,66 @@ function buildProfileHtml(build, compact = false) {
   </section>`;
 }
 
-function summaryTrainingPanelHtml() {
-  const progressEntries = game.deck
-    .map(summaryProgressCard)
-    .filter(Boolean)
-    .sort((left, right) => Number(right.upgradeable) - Number(left.upgradeable)
-      || right.current - left.current
-      || left.name.localeCompare(right.name, "zh-CN"));
-  const readyCount = progressEntries.filter((entry) => entry.upgradeable).length;
-  const closest = progressEntries[0];
-  const settled = game.awaitingNextSemester;
-  const headline = settled
-    ? "本学期主力升级已经结算"
-    : readyCount > 0
-    ? `${readyCount} 张主力牌已达标`
-    : closest?.current > 0
-    ? `${closest.name} ${closest.current}/${closest.target}，还差 ${closest.remaining} 场`
-    : "本学期尚未培养主力牌";
-  return `<section class="summary-training-panel ${settled ? "settled" : readyCount > 0 ? "ready" : ""}">
-    <div><small>第 ${game.semester} 学期 · 期末升级</small><strong>${escapeHtml(headline)}</strong><p>${settled ? "升级机会已经使用或跳过；进入下一学期后，所有主力进度从 0/3 重新累计。" : "每张卡组副本独立累计；每场胜利中打出过的卡各记 1 次，达到 3/3 后可在期末免费升级，本进度不会带入下一学期。"}</p></div>
-    <b>${settled ? "已结算" : readyCount > 0 ? "可升级" : "本学期"}</b>
-  </section>`;
-}
-
 function renderDeck() {
+  const handOnly = Boolean(context.handOnly && game.combat);
+  if (handOnly) {
+    const cards = Array.isArray(game.combat.hand) ? game.combat.hand : [];
+    const body = `
+      <div class="collection-summary">
+        <span>当前手牌 ${cards.length} 张</span>
+        <span>本回合能量 ${game.combat.energy}/${game.combat.maxEnergy}</span>
+        <span>抽牌堆 ${game.combat.drawPile.length} 张</span>
+        <span>弃牌堆 ${game.combat.discardPile.length} 张</span>
+      </div>
+      <div class="deck-grid current-hand-grid">${cards.length
+        ? cards.map((card) => cardHtml(card, { playable: false })).join("")
+        : '<p class="empty-state">当前手牌为空。返回战斗并结束回合后会重新抽牌。</p>'}</div>
+      <button class="primary centered" data-action="close-deck">返回战斗</button>`;
+    return page("当前手牌", `${cards.length} 张牌`, body, {
+      className: "current-hand-page",
+      description: "这里只显示当前回合真正拿在手里的牌；返回战斗后照常出牌。"
+    });
+  }
   const build = analyzeBuild(game);
   const body = `
     ${buildProfileHtml(build)}
-    ${summaryTrainingPanelHtml()}
     <div class="collection-summary">
       <span>攻击 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "attack").length}</span>
       <span>技能 ${game.deck.filter((card) => CARD_DEFS[card.id].type === "skill").length}</span>
       <span>已升级 ${game.deck.filter((card) => card.upgraded).length}</span>
       <span>已刻印 ${game.deck.filter((card) => card.enchantment).length}</span>
     </div>
-    <div class="deck-grid">${game.deck.map(deckCardHtml).join("")}</div>
-    <h2 class="subheading">书包物品</h2>
-    <div class="item-choice-list compact">${game.items.length ? game.items.map((id) => itemHtml(id, { disabled: true })).join("") : '<p class="empty-state">还没有物品。</p>'}</div>
+    <div class="deck-grid">${game.deck.map((card) => cardHtml(card, { playable: false })).join("")}</div>
     <button class="primary centered" data-action="close-deck">返回</button>`;
-  return page("当前构筑", `${game.deck.length} 张牌 · ${game.items.length} 件物品`, body, {
+  return page("当前卡牌", `${game.deck.length} 张牌`, body, {
+    className: "current-deck-page",
     description: "卡组越薄，核心牌出现得越稳定；状态牌只在战斗中临时加入。"
+  });
+}
+
+function renderItems() {
+  const supplyCount = game.supplies.length;
+  const body = `
+    <div class="collection-summary">
+      <span>已携带 ${game.items.length} 件</span>
+      <span>书包容量 ${game.backpackCapacity} 件</span>
+      <span>临时用品 ${supplyCount}/${game.supplyCapacity}</span>
+    </div>
+    <h2 class="subheading">随身物品</h2>
+    <div class="item-choice-list compact current-items-list">
+      ${game.items.length
+        ? game.items.map((id) => itemHtml(id, { disabled: true })).join("")
+        : '<p class="empty-state">书包还是空的。战斗、事件和商店都可能获得随身物品。</p>'}
+    </div>
+    <h2 class="subheading current-supplies-heading">临时用品</h2>
+    <div class="supply-choice-list current-supplies-list">
+      ${supplyCount
+        ? game.supplies.map((id) => supplyHtml(id, { disabled: true, action: "inspect-supply" })).join("")
+        : '<p class="empty-state">暂无临时用品；商店和部分事件会提供一次性用品。</p>'}
+    </div>
+    <button class="primary centered" data-action="close-items">返回</button>`;
+  return page("当前物品", `${game.items.length} 件物品 · ${supplyCount} 件用品`, body, {
+    description: "这里汇总本局已获得的随身物品与一次性用品；战斗中只能从用品栏主动使用临时用品。"
   });
 }
 
@@ -2417,6 +2589,7 @@ const CARD_LIBRARY_FILTER_LABELS = Object.freeze({
   aries: `${ARCHETYPE_DEFS.aries.sign} 白羊`,
   gemini: `${ARCHETYPE_DEFS.gemini.sign} 双子`,
   cancer: `${ARCHETYPE_DEFS.cancer.sign} 巨蟹`,
+  summoner: "召 召唤人格",
   status: "状态牌"
 });
 
@@ -2510,7 +2683,7 @@ function renderEnchantment() {
       <span>${game.archetype.sign}</span>
       <div><small>本学期命盘觉醒</small><strong>${enchantment.name}</strong><p>${enchantment.text}</p></div>
     </div>
-    <p class="center-copy">从本场实际使用过的合格卡牌中选择一张。升级和刻印可以同时存在，但每张牌最多拥有一个刻印。</p>
+    <p class="center-copy">从当前卡组所有符合条件的牌中亲自选择一张。升级和刻印可以同时存在，但每张牌最多拥有一个刻印。</p>
     <div class="enchantment-grid">
       ${context.cards.map((card) => `<div class="enchantment-choice">${cardHtml(card, { action: "enchant-card" })}<small>刻印后：${enchantment.text}</small></div>`).join("")}
     </div>
@@ -2543,8 +2716,8 @@ function renderPetMilestone() {
     </div>`;
   return page(isChoice ? `${currentPetDefinition().name}想学点新的` : "羁绊路线升级", `羁绊 ${game.pet.bond} · 里程碑`, body, {
     description: isChoice
-      ? "路线一旦选择便不会更换；每种效果都受“每场一次、消耗 1 能量”的限制。"
-      : "强化已有路线，不增加宠物每场出手次数。"
+      ? "路线一旦选择便不会更换；宠物每次出手消耗 1 能量并清空充能，之后可以重新积累。"
+      : "强化已有路线只提高效果，不改变充能速度与能量消耗。"
   });
 }
 
@@ -2555,7 +2728,7 @@ function renderRules() {
       <article><b>02</b><h2>意图</h2><p>敌人下一步完全公开。攻击、护甲、负面状态都不会藏数值。</p></article>
       <article><b>03</b><h2>护甲</h2><p>护甲先抵挡伤害，并在下一个玩家回合开始时清空。</p></article>
       <article><b>04</b><h2>构筑</h2><p>战后可三选一或跳过。卡组越薄，关键牌越容易再次抽到。</p></article>
-      <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；满 2 点后可主动攻击，每场一次。羁绊 3、10、25 解锁路线成长。</p></article>
+      <article><b>05</b><h2>宠物</h2><p>每回合第一次使用攻击牌可充能 1 点；充满后可消耗 1 能量主动出手，随后清空充能并可再次积累。羁绊 3、10、25 解锁路线成长。</p></article>
       <article><b>06</b><h2>学期</h2><p>生命在节点之间保留。挑战词缀与星座试炼提前公开；试炼失败不影响挑战胜负与基础奖励。</p></article>
     </div>
     <div class="rules-note"><b>${game.archetype.sign} 当前命盘：${game.archetype.name}</b><span>${game.archetype.text}</span></div>
@@ -2616,7 +2789,7 @@ function renderArchive() {
   const achievementTotal = Object.keys(ACHIEVEMENT_DEFS).length;
   const trialProgress = trialCollectionProgress(career);
   const kindLabels = { normal: "普通", elite: "精英", boss: "期末" };
-  const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", groupChat: "99", printerJam: "印", rivalShadow: "卷", finalExam: "末" };
+  const enemyIcons = { sleepyBug: "困", homeworkBlob: "作", alarmClock: "闹", phoneSpirit: "机", groupChat: "99", printerJam: "印", rivalShadow: "卷", finalExam: "末", madMilkDragon: "笑" };
   const body = `
     <div class="archive-summary">
       <article><small>已解锁成就</small><strong>${career.unlockedAchievements.length}/${achievementTotal}</strong></article>
@@ -2662,9 +2835,101 @@ function renderArchive() {
       }).join("")}
     </div>
     <div class="privacy-note">生涯档案与成就只保存在当前浏览器，不上传，不跨设备追踪。</div>
+    <section class="save-transfer-panel" aria-labelledby="save-transfer-title">
+      <div><small>封闭试玩保障</small><h2 id="save-transfer-title">存档与问题反馈</h2><p>可备份当前对局，也可以生成包含版本、所在页面、最近错误和存档状态的反馈包；两者都只在本地生成，不会自动上传。</p></div>
+      <div class="save-transfer-actions">
+        <button type="button" class="secondary" data-action="open-save-export">导出存档码</button>
+        <button type="button" class="quiet-button" data-action="open-save-import">导入存档码</button>
+        <button type="button" class="quiet-button" data-action="open-feedback-report">生成反馈包</button>
+      </div>
+    </section>
     <button class="primary centered" data-action="close-archive">返回</button>`;
   return page("校园档案", "复盘 · 图鉴 · 成就", body, {
     description: "先看见自己的真实进步，再决定下一局要练什么。"
+  });
+}
+
+function renderSaveExport() {
+  const backupText = context.backupText || currentSaveBackup();
+  const body = `<section class="save-transfer-editor">
+    <div class="save-transfer-explainer"><small>只保存在你手里</small><h2>复制试玩存档码</h2><p>它包含当前对局与生涯档案，不会自动上传。请把整段内容保存到自己的记事本。</p></div>
+    <label for="save-backup-output">存档码</label>
+    <textarea id="save-backup-output" readonly spellcheck="false">${escapeHtml(backupText)}</textarea>
+    <div class="save-transfer-actions">
+      <button type="button" class="primary" data-action="copy-save-backup">复制存档码</button>
+      <button type="button" class="quiet-button" data-action="close-save-transfer">返回档案</button>
+    </div>
+  </section>`;
+  return page("导出试玩存档", "本地备份 · 不上传", body, {
+    className: "save-transfer-page",
+    description: "保存这段存档码，之后可以在校园档案中恢复当前对局与生涯解锁。"
+  });
+}
+
+function renderSaveImport() {
+  const body = `<section class="save-transfer-editor import-editor">
+    <div class="save-transfer-explainer"><small>导入前确认</small><h2>粘贴试玩存档码</h2><p>系统会先完整校验，再一次性覆盖当前浏览器里的对局与生涯档案；无效内容不会改动现有存档。</p></div>
+    <label for="save-backup-input">存档码</label>
+    <textarea id="save-backup-input" spellcheck="false" autocomplete="off" placeholder="在这里粘贴完整存档码"></textarea>
+    <div class="warning-box">导入成功后会返回标题页。当前浏览器里的旧存档将被替换，请先确认已经备份。</div>
+    <div class="save-transfer-actions">
+      <button type="button" class="primary" data-action="import-save-backup">确认导入并覆盖当前浏览器存档</button>
+      <button type="button" class="quiet-button" data-action="close-save-transfer">取消并返回档案</button>
+    </div>
+  </section>`;
+  return page("导入试玩存档", "校验后覆盖 · 失败不写入", body, {
+    className: "save-transfer-page",
+    description: "只接受由无限学期导出的完整存档码；格式错误或数据无效时会保留当前存档。"
+  });
+}
+
+function renderCorruptSave() {
+  const stored = context.storedSave || readSaveState();
+  const hasRaw = stored.status === STORAGE_RECORD_STATUS.corrupt && typeof stored.raw === "string";
+  const raw = hasRaw ? stored.raw : "浏览器当前拒绝读取本地存储，暂时无法显示原始内容。";
+  const body = `<section class="save-transfer-editor corrupt-save-editor">
+    <div class="save-transfer-explainer"><small>原始数据仍保留</small><h2>先备份，再决定是否丢弃</h2><p>游戏不会自动删除或覆盖这份异常存档。可以先复制下面的原始内容发给开发者，再明确选择清除。</p></div>
+    <label for="corrupt-save-output">异常存档原始内容</label>
+    <textarea id="corrupt-save-output" readonly spellcheck="false">${escapeHtml(raw)}</textarea>
+    <div class="warning-box"><b>清除操作不可撤销。</b>只有确认不再需要抢救这份数据时才清除；返回标题不会修改原始存档。</div>
+    <div class="save-transfer-actions">
+      <button type="button" class="primary" data-action="copy-corrupt-save" ${hasRaw ? "" : "disabled"}>复制原始存档</button>
+      <button type="button" class="danger-button" data-action="discard-corrupt-save" ${stored.status === "unavailable" ? "disabled" : ""}>确认清除异常存档</button>
+      <button type="button" class="quiet-button" data-action="retry-corrupt-save">重新读取</button>
+      <button type="button" class="quiet-button" data-action="return-title">保留并返回标题</button>
+    </div>
+  </section>`;
+  return page("异常存档保护", "不自动覆盖 · 可复制抢救", body, {
+    className: "save-transfer-page corrupt-save-page",
+    description: "损坏、版本不兼容或浏览器拒绝访问都会进入保护页，而不是被当作新游戏。"
+  });
+}
+
+function renderFeedbackReport() {
+  const description = context.feedbackDescription || "";
+  const reportText = context.reportText || currentFeedbackReport(description, context.issueScreen, context.createdAt);
+  const errorCount = recentClientErrors.length;
+  const body = `<section class="save-transfer-editor feedback-report-editor">
+    <div class="save-transfer-explainer"><small>试玩问题复现</small><h2>生成可直接发送的反馈包</h2><p>简单写下你做了什么、看到了什么。反馈包会附带当前版本、问题页面、最近 ${errorCount} 条脚本错误以及本地存档，方便开发者直接复现。</p></div>
+    <label for="feedback-description">问题描述</label>
+    <textarea id="feedback-description" class="feedback-description" maxlength="1200" spellcheck="true" placeholder="例如：第 8 周打完精英后，点击刻印卡牌没有进入下一步。">${escapeHtml(description)}</textarea>
+    <div class="feedback-report-meta" aria-label="反馈包内容">
+      <span><small>游戏版本</small><strong>V${APP_VERSION}</strong></span>
+      <span><small>问题页面</small><strong>${escapeHtml(context.issueScreen || "unknown")}</strong></span>
+      <span><small>最近错误</small><strong>${errorCount} 条</strong></span>
+      <span><small>当前对局</small><strong>${readSave() ? "已包含" : "无进行中对局"}</strong></span>
+    </div>
+    <label for="feedback-report-output">反馈包预览</label>
+    <textarea id="feedback-report-output" readonly spellcheck="false">${escapeHtml(reportText)}</textarea>
+    <div class="warning-box">反馈包包含当前对局与生涯解锁数据，但不会自动上传。复制后请只发送给你信任的开发者。</div>
+    <div class="save-transfer-actions">
+      <button type="button" class="primary" data-action="copy-feedback-report">复制最新反馈包</button>
+      <button type="button" class="quiet-button" data-action="close-save-transfer">返回档案</button>
+    </div>
+  </section>`;
+  return page("试玩问题反馈", `V${APP_VERSION} · 本地生成 · 不自动上传`, body, {
+    className: "save-transfer-page feedback-report-page",
+    description: "把版本、问题现场和存档状态合成一个可复制的复现包。"
   });
 }
 
@@ -2681,10 +2946,22 @@ function restCurrentPetHtml() {
   </section>`;
 }
 
+function unlockHatchedPet(petId) {
+  career.unlockedPetIds ??= [];
+  if (!PET_DEFS[petId] || career.unlockedPetIds.includes(petId)) return false;
+  career.unlockedPetIds.push(petId);
+  saveCareer();
+  return true;
+}
+
 function renderRest() {
   const missing = game.maxHp - game.hp;
   const canUpgrade = game.deck.some((card) => !card.upgraded);
   const tarotRest = game.tarotRestStatus();
+  const incubator = game.incubator;
+  const egg = petEggDefinition(incubator?.eggId);
+  const hatchCount = Math.max(0, Number(incubator?.battles) || 0);
+  const hatchRequired = eggRequiredCombats(egg);
   const body = `
     <div class="rest-scene"><span>☕</span><p>便利店的灯还亮着。今晚只能认真做一件事。</p></div>
     ${incubatorStatusHtml("rest")}
@@ -2693,9 +2970,10 @@ function renderRest() {
       <button class="route-node" data-action="rest-heal" ${missing === 0 ? "disabled" : ""}><span class="node-icon">♥</span><span><small>恢复</small><strong>好好睡一觉</strong><em>恢复 ${Math.min(15, missing)} 点生命</em></span></button>
       <button class="route-node" data-action="rest-upgrade" ${canUpgrade ? "" : "disabled"}><span class="node-icon">↑</span><span><small>强化</small><strong>整理课堂笔记</strong><em>${canUpgrade ? "升级一张卡牌" : "所有卡牌均已升级"}</em></span></button>
       <button class="route-node" data-action="rest-pet"><span class="node-icon">${currentPetDefinition().icon}</span><span><small>陪伴</small><strong>带${currentPetDefinition().shortName}散步</strong><em>羁绊 +2</em></span></button>
+      ${egg ? `<button class="route-node rest-hatch-option" data-action="rest-hatch"><span class="node-icon">${petEggHtml(egg.id, "pet-egg compact")}</span><span><small>主动孵化 · ${hatchCount}/${hatchRequired}</small><strong>照料${escapeHtml(egg.name)}</strong><em>推进 1 次孵化；共需 ${hatchRequired} 次休息</em></span></button>` : ""}
       ${tarotRest ? `<button class="route-node tarot-rest-option" data-action="rest-tarot" ${tarotRest.available ? "" : "disabled"}><span class="node-icon">${game.tarot.icon}</span><span><small>${game.tarot.number} · 塔罗共鸣 · 每学期一次</small><strong>${tarotRest.name}</strong><em>${tarotRest.text}${tarotRest.available ? "" : ` · ${tarotRest.reason}`}</em></span></button>` : ""}
     </div>`;
-  return page("休息节点", `第 ${game.week} 周`, body, { description: "恢复、强化与陪伴解决常规问题；塔罗共鸣每学期只能使用一次。" });
+  return page("休息节点", `第 ${game.week} 周`, body, { description: "每次休息只能完成一件事；宠物蛋必须在这里主动孵化 3 次。" });
 }
 
 function renderTarotRestConfirm() {
@@ -2790,9 +3068,140 @@ function resumePendingRest() {
     else done();
     return;
   }
+  if (pending.stage === "hatch") {
+    const egg = petEggDefinition(pending.eggId);
+    const pet = PET_DEFS[pending.petId];
+    if (pending.type === "hatched") unlockHatchedPet(pending.petId);
+    game.completePendingRest();
+    setToast(pending.type === "hatched"
+      ? `${pet?.name || "动物幼崽"}孵化完成，已永久解锁；下一局可在开始界面选择；本局伙伴不变`
+      : `${egg?.name || "宠物蛋"}孵化推进至 ${pending.battles}/${pending.requiredCombats}`);
+    advanceWeek();
+    return;
+  }
   game.completePendingRest();
   changeScreen("map");
   setToast("休息节点阶段异常，已安全结束结算");
+}
+
+function shopDetailShortcutCommand({ currentScreen, code, key, repeat, typing, modified, detailOpen, dialogOpen, hasCandidate }) {
+  if (currentScreen !== "shop") return null;
+  if (detailOpen && key === "Escape") return "close";
+  if (code !== "KeyR" || repeat || typing || modified) return null;
+  if (detailOpen) return "close";
+  if (dialogOpen || !hasCandidate) return null;
+  return "open";
+}
+
+function shopDetailOfferFromTarget(target) {
+  const focusedOffer = target instanceof Element
+    ? target.closest('.shop-page [data-shop-detail-kind]')
+    : null;
+  return focusedOffer || app.querySelector('.shop-page [data-shop-detail-kind]:hover');
+}
+
+function openShopDetail(offer, origin = null) {
+  if (screen !== "shop" || !(offer instanceof Element) || !game.pendingShop) return false;
+  const kind = offer.dataset.shopDetailKind;
+  if (!['card', 'item', 'supply'].includes(kind)) return false;
+  const originAction = origin instanceof Element && offer.contains(origin)
+    ? origin.closest("[data-action]")?.dataset.action
+    : null;
+  shopDetailState = {
+    kind,
+    id: offer.dataset.shopDetailId,
+    index: Number(offer.dataset.shopDetailIndex) || 0,
+    returnAction: originAction || "open-shop-detail"
+  };
+  render();
+  return true;
+}
+
+function closeShopDetail() {
+  if (!shopDetailState) return false;
+  const previous = shopDetailState;
+  shopDetailState = null;
+  render();
+  const offer = [...app.querySelectorAll('.shop-page [data-shop-detail-kind]')].find((candidate) => (
+    candidate.dataset.shopDetailKind === previous.kind
+    && candidate.dataset.shopDetailId === previous.id
+    && Number(candidate.dataset.shopDetailIndex) === previous.index
+  ));
+  const controls = offer ? [...offer.querySelectorAll("[data-action]")] : [];
+  const focusTarget = controls.find((control) => control.dataset.action === previous.returnAction && !control.disabled)
+    || controls.find((control) => control.dataset.action === "open-shop-detail" && !control.disabled)
+    || controls.find((control) => !control.disabled);
+  focusTarget?.focus({ preventScroll: true });
+  return true;
+}
+
+function renderShopDetail() {
+  if (!shopDetailState || !game.pendingShop) return "";
+  const { kind, index } = shopDetailState;
+  const stocks = kind === "card"
+    ? game.pendingShop.cards
+    : kind === "item"
+      ? game.pendingShop.items
+      : game.pendingShop.supplies;
+  const stock = stocks?.[index];
+  if (!stock) return "";
+  const id = stock.id;
+  const price = stock.sold ? "已售" : `${game.shopPrice(kind, id)} 校园币`;
+  let name;
+  let category;
+  let frequency;
+  let effectHtml;
+  let visualHtml;
+  let rarity;
+
+  if (kind === "card") {
+    const definition = cardDefinition({ id, uid: id, upgraded: false, enchantment: null });
+    name = definition.displayName;
+    category = ({ attack: "攻击牌", skill: "技能牌", power: "能力牌", ability: "能力牌", status: "状态牌" })[definition.type] || "卡牌";
+    frequency = definition.cost === null ? "不可主动打出" : `${definition.cost} 能量`;
+    effectHtml = definition.displayText;
+    rarity = rarityName(definition.rarity);
+    visualHtml = cardHtml(id, {
+      playable: false,
+      className: "shop-detail-card-preview",
+      ariaHidden: true
+    });
+  } else if (kind === "item") {
+    const item = ITEM_DEFS[id];
+    name = item.name;
+    category = "随身物品";
+    frequency = item.timing;
+    effectHtml = escapeHtml(item.text);
+    rarity = rarityName(item.rarity);
+    visualHtml = `<div class="shop-detail-object-preview item-preview" aria-hidden="true">${itemIconHtml(item, "shop-detail-object-icon")}<strong>${escapeHtml(item.name)}</strong></div>`;
+  } else {
+    const supply = SUPPLY_DEFS[id];
+    name = supply.name;
+    category = "临时用品";
+    frequency = "一次性使用";
+    effectHtml = escapeHtml(supply.text);
+    rarity = "消耗后移除";
+    visualHtml = `<div class="shop-detail-object-preview supply-preview" aria-hidden="true">${supplyIconHtml(supply, "shop-detail-object-icon")}<strong>${escapeHtml(supply.name)}</strong></div>`;
+  }
+
+  return `<div class="pile-overlay shop-detail-overlay" data-action="close-shop-detail" data-dismiss="backdrop">
+    <section class="pile-dialog shop-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="shop-detail-title" aria-describedby="shop-detail-effect">
+      <div class="shop-detail-heading"><small>货架详情 · 只读</small><h2 id="shop-detail-title">${escapeHtml(name)}</h2><p>按 R 或 Esc 返回货架，不会购买或离店。</p></div>
+      <div class="shop-detail-content">
+        <div class="shop-detail-visual">${visualHtml}</div>
+        <div class="shop-detail-copy">
+          <dl>
+            <div><dt>类别</dt><dd>${escapeHtml(category)}</dd></div>
+            <div><dt>${kind === "card" ? "费用" : "频率"}</dt><dd>${escapeHtml(frequency)}</dd></div>
+            <div><dt>品质</dt><dd>${escapeHtml(rarity)}</dd></div>
+            <div><dt>价格</dt><dd>${escapeHtml(price)}</dd></div>
+          </dl>
+          <div class="shop-detail-effect" id="shop-detail-effect"><small>完整效果</small><p>${effectHtml}</p></div>
+        </div>
+      </div>
+      <button type="button" class="primary centered shop-detail-close" data-action="close-shop-detail" autofocus>返回货架 <kbd aria-hidden="true">R / Esc</kbd></button>
+    </section>
+  </div>`;
 }
 
 function renderShop() {
@@ -2800,39 +3209,74 @@ function renderShop() {
   const removePrice = game.shopRemovePrice();
   const backpackFull = game.items.length >= game.backpackCapacity;
   const availableCardIds = shop.cards.filter((stock) => !stock.sold).map((stock) => stock.id);
-  const body = `
-    ${sceneBannerHtml(SHOP_SCENE)}
-    <div class="shop-backpack-status ${backpackFull ? "is-full" : ""}">
-      <span><small>随身物品容量</small><strong>${game.items.length}/${game.backpackCapacity}</strong></span>
-      <p>${backpackFull ? "书包已满；点选新物品后进入替换确认，取消不会扣款。" : `还可直接装入 ${game.backpackCapacity - game.items.length} 件物品。`}</p>
-    </div>
-    <h2 class="subheading">卡牌</h2>
-    ${availableCardIds.length ? choiceAdviceHtml(availableCardIds) : ""}
-    <div class="shop-grid">
-      ${shop.cards.map((stock, index) => {
-        const price = game.shopPrice("card", stock.id);
-        return `<div class="shop-stock ${stock.sold ? "sold" : ""}">${cardHtml(stock.id, { action: "noop", playable: !stock.sold, fit: evaluateCardFit(game, stock.id) })}<button data-action="buy-card" data-index="${index}" ${stock.sold || game.gold < price ? "disabled" : ""}>${stock.sold ? "已售" : `${price} 币`}</button></div>`;
-      }).join("")}
-    </div>
-    <h2 class="subheading">物品</h2>
-    <div class="item-choice-list">
-      ${shop.items.map((stock) => {
-        const price = game.shopPrice("item", stock.id);
-        const needsReplacement = backpackFull && !stock.sold;
-        return itemHtml(stock.id, {
-          action: "buy-item",
-          price: stock.sold ? "已售" : needsReplacement ? `${price} 币 · 购买后替换` : price,
-          disabled: stock.sold || game.gold < price,
-          className: needsReplacement ? "needs-replacement" : ""
-        });
-      }).join("")}
-    </div>
-    <div class="shop-services">
-      <div><strong>卡组瘦身</strong><p>移除一张牌。价格会随学期上涨。</p></div>
-      <button data-action="shop-remove" ${removePrice === null || game.gold < removePrice || game.deck.length <= 5 || shop.removed ? "disabled" : ""}>${shop.removed ? "本店已移除" : `${removePrice} 币`}</button>
-    </div>
-    <button class="primary centered" data-action="leave-shop">离开商店</button>`;
-  return page("校园商店", `第 ${game.week} 周 · ${game.gold} 校园币`, body, { description: game.flags.nextShopHalf ? "饭卡优惠生效：本店第一件物品半价。" : "买的是构筑方向，不是单卡稀有度。" });
+  const marketHtml = `<div class="shop-market-layout">
+      <div class="shop-backpack-status ${backpackFull ? "is-full" : ""}">
+        <span><small>随身物品容量</small><strong>${game.items.length}/${game.backpackCapacity}</strong></span>
+        <p>${backpackFull ? "书包已满；点选新物品后进入替换确认，取消不会扣款。" : `还可直接装入 ${game.backpackCapacity - game.items.length} 件物品。`}</p>
+      </div>
+      <section class="shop-card-shelf" aria-label="在售卡牌">
+        <h2 class="subheading">卡牌</h2>
+        ${availableCardIds.length ? choiceAdviceHtml(availableCardIds) : ""}
+        <div class="shop-grid">
+          ${shop.cards.map((stock, index) => {
+            const price = game.shopPrice("card", stock.id);
+            return `<div class="shop-stock ${stock.sold ? "sold" : ""}" data-shop-detail-kind="card" data-shop-detail-id="${escapeHtml(stock.id)}" data-shop-detail-index="${index}">
+              ${cardHtml(stock.id, { action: "open-shop-detail", playable: true, fit: evaluateCardFit(game, stock.id), ariaKeyShortcut: "R" })}
+              <span class="shop-card-detail-cue" aria-hidden="true">点击查看 <kbd>R</kbd></span>
+              <button data-action="buy-card" data-index="${index}" ${stock.sold || game.gold < price ? "disabled" : ""}>${stock.sold ? "已售" : `${price} 币`}</button>
+            </div>`;
+          }).join("")}
+        </div>
+      </section>
+      <section class="shop-item-shelf" aria-label="在售物品">
+        <h2 class="subheading">物品</h2>
+        <div class="item-choice-list">
+          ${shop.items.map((stock, index) => {
+            const price = game.shopPrice("item", stock.id);
+            const needsReplacement = backpackFull && !stock.sold;
+            return `<div class="shop-offer" data-shop-detail-kind="item" data-shop-detail-id="${escapeHtml(stock.id)}" data-shop-detail-index="${index}">${itemHtml(stock.id, {
+              action: "buy-item",
+              price: stock.sold ? "已售" : needsReplacement ? `${price} 币 · 购买后替换` : price,
+              disabled: stock.sold || game.gold < price,
+              className: needsReplacement ? "needs-replacement" : "",
+              ariaKeyShortcut: "R"
+            })}<button type="button" class="shop-detail-button" data-action="open-shop-detail" aria-label="查看${escapeHtml(ITEM_DEFS[stock.id].name)}完整详情">查看</button></div>`;
+          }).join("")}
+        </div>
+      </section>
+      <section class="shop-supply-shelf" aria-label="在售临时用品">
+        <h2 class="subheading">临时用品 <small>${game.supplies.length}/${game.supplyCapacity}</small></h2>
+        <div class="supply-choice-list">
+          ${(shop.supplies || []).map((stock, index) => {
+            const price = game.shopPrice("supply", stock.id);
+            const full = game.supplies.length >= game.supplyCapacity;
+            return `<div class="shop-offer" data-shop-detail-kind="supply" data-shop-detail-id="${escapeHtml(stock.id)}" data-shop-detail-index="${index}">${supplyHtml(stock.id, {
+              action: "buy-supply",
+              price: stock.sold ? "已售" : full ? "用品栏已满" : price,
+              disabled: stock.sold || full || game.gold < price,
+              ariaKeyShortcut: "R"
+            })}<button type="button" class="shop-detail-button" data-action="open-shop-detail" aria-label="查看${escapeHtml(SUPPLY_DEFS[stock.id].name)}完整详情">查看</button></div>`;
+          }).join("")}
+        </div>
+      </section>
+      <div class="shop-footer-row">
+        <div class="shop-services">
+          <div><strong>卡组瘦身</strong><p>移除一张牌。价格会随学期上涨。</p></div>
+          <button data-action="shop-remove" ${removePrice === null || game.gold < removePrice || game.deck.length <= 5 || shop.removed ? "disabled" : ""}>${shop.removed ? "本店已移除" : `${removePrice} 币`}</button>
+        </div>
+        <button class="primary" data-action="leave-shop">离开商店</button>
+      </div>
+    </div>`;
+  const body = `${encounterStageHtml({
+    id: "shop-stage",
+    sceneHtml: sceneBannerHtml(SHOP_SCENE),
+    decisionHtml: marketHtml,
+    decisionLabel: "货架"
+  })}${renderShopDetail()}`;
+  return page("校园商店", `第 ${game.week} 周 · ${game.gold} 校园币`, body, {
+    className: "shop-page",
+    description: game.flags.nextShopHalf ? "饭卡优惠生效：本店第一件物品半价。" : "买的是构筑方向，不是单卡稀有度。"
+  });
 }
 
 function eventChoices(id) {
@@ -2898,12 +3342,16 @@ function campusRumorIntelHtml(preview) {
 
 const CONFIRMED_EVENT_CHOICES = new Set(["quiz-upgrade", "club-pet", "locker-open", "locker-remove"]);
 
-const EVENT_CONFIRM_OUTCOMES = {
-  "quiz-upgrade": "支付生命后，再选择一张卡牌升级。",
-  "club-pet": `立即获得 2 点${currentPetDefinition().shortName}羁绊；若到达里程碑，将继续选择宠物路线。`,
-  "locker-open": "支付生命后，获得一件未拥有的普通物品；书包已满时可选择替换。",
-  "locker-remove": "支付校园币后，再选择一张卡牌移除。"
-};
+function eventConfirmOutcome(choice) {
+  if (choice === "club-pet") {
+    return `立即获得 2 点${currentPetDefinition().shortName}羁绊；若到达里程碑，将继续选择宠物路线。`;
+  }
+  return {
+    "quiz-upgrade": "支付生命后，再选择一张卡牌升级。",
+    "locker-open": "支付生命后，获得一件未拥有的普通物品；书包已满时可选择替换。",
+    "locker-remove": "支付校园币后，再选择一张卡牌移除。"
+  }[choice] || "确认后继续结算本次事件。";
+}
 
 function renderEvent() {
   const event = EVENT_DEFS[context.eventId];
@@ -2917,22 +3365,32 @@ function renderEvent() {
     mark: "?",
     eyebrow: event.safe ? "校园日常" : "风险事件"
   };
-  const body = `
-    ${sceneBannerHtml(event, sceneOptions)}
-    ${campusRumorIntelHtml(rumorPreview)}
-    <div class="event-options">
-      ${eventChoices(event.id).map(([name, detail, id]) => {
-        const status = game.eventChoiceStatus(id);
-        const currentDetail = id === "rumor-heal" && status.actualHeal !== null
-          ? `恢复 ${status.actualHeal} 生命`
-          : id === "rumor-fight" && rumorPreview
-            ? `迎战 ${ENEMY_DEFS[rumorPreview.enemyId].name}（${rumorHpBonusText}）；${rumorRewardText}`
-          : detail;
-        const statusDetail = status.available ? currentDetail : `${currentDetail} · ${status.reason}`;
-        return `<button data-action="event-choice" data-choice="${id}" ${status.available ? "" : "disabled"}><strong>${name}</strong><span>${statusDetail}</span></button>`;
-      }).join("")}
+  const eventScene = { ...event, scene: event.scene || "assets/scenes/campus-corridor-v1.webp" };
+  const decisionHtml = `<div class="event-choice-panel">
+      ${campusRumorIntelHtml(rumorPreview)}
+      <div class="event-options">
+        ${eventChoices(event.id).map(([name, detail, id]) => {
+          const status = game.eventChoiceStatus(id);
+          const currentDetail = id === "rumor-heal" && status.actualHeal !== null
+            ? `恢复 ${status.actualHeal} 生命`
+            : id === "rumor-fight" && rumorPreview
+              ? `迎战 ${ENEMY_DEFS[rumorPreview.enemyId].name}（${rumorHpBonusText}）；${rumorRewardText}`
+            : detail;
+          const statusDetail = status.available ? currentDetail : `${currentDetail} · ${status.reason}`;
+          return `<button data-action="event-choice" data-choice="${id}" ${status.available ? "" : "disabled"}><strong>${name}</strong><span>${statusDetail}</span></button>`;
+        }).join("")}
+      </div>
     </div>`;
-  return page(event.name, `？第 ${game.week} 周事件`, body, { description: "事件会说明代价，但结果不一定完全可控。" });
+  const body = encounterStageHtml({
+    id: "event-stage",
+    sceneHtml: sceneBannerHtml(eventScene, sceneOptions),
+    decisionHtml,
+    decisionLabel: "选择"
+  });
+  return page(event.name, `？第 ${game.week} 周事件`, body, {
+    className: "event-page",
+    description: "事件会说明代价，但结果不一定完全可控。"
+  });
 }
 
 function renderEventConfirm() {
@@ -2941,7 +3399,9 @@ function renderEventConfirm() {
   const choice = eventChoices(context.eventId)?.find(([, , id]) => id === context.choice);
   if (!event || !choice || !preview.available) {
     const reason = preview.reason || "这个选择已经不可用";
-    return page("当前无法选择", "事件确认", `<div class="warning-box">${reason}</div><button class="primary centered" data-action="cancel-event-choice">返回事件</button>`);
+    return page("当前无法选择", "事件确认", `<div class="warning-box">${reason}</div><button class="primary centered" data-action="cancel-event-choice">返回事件</button>`, {
+      className: "event-confirm-page"
+    });
   }
   const fields = [
     ["hp", "生命", (value) => `${value}/${game.maxHp}`],
@@ -2955,9 +3415,12 @@ function renderEventConfirm() {
     <div class="tarot-preview-grid">
       ${fields.map(([key, label, format]) => `<article><small>${label}</small><span>${format(preview.before[key])}</span><b>→</b><strong>${format(preview.after[key])}</strong></article>`).join("")}
     </div>
-    <div class="warning-box"><b>确认后立即支付代价。</b>${EVENT_CONFIRM_OUTCOMES[context.choice]}</div>
+    <div class="warning-box"><b>确认后立即支付代价。</b>${escapeHtml(eventConfirmOutcome(context.choice))}</div>
     <div class="confirm-actions"><button class="quiet-button" data-action="cancel-event-choice">取消，不消耗任何资源</button><button class="primary" data-action="confirm-event-choice">确认：${choice[0]}</button></div>`;
-  return page("确认事件选择", `第 ${game.week} 周 · ${event.name}`, body, { description: "先核对真实前后变化，再决定是否支付代价。" });
+  return page("确认事件选择", `第 ${game.week} 周 · ${event.name}`, body, {
+    className: "event-confirm-page",
+    description: "先核对真实前后变化，再决定是否支付代价。"
+  });
 }
 
 function renderSemesterComplete() {
@@ -2976,7 +3439,7 @@ function renderSemesterComplete() {
     </div>
     <div class="semester-actions">
       <button class="primary big" data-action="next-semester">插班进入第 ${game.semester + 1} 学期</button>
-      <p>代价与补偿：敌人生命 +15%、攻击 +1；你最大生命 +2、书包容量 +1并回满生命。卡组和羁绊全部保留，主力进度清零。</p>
+      <p>代价与补偿：敌人生命 +15%、攻击 +1；你最大生命 +2、书包容量 +1并回满生命。卡组、升级与羁绊全部保留。</p>
       <button class="quiet-button" data-action="return-title">保存并返回标题</button>
     </div>`;
   return page("这学期，过了。", "期末总结", body, {
@@ -2993,6 +3456,138 @@ function closeSemesterCalendar() {
   semesterCalendarOpen = false;
   render();
   app.querySelector('[data-action="open-calendar"]')?.focus();
+}
+
+function focusMobileTopbarToggle() {
+  const mobileTopbarToggle = app.querySelector('[data-action="toggle-mobile-topbar"]');
+  if (mobileTopbarToggle instanceof HTMLElement && mobileTopbarToggle.offsetParent !== null) {
+    mobileTopbarToggle.focus();
+  } else {
+    app.querySelector(".brand")?.focus();
+  }
+}
+
+function currentSaveBackup() {
+  return createSaveBackup({
+    save: hasActiveRun && game.combat?.status !== "lost" ? game.toJSON() : readSave(),
+    career,
+    exportedAt: new Date().toISOString()
+  });
+}
+
+function currentFeedbackReport(description = "", issueScreen = screen, createdAt = new Date().toISOString()) {
+  return createFeedbackReport({
+    appVersion: APP_VERSION,
+    screen: issueScreen,
+    description,
+    save: hasActiveRun && game.combat?.status !== "lost" ? game.toJSON() : readSave(),
+    career,
+    errors: recentClientErrors,
+    environment: {
+      page: `${window.location.pathname}${window.location.search}`,
+      viewport: `${window.innerWidth}x${window.innerHeight}`,
+      language: navigator.language || null,
+      reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    },
+    createdAt
+  });
+}
+
+function restoreStorageValue(key, value) {
+  if (value === null) localStorage.removeItem(key);
+  else localStorage.setItem(key, value);
+}
+
+function restoreSaveBackup(text) {
+  const payload = parseSaveBackup(text);
+  const restoredGame = payload.save === null ? null : SemesterGame.fromJSON(payload.save);
+  const restoredCareer = normalizeCareerProfile(payload.career);
+  const nextSave = restoredGame ? JSON.stringify(restoredGame.toJSON()) : null;
+  const nextCareer = JSON.stringify(restoredCareer);
+  const previousSave = localStorage.getItem(SAVE_KEY);
+  const previousCareer = localStorage.getItem(CAREER_KEY);
+
+  try {
+    restoreStorageValue(SAVE_KEY, nextSave);
+    restoreStorageValue(CAREER_KEY, nextCareer);
+  } catch (error) {
+    try {
+      restoreStorageValue(SAVE_KEY, previousSave);
+      restoreStorageValue(CAREER_KEY, previousCareer);
+    } catch {
+      // 浏览器连回滚都拒绝时仍保留内存中的原状态，不继续切换页面。
+    }
+    throw error;
+  }
+
+  career = restoredCareer;
+  game = restoredGame || new SemesterGame();
+  hasActiveRun = Boolean(restoredGame);
+  storageFailures.run = null;
+  storageFailures.career = null;
+  selectedArchetype = restoredGame?.archetypeId || "cancer";
+  selectedPetId = restoredGame?.activePetId || career.unlockedPetIds?.[0] || "offlineDuck";
+  selectedPersonaId = restoredGame?.personaId || "student";
+  return { hasRun: Boolean(restoredGame), exportedAt: payload.exportedAt };
+}
+
+async function copySaveBackup() {
+  const output = app.querySelector("#save-backup-output");
+  if (!(output instanceof HTMLTextAreaElement)) return false;
+  output.focus();
+  output.select();
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(output.value);
+    else if (!document.execCommand("copy")) throw new Error("copy unavailable");
+    setToast("试玩存档码已复制；可保存到自己的记事本");
+  } catch {
+    setToast("自动复制失败，存档码已全选，请手动复制");
+  }
+  render();
+  return true;
+}
+
+async function copyCorruptSave() {
+  const output = app.querySelector("#corrupt-save-output");
+  if (!(output instanceof HTMLTextAreaElement)) return false;
+  output.focus();
+  output.select();
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(output.value);
+    else if (!document.execCommand("copy")) throw new Error("copy unavailable");
+    setToast("异常存档原始内容已复制；原数据仍保留在浏览器中");
+  } catch {
+    setToast("自动复制失败，原始内容已全选，请手动复制");
+  }
+  render();
+  return true;
+}
+
+async function copyFeedbackReport() {
+  const description = app.querySelector("#feedback-description");
+  const output = app.querySelector("#feedback-report-output");
+  if (!(description instanceof HTMLTextAreaElement) || !(output instanceof HTMLTextAreaElement)) return false;
+  context.feedbackDescription = description.value;
+  context.reportText = currentFeedbackReport(description.value, context.issueScreen, context.createdAt);
+  output.value = context.reportText;
+  output.focus();
+  output.select();
+  try {
+    if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(output.value);
+    else if (!document.execCommand("copy")) throw new Error("copy unavailable");
+    setToast("试玩反馈包已复制，可以直接发给开发者");
+  } catch {
+    setToast("自动复制失败，反馈包已全选，请手动复制");
+  }
+  render();
+  return true;
+}
+
+function closeMobileTopbar() {
+  if (!mobileTopbarOpen) return;
+  mobileTopbarOpen = false;
+  render();
+  focusMobileTopbarToggle();
 }
 
 function focusActiveDialog() {
@@ -3014,6 +3609,45 @@ function trapDialogFocus(event, dialog) {
   focusable[nextIndex].focus();
 }
 
+function setEncounterStageView(view, { scroll = true, focus = false, behavior = "smooth" } = {}) {
+  const nextView = view === "decision" ? "decision" : "scene";
+  const stage = app.querySelector("[data-encounter-stage]");
+  const track = stage?.querySelector("[data-encounter-stage-track]");
+  if (!(stage instanceof HTMLElement) || !(track instanceof HTMLElement)) return;
+
+  encounterStageView = nextView;
+  const mobileStage = window.matchMedia("(max-width: 700px)").matches;
+  stage.querySelectorAll('[role="tab"][data-stage-view]').forEach((tab) => {
+    const selected = tab.dataset.stageView === nextView;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    if (focus && selected && tab instanceof HTMLElement) tab.focus({ preventScroll: true });
+  });
+  stage.querySelectorAll("[data-stage-panel]").forEach((panel) => {
+    const selected = panel.dataset.stagePanel === nextView;
+    const hasFocusableDescendant = Boolean(panel.querySelector(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+    ));
+    panel.inert = mobileStage && !selected;
+    panel.tabIndex = mobileStage && selected && !hasFocusableDescendant ? 0 : -1;
+  });
+  if (scroll && mobileStage) {
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    track.scrollTo({
+      left: nextView === "decision" ? track.clientWidth : 0,
+      behavior: reducedMotion ? "auto" : behavior
+    });
+  }
+}
+
+function scheduleEncounterStagePosition() {
+  window.cancelAnimationFrame(encounterStageFrame);
+  encounterStageFrame = window.requestAnimationFrame(() => {
+    encounterStageFrame = null;
+    setEncounterStageView(encounterStageView, { behavior: "auto" });
+  });
+}
+
 function render() {
   const renderers = {
     intro: renderIntro,
@@ -3024,11 +3658,13 @@ function render() {
     challengeReward: renderChallengeReward,
     cardReward: renderCardReward,
     itemReward: renderItemReward,
+    bossEggReward: renderBossEggReward,
     replaceItem: renderReplaceItem,
     selection: renderSelection,
     enchantment: renderEnchantment,
     petMilestone: renderPetMilestone,
     deck: renderDeck,
+    items: renderItems,
     library: renderLibrary,
     itemLibrary: renderItemLibrary,
     rest: renderRest,
@@ -3039,10 +3675,15 @@ function render() {
     semesterComplete: renderSemesterComplete,
     rules: renderRules,
     stats: renderStats,
-    archive: renderArchive
+    archive: renderArchive,
+    saveExport: renderSaveExport,
+    saveImport: renderSaveImport,
+    corruptSave: renderCorruptSave,
+    feedbackReport: renderFeedbackReport
   };
   clearBattleMotionArtifacts();
   app.innerHTML = (renderers[screen] || renderIntro)();
+  scheduleEncounterStagePosition();
   focusActiveDialog();
   if (screen === "replaceItem") {
     const heading = app.querySelector(".replace-item-page h1");
@@ -3054,16 +3695,23 @@ function render() {
   scheduleBattleMotion();
 }
 
-function startNewGame(archetypeId = selectedArchetype, petId = selectedPetId) {
+function startNewGame(archetypeId = selectedArchetype, petId = selectedPetId, personaId = selectedPersonaId) {
   const availablePets = unlockedPetIds();
   const startingPetId = availablePets.includes(petId) ? petId : "offlineDuck";
-  game = new SemesterGame(Date.now(), archetypeId, startingPetId, availablePets);
+  const startingPersonaId = canSelectPersona(career, personaId) ? personaId : "student";
+  game = new SemesterGame(Date.now(), archetypeId, startingPetId, availablePets, startingPersonaId);
+  hasActiveRun = true;
   selectedArchetype = archetypeId;
   selectedPetId = game.activePetId;
+  selectedPersonaId = game.personaId;
   changeScreen("tarotChoice");
 }
 
-function changeScreen(next, nextContext = {}) {
+function changeScreen(next, nextContext = {}, options = {}) {
+  if (options.encounterView === "decision") encounterStageView = "decision";
+  else if (next !== screen) encounterStageView = "scene";
+  mobileTopbarOpen = false;
+  if (next !== "shop") shopDetailState = null;
   screen = next;
   context = nextContext;
   if (next !== "map") semesterCalendarOpen = false;
@@ -3074,6 +3722,10 @@ function changeScreen(next, nextContext = {}) {
       || game.pendingRest || game.pendingItemReplacement || game.pet.pendingMilestone)) saveGame();
   window.scrollTo({ top: 0, behavior: "smooth" });
   render();
+}
+
+function returnToEncounterDecision(next, nextContext = {}) {
+  changeScreen(next, nextContext, { encounterView: "decision" });
 }
 
 function advanceWeek() {
@@ -3290,7 +3942,7 @@ function resumeItemRewardSource(source) {
   if (source === "semester") resumeSemesterRewards();
   else if (source === "event") resumePendingEventReward();
   else if (source === "combat") resumePendingCombatReward();
-  else if (source === "shop" && game.pendingShop) changeScreen("shop");
+  else if (source === "shop" && game.pendingShop) returnToEncounterDecision("shop");
   else {
     changeScreen("map");
     setToast("物品奖励来源已经失效");
@@ -3311,7 +3963,7 @@ function completeItemRewardSource(source) {
       advanceWeek();
     }
   } else if (source === "shop" && game.pendingShop) {
-    changeScreen("shop");
+    returnToEncounterDecision("shop");
   }
 }
 
@@ -3332,12 +3984,11 @@ function showCardSelection(options) {
 function showEnchantmentReward(onDone = advanceWeek) {
   const pending = game.pendingCombatReward;
   if (pending?.type !== "eliteChain" || pending.stage !== "enchant" || typeof onDone !== "function") return false;
-  const usedUids = Array.isArray(pending.usedCardUids) ? pending.usedCardUids : [];
-  const cards = game.enchantableCards(usedUids);
+  const cards = game.eligiblePendingEliteEnchantCards();
   if (!cards.length) {
     const result = game.resolvePendingEnchantment(null);
     if (!result) return false;
-    setToast("本场没有实际使用过且符合条件的卡牌，已跳过刻印");
+    setToast("当前卡组没有符合条件的卡牌，已跳过刻印");
     onDone(result);
     return true;
   }
@@ -3369,6 +4020,7 @@ function resolveChallengeReward(id) {
 function resolveCombatResult() {
   if (game.combat.status === "lost") {
     clearSave();
+    hasActiveRun = false;
     game = new SemesterGame(Date.now(), selectedArchetype, selectedPetId, unlockedPetIds());
     changeScreen("intro");
     return;
@@ -3513,12 +4165,13 @@ function resumeChallengeCombatReward() {
   }
   if (pending.stage === "card") {
     const reward = CHALLENGE_REWARD_DEFS.cards;
+    const exclusivePoolName = game.personaId === "student" ? "本星座" : game.persona.name;
     showCardReward({
       choices: pending.choices,
       rewardSource: "challenge",
       title: reward.name,
-      eyebrow: "挑战奖励 · 本星座专属池",
-      message: `${reward.gold} 校园币已到账。从三张本星座专属牌中选一张，也可以跳过。`,
+      eyebrow: `挑战奖励 · ${exclusivePoolName}专属池`,
+      message: `${reward.gold} 校园币已到账。从三张${exclusivePoolName}专属牌中选一张，也可以跳过。`,
       allowReroll: false,
       onDone() {
         advanceWeek();
@@ -3678,6 +4331,10 @@ function resumeSemesterRewards() {
     showPetMilestone(resumeSemesterRewards);
     return;
   }
+  if (pending.stage === "bossEgg") {
+    changeScreen("bossEggReward");
+    return;
+  }
   if (pending.stage === "bossItem") {
     const choices = pending.itemChoices.filter((id) => !game.hasItem(id));
     if (choices.length) {
@@ -3697,17 +4354,10 @@ function resumeSemesterRewards() {
 }
 
 function showSemesterSummary() {
-  const eligible = game.eligibleSummaryCards();
-  if (!eligible.length) {
-    const closest = game.deck
-      .map(summaryProgressCard)
-      .filter(Boolean)
-      .sort((left, right) => right.current - left.current || left.name.localeCompare(right.name, "zh-CN"))[0];
-    const progressHint = closest?.current > 0
-      ? `最接近的是${closest.name} ${closest.current}/${closest.target}，还差 ${closest.remaining} 场。`
-      : "本学期还没有卡牌获得主力进度。";
-    setToast(`没有卡牌达到主力升级条件，已跳过。${progressHint}`);
-    if (game.completeCurrentSemester()) changeScreen("semesterComplete");
+  const candidates = game.semesterUpgradeCandidates();
+  if (!candidates.length) {
+    setToast("所有可升级牌都已经升级，本次升级奖励已自动结算");
+    if (completeSemesterAndRecord()) changeScreen("semesterComplete");
     else {
       setToast("期末总结状态已经失效，请重新进入结算");
       resumeSemesterRewards();
@@ -3715,18 +4365,30 @@ function showSemesterSummary() {
     return;
   }
   showCardSelection({
-    title: "期末总结：升级一张主力牌",
-    eyebrow: "本学期胜利使用记录 3/3",
-    description: "只有真正进入过本学期战斗节奏的卡，才能沉淀为长期能力。",
-    cards: eligible,
+    title: "期末战利品：升级一张牌",
+    eyebrow: "从当前卡组中亲自选择",
+    description: "任选一张未升级的非状态牌。升级完成后，牌名会直接显示 +。",
+    cards: candidates,
     onSelect(card) {
-      if (game.completeCurrentSemester(card.uid)) changeScreen("semesterComplete");
+      if (completeSemesterAndRecord(card.uid)) changeScreen("semesterComplete");
       else {
-        setToast("这张牌不在本次主力升级候选中");
+        setToast("这张牌不在本次升级候选中");
         render();
       }
     }
   });
+}
+
+function completeSemesterAndRecord(uid = undefined) {
+  const completedSemester = game.semester;
+  const summonerWasUnlocked = canSelectPersona(career, "summoner");
+  if (!game.completeCurrentSemester(uid)) return false;
+  recordSemesterCompletion(career, completedSemester);
+  saveCareer();
+  if (!summonerWasUnlocked && canSelectPersona(career, "summoner")) {
+    setToast("第二人格「社团召集者」已解锁：下局可选择召唤流");
+  }
+  return true;
 }
 
 function finishEvent(message = "事件结束") {
@@ -3748,7 +4410,8 @@ function beginEventReward(pending) {
 }
 
 function pickFilteredCards(type) {
-  const mixedPool = [...PUBLIC_REWARD_CARD_IDS, ...ARCHETYPE_CARD_IDS[game.archetypeId]];
+  const personaPool = game.personaId === "student" ? [] : (PERSONA_CARD_IDS[game.personaId] || []);
+  const mixedPool = [...PUBLIC_REWARD_CARD_IDS, ...ARCHETYPE_CARD_IDS[game.archetypeId], ...personaPool];
   const ids = mixedPool.filter((id) => type === "attack" ? CARD_DEFS[id].type === "attack" : CARD_DEFS[id].type !== "attack");
   return game.rng.shuffle(ids).slice(0, 3);
 }
@@ -3817,15 +4480,46 @@ function resolveEventChoice(choice) {
   }
 }
 
+app.addEventListener("input", (event) => {
+  const input = event.target;
+  if (screen !== "feedbackReport" || !(input instanceof HTMLTextAreaElement)
+    || input.id !== "feedback-description") return;
+  context.feedbackDescription = input.value;
+  context.reportText = currentFeedbackReport(input.value, context.issueScreen, context.createdAt);
+  const output = app.querySelector("#feedback-report-output");
+  if (output instanceof HTMLTextAreaElement) output.value = context.reportText;
+});
+
 app.addEventListener("click", (event) => {
   const button = event.target.closest("[data-action]");
   if (!button || button.disabled || event.detail > 1) return;
   const action = button.dataset.action;
 
-  if (action === "new-game") {
-    const saved = readSave();
+  if (action === "toggle-mobile-topbar") {
+    if (screen === "combat" || (!mobileTopbarOpen && activeDialog())) return;
+    mobileTopbarOpen = !mobileTopbarOpen;
+    render();
+    if (!mobileTopbarOpen) focusMobileTopbarToggle();
+  } else if (action === "close-mobile-topbar") {
+    if (button.dataset.dismiss === "backdrop" && event.target !== button) return;
+    closeMobileTopbar();
+  } else if (action === "open-shop-detail") {
+    const offer = button.closest("[data-shop-detail-kind]");
+    openShopDetail(offer, button);
+  } else if (action === "close-shop-detail") {
+    if (button.dataset.dismiss === "backdrop" && event.target !== button) return;
+    closeShopDetail();
+  } else if (action === "switch-encounter-stage") {
+    setEncounterStageView(button.dataset.stageView, { focus: true });
+  } else if (action === "new-game") {
+    const storedSave = readSaveState();
+    if (![STORAGE_RECORD_STATUS.empty, STORAGE_RECORD_STATUS.valid].includes(storedSave.status)) {
+      changeScreen("corruptSave", { returnState: { screen: "intro", context: {} }, storedSave });
+      return;
+    }
+    const saved = storedSave.status === STORAGE_RECORD_STATUS.valid ? storedSave.value : null;
     if (newGameStartDecision(saved) === NEW_GAME_START.confirm) {
-      changeScreen("newGameConfirm", { saved, archetypeId: selectedArchetype, petId: selectedPetId });
+      changeScreen("newGameConfirm", { saved, archetypeId: selectedArchetype, petId: selectedPetId, personaId: selectedPersonaId });
     } else {
       startNewGame();
     }
@@ -3833,7 +4527,7 @@ app.addEventListener("click", (event) => {
     changeScreen("intro");
   } else if (action === "confirm-new-game") {
     if (newGameStartDecision(context.saved, true) === NEW_GAME_START.start) {
-      startNewGame(context.archetypeId, context.petId);
+      startNewGame(context.archetypeId, context.petId, context.personaId);
     }
   } else if (action === "select-archetype") {
     selectedArchetype = button.dataset.id;
@@ -3843,11 +4537,18 @@ app.addEventListener("click", (event) => {
       selectedPetId = button.dataset.id;
       render();
     }
+  } else if (action === "select-persona") {
+    if (canSelectPersona(career, button.dataset.id)) {
+      selectedPersonaId = button.dataset.id;
+      render();
+    }
   } else if (action === "continue-game") {
     try {
       game = SemesterGame.fromJSON(readSave());
+      hasActiveRun = true;
       selectedArchetype = game.archetypeId;
       selectedPetId = game.activePetId;
+      selectedPersonaId = game.personaId;
       if (game.loadRepairs.length) {
         const visibleRepairs = game.loadRepairs.slice(0, 3).join("；");
         const remaining = game.loadRepairs.length - 3;
@@ -3864,15 +4565,34 @@ app.addEventListener("click", (event) => {
       else if (game.pet.pendingMilestone) showPetMilestone(advanceWeek);
       else if (game.pendingShop) changeScreen("shop");
       else changeScreen(game.tarot ? "map" : "tarotChoice");
-    } catch {
-      clearSave();
-      setToast("存档无法读取，已清理旧存档");
-      render();
+    } catch (error) {
+      hasActiveRun = false;
+      rememberClientError("storage.run.load", error);
+      setToast("存档无法读取，原始数据仍然保留");
+      changeScreen("corruptSave", {
+        returnState: { screen: "intro", context: {} },
+        storedSave: readSaveState()
+      });
     }
   } else if (action === "return-title") {
     changeScreen("intro");
+  } else if (action === "resume-semester-reward") {
+    resumeSemesterRewards();
+  } else if (action === "claim-boss-egg") {
+    const result = game.resolvePendingSemesterEgg();
+    if (!result) {
+      setToast("这枚 Boss 蛋已经领取或奖励状态已变化");
+      resumeSemesterRewards();
+    } else {
+      saveGame();
+      setToast(result.queued ? `奶龙蛋已排在第 ${result.position} 位` : "奶龙蛋已放入休息区孵化位");
+      resumeSemesterRewards();
+    }
   } else if (action === "map") {
-    if (screen !== "map") setToast("请先完成当前节点");
+    if (screen !== "map") {
+      setToast("请先完成当前节点");
+      render();
+    }
   } else if (action === "open-calendar" && screen === "map") {
     semesterCalendarOpen = true;
     render();
@@ -3894,7 +4614,6 @@ app.addEventListener("click", (event) => {
     const counterplayBefore = game.getIntent().mechanicState;
     const wasDistracted = game.combat.distracted === true;
     const statusCardsBefore = game.combat.hand.filter((held) => CARD_DEFS[held.id]?.type === "status").length;
-    const motionOrigin = captureBattleMotionOrigin(button, "card");
     const before = battleStateSnapshot();
     const result = game.playCard(button.dataset.uid);
     if (!result.ok) setToast(result.reason);
@@ -3912,11 +4631,27 @@ app.addEventListener("click", (event) => {
           ...(distractedCleared ? ["移除走神"] : []),
           ...counterplayFeedbackParts(counterplayBefore, counterplayAfter)
         ],
-        drawResult: result.drawResult,
-        motionOrigin
+        drawResult: result.drawResult
       });
     }
-    recordCurrentCombat();
+    const combatFinished = recordCurrentCombat();
+    if (combatFinished) {
+      resolveCombatResult();
+      return;
+    }
+    render();
+  } else if (action === "use-supply") {
+    const supply = SUPPLY_DEFS[button.dataset.id];
+    const before = battleStateSnapshot();
+    const result = game.useSupply(button.dataset.id);
+    if (!result.ok) setToast(result.reason);
+    else {
+      const parts = [
+        supply.effect.energy ? `能量 +${supply.effect.energy}` : ""
+      ].filter(Boolean);
+      queueBattleFeedback("status", supply.name, before, { effectParts: parts, drawResult: result.drawResult });
+      saveGame();
+    }
     render();
   } else if (action === "discard-card") {
     const result = game.discardCard(button.dataset.uid);
@@ -3949,7 +4684,11 @@ app.addEventListener("click", (event) => {
         motionOrigin
       });
     }
-    recordCurrentCombat();
+    const combatFinished = recordCurrentCombat();
+    if (combatFinished) {
+      resolveCombatResult();
+      return;
+    }
     render();
   } else if (action === "open-pile") {
     if (["drawPile", "discardPile", "exhaustPile"].includes(button.dataset.zone)) {
@@ -3959,8 +4698,6 @@ app.addEventListener("click", (event) => {
   } else if (action === "close-pile") {
     pileView = null;
     render();
-  } else if (action === "combat-result") {
-    resolveCombatResult();
   } else if (action === "choose-challenge-reward") {
     resolveChallengeReward(button.dataset.id);
   } else if (action === "take-reward-card") {
@@ -3972,17 +4709,18 @@ app.addEventListener("click", (event) => {
     const canReroll = screen === "cardReward"
       && context.settling !== true
       && ["normal", "elite"].includes(context.rewardSource)
-      && !game.flags.eraserUsed
-      && game.hasItem("eraser")
       && context.allowReroll !== false
       && Array.isArray(pending?.choices)
       && pending.choices.length === context.choices?.length
       && pending.choices.every((choice, index) => context.choices[index] === choice);
     if (!canReroll) return;
-    const rerolled = game.rewardCards(3);
-    if (!game.replacePendingCombatRewardChoices(rerolled)) return;
-    game.flags.eraserUsed = true;
-    context.choices = [...game.pendingCombatReward.choices];
+    const rerolled = game.rerollPendingCombatReward();
+    if (!rerolled.ok) {
+      setToast(rerolled.reason);
+      render();
+      return;
+    }
+    context.choices = [...rerolled.choices];
     context.rewardToken = cardRewardToken(context.rewardSource, context.choices);
     saveGame();
     render();
@@ -4035,8 +4773,14 @@ app.addEventListener("click", (event) => {
     render();
   } else if (action === "open-deck") {
     const returnState = { screen, context };
-    changeScreen("deck", { returnState });
+    changeScreen("deck", { returnState, handOnly: screen === "combat" && Boolean(game.combat) });
   } else if (action === "close-deck") {
+    const target = context.returnState || { screen: "map", context: {} };
+    changeScreen(target.screen, target.context);
+  } else if (action === "open-items") {
+    const returnState = { screen, context };
+    changeScreen("items", { returnState });
+  } else if (action === "close-items") {
     const target = context.returnState || { screen: "map", context: {} };
     changeScreen(target.screen, target.context);
   } else if (action === "open-rules") {
@@ -4055,6 +4799,75 @@ app.addEventListener("click", (event) => {
     const returnState = { screen, context };
     const focusEnemy = game.combat?.enemy?.id || null;
     changeScreen("archive", { returnState, focusEnemy });
+  } else if (action === "open-emergency-save") {
+    changeScreen("saveExport", {
+      returnState: { screen, context },
+      backupText: currentSaveBackup()
+    });
+  } else if (action === "open-corrupt-save") {
+    changeScreen("corruptSave", {
+      returnState: { screen: "intro", context: {} },
+      storedSave: readSaveState()
+    });
+  } else if (action === "open-save-export") {
+    changeScreen("saveExport", {
+      returnState: { screen: "archive", context },
+      backupText: currentSaveBackup()
+    });
+  } else if (action === "open-save-import") {
+    changeScreen("saveImport", { returnState: { screen: "archive", context } });
+  } else if (action === "open-feedback-report") {
+    const issueScreen = context.returnState?.screen || "archive";
+    const createdAt = new Date().toISOString();
+    changeScreen("feedbackReport", {
+      returnState: { screen: "archive", context },
+      issueScreen,
+      createdAt,
+      feedbackDescription: "",
+      reportText: currentFeedbackReport("", issueScreen, createdAt)
+    });
+  } else if (action === "close-save-transfer") {
+    const target = context.returnState || { screen: "archive", context: {} };
+    changeScreen(target.screen, target.context);
+  } else if (action === "copy-save-backup") {
+    void copySaveBackup();
+  } else if (action === "copy-corrupt-save") {
+    void copyCorruptSave();
+  } else if (action === "copy-feedback-report") {
+    void copyFeedbackReport();
+  } else if (action === "discard-corrupt-save") {
+    if (clearSave()) {
+      hasActiveRun = false;
+      changeScreen("intro");
+      setToast("异常存档已按你的确认清除，现在可以开始新游戏");
+      render();
+    } else {
+      setToast("浏览器拒绝清除存档；原始数据仍然保留");
+      render();
+    }
+  } else if (action === "retry-corrupt-save") {
+    const storedSave = readSaveState();
+    if ([STORAGE_RECORD_STATUS.empty, STORAGE_RECORD_STATUS.valid].includes(storedSave.status)) {
+      changeScreen("intro");
+      setToast(storedSave.status === STORAGE_RECORD_STATUS.valid ? "存档已恢复可读取" : "当前没有异常存档");
+      render();
+    } else {
+      context.storedSave = storedSave;
+      setToast("仍然无法安全读取；原始数据没有被修改");
+      render();
+    }
+  } else if (action === "import-save-backup") {
+    const input = app.querySelector("#save-backup-input");
+    if (!(input instanceof HTMLTextAreaElement)) return;
+    try {
+      const result = restoreSaveBackup(input.value);
+      setToast(result.hasRun ? "存档已导入，可以继续当前对局" : "生涯档案已导入；备份中没有进行中的对局");
+      changeScreen("intro");
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : "存档导入失败，现有数据未改变");
+      render();
+      app.querySelector("#save-backup-input")?.focus();
+    }
   } else if (action === "close-archive") {
     const target = context.returnState || { screen: "intro", context: {} };
     changeScreen(target.screen, target.context);
@@ -4117,6 +4930,16 @@ app.addEventListener("click", (event) => {
     if (game.resolveRestPet()) resumePendingRest();
   } else if (action === "rest-upgrade") {
     if (game.prepareRestUpgrade()) resumePendingRest();
+  } else if (action === "rest-hatch") {
+    const result = game.resolveRestHatch();
+    if (!result) {
+      setToast("当前没有可孵化的宠物蛋，或本次休息已选择其它行动");
+      render();
+    } else {
+      if (result.type === "hatched") unlockHatchedPet(result.petId);
+      saveGame();
+      resumePendingRest();
+    }
   } else if (action === "rest-tarot") {
     changeScreen("tarotRestConfirm");
   } else if (action === "cancel-tarot-rest") {
@@ -4128,7 +4951,7 @@ app.addEventListener("click", (event) => {
     if (CONFIRMED_EVENT_CHOICES.has(choice)) changeScreen("eventConfirm", { eventId: context.eventId, choice });
     else resolveEventChoice(choice);
   } else if (action === "cancel-event-choice") {
-    changeScreen("event", { eventId: context.eventId });
+    returnToEncounterDecision("event", { eventId: context.eventId });
   } else if (action === "confirm-event-choice") {
     resolveEventChoice(context.choice);
   } else if (action === "buy-card") {
@@ -4144,6 +4967,16 @@ app.addEventListener("click", (event) => {
       saveGame();
       render();
     }
+  } else if (action === "buy-supply") {
+    const result = game.buyShopSupply(button.dataset.id);
+    if (result) {
+      saveGame();
+      setToast(`已购买${SUPPLY_DEFS[result.id].name}`);
+      render();
+    } else {
+      setToast("用品栏已满或校园币不足");
+      render();
+    }
   } else if (action === "shop-remove") {
     const removePrice = game.shopRemovePrice();
     showCardSelection({
@@ -4152,9 +4985,9 @@ app.addEventListener("click", (event) => {
       cards: game.deck,
       canCancel: true,
       onSelect(card) {
-        if (game.removeShopCard(card.uid)) changeScreen("shop");
+        if (game.removeShopCard(card.uid)) returnToEncounterDecision("shop");
       },
-      onCancel() { changeScreen("shop"); }
+      onCancel() { returnToEncounterDecision("shop"); }
     });
   } else if (action === "leave-shop") {
     game.completePendingShop();
@@ -4184,20 +5017,70 @@ app.addEventListener("pointerout", (event) => {
 
 app.addEventListener("focusin", (event) => restoreDismissedIntentDetails(event.target));
 
+app.addEventListener("scroll", (event) => {
+  const track = event.target;
+  if (!(track instanceof HTMLElement) || !track.matches("[data-encounter-stage-track]")) return;
+  window.cancelAnimationFrame(encounterStageFrame);
+  encounterStageFrame = window.requestAnimationFrame(() => {
+    encounterStageFrame = null;
+    const view = track.scrollLeft >= track.clientWidth / 2 ? "decision" : "scene";
+    setEncounterStageView(view, { scroll: false });
+  });
+}, true);
+
+window.addEventListener("resize", scheduleEncounterStagePosition);
+
 document.addEventListener("keydown", (event) => {
   const dialog = activeDialog();
+  const target = event.target;
+  const typing = target instanceof HTMLElement
+    && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
+  if (mobileTopbarOpen && event.key === "Escape") {
+    event.preventDefault();
+    mobileTopbarOpen = false;
+    render();
+    const mobileTopbarToggle = app.querySelector('[data-action="toggle-mobile-topbar"]');
+    if (mobileTopbarToggle instanceof HTMLElement && mobileTopbarToggle.offsetParent !== null) {
+      mobileTopbarToggle.focus();
+    } else {
+      app.querySelector(".brand")?.focus();
+    }
+    return;
+  }
   if (semesterCalendarOpen && dialog?.id === "semester-calendar-dialog" && event.key === "Escape") {
     event.preventDefault();
     closeSemesterCalendar();
+    return;
+  }
+  const shopDetailOffer = screen === "shop" ? shopDetailOfferFromTarget(target) : null;
+  const shopDetailCommand = shopDetailShortcutCommand({
+    currentScreen: screen,
+    code: event.code,
+    key: event.key,
+    repeat: event.repeat,
+    typing,
+    modified: event.altKey || event.ctrlKey || event.metaKey || event.shiftKey,
+    detailOpen: Boolean(shopDetailState && dialog?.classList.contains("shop-detail-dialog")),
+    dialogOpen: Boolean(dialog),
+    hasCandidate: Boolean(shopDetailOffer)
+  });
+  if (shopDetailCommand) {
+    event.preventDefault();
+    if (shopDetailCommand === "close") closeShopDetail();
+    else openShopDetail(shopDetailOffer, target);
     return;
   }
   if (dialog && event.key === "Tab") {
     trapDialogFocus(event, dialog);
     return;
   }
-  const target = event.target;
-  const typing = target instanceof HTMLElement
-    && (["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName) || target.isContentEditable);
+  const encounterTab = target instanceof Element ? target.closest('[role="tab"][data-stage-view]') : null;
+  if (encounterTab && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const nextView = ["ArrowRight", "End"].includes(event.key) ? "decision" : "scene";
+    setEncounterStageView(nextView, { focus: true });
+    return;
+  }
   if (typing || event.repeat || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
     || screen !== "combat" || game.combat?.status !== "active") return;
 

@@ -125,8 +125,64 @@ export const PET_TALENT_DEFS = {
       { draw: 1, nextDrawBonus: 1, text: "蜷睡扑击后抽 1 张牌，下回合多抽 1 张。" },
       { draw: 2, nextDrawBonus: 1, text: "蜷睡扑击后抽 2 张牌，下回合多抽 1 张。" }
     ]
+  },
+  milkRoar: {
+    id: "milkRoar",
+    icon: "笑",
+    name: "魔笑震场",
+    tagline: "笑声越熟练，冲击越扎实",
+    levels: [
+      { damageBonus: 1, text: "奶泡冲撞额外造成 1 点伤害。" },
+      { damageBonus: 2, text: "奶泡冲撞额外造成 2 点伤害。" },
+      { damageBonus: 4, text: "奶泡冲撞额外造成 4 点伤害。" }
+    ]
+  },
+  milkShield: {
+    id: "milkShield",
+    icon: "泡",
+    name: "奶泡护壳",
+    tagline: "把冲撞留下的泡沫变成防线",
+    levels: [
+      { block: 3, text: "奶泡冲撞后获得 3 点护甲。" },
+      { block: 5, text: "奶泡冲撞后获得 5 点护甲。" },
+      { block: 8, text: "奶泡冲撞后获得 8 点护甲。" }
+    ]
+  },
+  milkEcho: {
+    id: "milkEcho",
+    icon: "回",
+    name: "笑声回响",
+    tagline: "一声怪笑，整理一次节奏",
+    levels: [
+      { draw: 1, text: "奶泡冲撞后抽 1 张牌。" },
+      { draw: 1, nextDrawBonus: 1, text: "奶泡冲撞后抽 1 张牌，下回合多抽 1 张。" },
+      { draw: 2, nextDrawBonus: 1, text: "奶泡冲撞后抽 2 张牌，下回合多抽 1 张。" }
+    ]
   }
 };
+
+export const PERSONA_DEFS = Object.freeze({
+  student: Object.freeze({
+    id: "student",
+    icon: "本",
+    name: "本我学生",
+    label: "稳定构筑",
+    text: "沿用星座起始牌，在每次选择中逐步完成构筑。",
+    unlockSemester: 0,
+    specialCard: null,
+    starterCards: Object.freeze([])
+  }),
+  summoner: Object.freeze({
+    id: "summoner",
+    icon: "召",
+    name: "社团召集者",
+    label: "召唤流",
+    text: "召来最多 3 个纸灵，再把它们转化为攻击或护甲。完成第二学期后解锁。",
+    unlockSemester: 2,
+    specialCard: "summonPaperCrane",
+    starterCards: Object.freeze(["summonPaperCrane", "summonPaperCrane", "allPresent", "coverDuty"])
+  })
+});
 
 export const DEFAULT_PET_ID = "offlineDuck";
 
@@ -150,8 +206,7 @@ export const PET_DEFS = Object.freeze({
       id: "rebootPeck",
       name: "重启猛啄",
       baseDamage: 7,
-      energyCost: 1,
-      maxUsesPerCombat: 1
+      energyCost: 1
     })
   }),
   sleepyBugCub: Object.freeze({
@@ -174,8 +229,30 @@ export const PET_DEFS = Object.freeze({
       name: "蜷睡扑击",
       baseDamage: 5,
       baseBlock: 3,
-      energyCost: 1,
-      maxUsesPerCombat: 1
+      energyCost: 1
+    })
+  }),
+  milkDragonCub: Object.freeze({
+    id: "milkDragonCub",
+    name: "奶团龙幼崽",
+    shortName: "奶团",
+    icon: "龙",
+    assets: Object.freeze({
+      battle: "assets/characters/pet-milk-dragon-cub-battle-v1.webp",
+      icon: "assets/characters/pet-milk-dragon-cub-icon-v1.webp"
+    }),
+    visual: "milkDragonCub",
+    maxCharge: 3,
+    chargePerFirstAttack: 1,
+    victoryBond: 1,
+    bondMilestones: Object.freeze([3, 10, 25]),
+    talentIds: Object.freeze(["milkRoar", "milkShield", "milkEcho"]),
+    skill: Object.freeze({
+      id: "milkBubbleRush",
+      name: "奶泡冲撞",
+      baseDamage: 8,
+      baseBlock: 2,
+      energyCost: 1
     })
   })
 });
@@ -189,6 +266,16 @@ export const PET_EGG_DEFS = Object.freeze({
     requiredCombats: 3,
     assets: Object.freeze({
       egg: null
+    })
+  }),
+  milkDragonEgg: Object.freeze({
+    id: "milkDragonEgg",
+    name: "魔笑奶团龙蛋",
+    petId: "milkDragonCub",
+    sourceEnemyIds: Object.freeze(["madMilkDragon"]),
+    requiredCombats: 3,
+    assets: Object.freeze({
+      egg: "assets/characters/pet-milk-dragon-egg-v1.webp"
     })
   })
 });
@@ -278,6 +365,48 @@ export const CARD_DEFS = {
     upgradedText: "下一张攻击牌的攻击触发两次。回合结束失去2点生命。消耗。",
     effect: { doubleNextAttack: true, endTurnHpLoss: 4, exhaust: true },
     upgradedEffect: { doubleNextAttack: true, endTurnHpLoss: 2, exhaust: true }
+  },
+  elbowStrike: {
+    id: "elbowStrike", name: "肘击", type: "attack", rarity: "common", cost: 1,
+    text: "造成5点伤害。敌人的下一次攻击每段伤害-1。",
+    upgradedText: "造成7点伤害。敌人的下一次攻击每段伤害-2。",
+    effect: { damage: 5, enemyAttackDown: 1 },
+    upgradedEffect: { damage: 7, enemyAttackDown: 2 }
+  },
+  cantOutrunMe: {
+    id: "cantOutrunMe", name: "你跑不过我你信吗", type: "attack", rarity: "uncommon", cost: 1,
+    text: "造成4点伤害。令敌人露怯2：本回合后续攻击每段+2。",
+    upgradedText: "造成6点伤害。令敌人露怯3：本回合后续攻击每段+3。",
+    effect: { damage: 4, enemyExposed: 2 },
+    upgradedEffect: { damage: 6, enemyExposed: 3 }
+  },
+  summonPaperCrane: {
+    id: "summonPaperCrane", name: "纸鹤点名", type: "skill", rarity: "common", persona: "summoner", cost: 0,
+    text: "召唤1只纸灵，最多3只。消耗。",
+    upgradedText: "召唤2只纸灵，最多3只。消耗。",
+    effect: { summon: 1, exhaust: true },
+    upgradedEffect: { summon: 2, exhaust: true }
+  },
+  allPresent: {
+    id: "allPresent", name: "全员到齐", type: "attack", rarity: "uncommon", persona: "summoner", cost: 1,
+    text: "每只纸灵造成3点伤害。",
+    upgradedText: "每只纸灵造成4点伤害。",
+    effect: { damagePerSummon: 3 },
+    upgradedEffect: { damagePerSummon: 4 }
+  },
+  coverDuty: {
+    id: "coverDuty", name: "替我值日", type: "skill", rarity: "common", persona: "summoner", cost: 1,
+    text: "每只纸灵获得3点护甲。",
+    upgradedText: "每只纸灵获得4点护甲。",
+    effect: { blockPerSummon: 3 },
+    upgradedEffect: { blockPerSummon: 4 }
+  },
+  scatterAfterClass: {
+    id: "scatterAfterClass", name: "下课一哄而散", type: "attack", rarity: "uncommon", persona: "summoner", cost: 0,
+    text: "每只纸灵造成4点伤害，然后消耗全部纸灵。消耗。",
+    upgradedText: "每只纸灵造成5点伤害，然后消耗全部纸灵。消耗。",
+    effect: { damagePerSummon: 4, consumeSummons: true, exhaust: true },
+    upgradedEffect: { damagePerSummon: 5, consumeSummons: true, exhaust: true }
   },
   ariesRush: {
     id: "ariesRush", name: "先冲再说", type: "attack", rarity: "common", archetype: "aries", cost: 1,
@@ -490,6 +619,30 @@ export const CARD_ART_DEFS = {
     tone: "saturate(.88) contrast(1.02) brightness(1.1)",
     hoverTone: "saturate(.96) contrast(1.06) brightness(1.18)"
   },
+  elbowStrike: {
+    symbol: "肘", caption: "贴身破势", motif: "impact",
+    image: "assets/cards/elbow-strike-v1.webp", focus: "58% 52%"
+  },
+  cantOutrunMe: {
+    symbol: "追", caption: "走廊追逐", motif: "speed",
+    image: "assets/cards/cant-outrun-me-v1.webp", focus: "54% 52%"
+  },
+  summonPaperCrane: {
+    symbol: "召", caption: "纸鹤应声", motif: "notes",
+    image: "assets/cards/summon-paper-crane-v1.webp", focus: "50% 50%"
+  },
+  allPresent: {
+    symbol: "齐", caption: "纸灵列阵", motif: "combo",
+    image: "assets/cards/all-present-v1.webp", focus: "50% 52%"
+  },
+  coverDuty: {
+    symbol: "值", caption: "值日防线", motif: "guard",
+    image: "assets/cards/cover-duty-v1.webp", focus: "50% 54%"
+  },
+  scatterAfterClass: {
+    symbol: "散", caption: "放学散场", motif: "speed",
+    image: "assets/cards/scatter-after-class-v1.webp", focus: "50% 50%"
+  },
   ariesRush: {
     symbol: "冲", caption: "白羊先手", motif: "aries",
     image: "assets/cards/aries-rush-v1.webp", focus: "55% 55%",
@@ -578,8 +731,14 @@ export const CARD_ART_DEFS = {
 
 export const PUBLIC_REWARD_CARD_IDS = [
   "catCombo", "classSprint", "stubborn", "lendAHand", "holdOn", "airplaneMode",
-  "scratchPaper", "borrowNotes", "clearBacklog", "feedPet", "getInZone", "overthink"
+  "scratchPaper", "borrowNotes", "clearBacklog", "feedPet", "getInZone", "overthink",
+  "elbowStrike", "cantOutrunMe"
 ];
+
+export const PERSONA_CARD_IDS = Object.freeze({
+  student: Object.freeze([]),
+  summoner: Object.freeze(["summonPaperCrane", "allPresent", "coverDuty", "scatterAfterClass"])
+});
 
 export const ARCHETYPE_CARD_IDS = {
   aries: ["ariesRush", "ariesRebound", "ariesHeat", "ariesUproar"],
@@ -605,6 +764,27 @@ export const ITEM_DEFS = {
   allNighter: { id: "allNighter", name: "通宵复习计划", rarity: "boss", timing: "每回合 / 每场", art: "assets/items/all-nighter-v1.webp", text: "每回合+1能量；每场开始洗入2张紧张。" },
   referenceBooks: { id: "referenceBooks", name: "全套参考书", rarity: "boss", timing: "每回合 / 首回合", art: "assets/items/reference-books-v1.webp", text: "每回合多抽1张；每场第一回合少1能量。" }
 };
+
+export const SUPPLY_DEFS = Object.freeze({
+  campusIceTea: Object.freeze({
+    id: "campusIceTea",
+    name: "校园冰茶",
+    icon: "茶",
+    price: 35,
+    text: "战斗中使用：获得1点能量，抽1张牌。用后消耗。",
+    art: "assets/items/supply-campus-ice-tea-v1.webp",
+    effect: Object.freeze({ energy: 1, draw: 1 })
+  }),
+  crispyCone: Object.freeze({
+    id: "crispyCone",
+    name: "巧脆筒",
+    icon: "筒",
+    price: 40,
+    text: "战斗中使用：获得8点护甲，宠物充能+1。用后消耗。",
+    art: "assets/items/supply-crispy-cone-v1.webp",
+    effect: Object.freeze({ block: 8, petCharge: 1 })
+  })
+});
 
 export const REGULAR_ITEM_IDS = [
   "autoPencil", "thickNotebook", "studentId", "mistakeBook",
@@ -733,11 +913,58 @@ export const ENEMY_DEFS = {
       if (step === 2) return { name: `填空题 · ${roundLabel}`, attack: 10, block: 8 };
       return { name: `大题 · ${roundLabel}`, attack: 16 + cycle * 2 };
     }
+  },
+  rollCallWarden: {
+    id: "rollCallWarden", name: "点名巡察官", maxHp: 36, kind: "normal", routeThreat: 7,
+    subtitle: "名册一翻开，走廊里每个脚步声都像迟到证据。",
+    mechanicName: "缺席追查",
+    mechanicText: "先把待办塞进抽牌堆作为缺席标记，再按全部牌区的待办数量追加追击段数，最后整理名册获得护甲。",
+    pattern: "塞入1张待办 → 攻击4×(2+待办，最多4段) → 护甲8",
+    tip: "追查前清理手牌、抽牌堆与弃牌堆中的待办可以直接减少连击段数；整理名册回合不攻击，是集中输出和清理状态的窗口。",
+    intents: [
+      { name: "突然点名", addStatus: { id: "todo", count: 1, zone: "draw" } },
+      {
+        name: "缺席追查", attack: 4, hits: 2,
+        scaling: { type: "statusHits", statusId: "todo", maxBonus: 2, label: "缺席" }
+      },
+      { name: "整理名册", block: 8 }
+    ]
+  },
+  clubMegaphone: {
+    id: "clubMegaphone", name: "招新喇叭精", maxHp: 34, kind: "normal", routeThreat: 8,
+    subtitle: "它保证只讲一分钟，然后把整条走廊都变成了回声。",
+    mechanicName: "社团音浪",
+    mechanicText: "先用高频宣传造成三段伤害，再用报名轰炸制造紧张，最后躲进展板后获得护甲并让你走神。",
+    pattern: "攻击4×3 → 攻击6并塞紧张 → 护甲7并施加走神",
+    tip: "三段音浪会逐段消耗护甲；报名轰炸后的紧张会拖慢抽牌。展板回合没有攻击，可先清状态，再击破护甲。",
+    intents: [
+      { name: "循环广播", attack: 4, hits: 3 },
+      { name: "报名轰炸", attack: 6, addStatus: { id: "nervous", count: 1, zone: "discard" } },
+      { name: "展板掩护", block: 7, debuff: "distracted" }
+    ]
+  },
+  madMilkDragon: {
+    id: "madMilkDragon", name: "魔笑奶团龙", maxHp: 112, kind: "boss",
+    subtitle: "奶泡在它的怪笑中变成了失控的冲击波。",
+    mechanicName: "魔笑四拍",
+    mechanicText: "每四次行动固定轮转：先把紧张笑进牌堆，再连续冲撞，随后蓄起奶泡护甲，最后按紧张数量追加笑声连击。",
+    pattern: "塞入2张紧张 → 攻击5×2 → 护甲9并施加走神 → 攻击3×(3+紧张，最多6段)",
+    tip: "怪笑爆发前清理紧张可以直接减少连击段数；蓄泡回合没有攻击，是破甲和组织召唤物的窗口。",
+    intents: [
+      { name: "魔性开嗓", addStatus: { id: "nervous", count: 2, zone: "discard" } },
+      { name: "奶泡头槌", attack: 5, hits: 2 },
+      { name: "憋笑蓄泡", block: 9, debuff: "distracted" },
+      {
+        name: "哈哈哈连震", attack: 3, hits: 3,
+        scaling: { type: "statusHits", statusId: "nervous", maxBonus: 3, label: "笑压" }
+      }
+    ]
   }
 };
 
 export const NORMAL_ENEMY_IDS = Object.freeze([
-  "sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit", "groupChat", "printerJam"
+  "sleepyBug", "homeworkBlob", "alarmClock", "phoneSpirit", "groupChat", "printerJam",
+  "rollCallWarden", "clubMegaphone"
 ]);
 
 export const FIRST_SEMESTER_NORMAL_ENEMY_POOLS = Object.freeze([
@@ -785,11 +1012,36 @@ export const EVENT_DEFS = {
     sceneAlt: "放学后的校园走廊里，一只半开的纸箱静静放在窗边",
     tone: "risk"
   },
-  popQuiz: { id: "popQuiz", name: "突击测验", text: "老师突然把试卷拍在桌上。", safe: false },
-  clubRecruitment: { id: "clubRecruitment", name: "社团招新", text: "三个社团同时向你递来传单。", safe: true },
-  mealCard: { id: "mealCard", name: "捡到饭卡", text: "余额还不少，宠物也盯着它看。", safe: true },
-  campusRumor: { id: "campusRumor", name: "校园怪谈", text: "废弃教室里传出了奇怪的响声。", safe: false },
-  oldLocker: { id: "oldLocker", name: "旧储物柜", text: "柜门锈住了，里面似乎还有东西。", safe: true }
+  popQuiz: {
+    id: "popQuiz", name: "突击测验", text: "老师突然把试卷拍在桌上。", safe: false,
+    scene: "assets/scenes/event-pop-quiz-v1.webp",
+    sceneAlt: "午后的教室里，一张突击试卷被拍在课桌中央",
+    tone: "risk"
+  },
+  clubRecruitment: {
+    id: "clubRecruitment", name: "社团招新", text: "三个社团同时向你递来传单。", safe: true,
+    scene: "assets/scenes/event-club-recruitment-v1.webp",
+    sceneAlt: "傍晚校园广场的社团招新摊位，彩色传单和手绘展板铺满桌面",
+    tone: "safe"
+  },
+  mealCard: {
+    id: "mealCard", name: "捡到饭卡", text: "余额还不少，宠物也盯着它看。", safe: true,
+    scene: "assets/scenes/event-meal-card-v1.webp",
+    sceneAlt: "食堂餐桌之间，一张校园饭卡落在暖光照亮的地面上，旁边映出宠物鸭的影子",
+    tone: "safe"
+  },
+  campusRumor: {
+    id: "campusRumor", name: "校园怪谈", text: "废弃教室里传出了奇怪的响声。", safe: false,
+    scene: "assets/scenes/event-campus-rumor-v1.webp",
+    sceneAlt: "傍晚废弃教学楼的走廊尽头，一扇旧教室门敞开并透出蓝白亮光，纸张在空中飘散",
+    tone: "risk"
+  },
+  oldLocker: {
+    id: "oldLocker", name: "旧储物柜", text: "柜门锈住了，里面似乎还有东西。", safe: true,
+    scene: "assets/scenes/event-old-locker-v1.webp",
+    sceneAlt: "放学后的旧教学楼里，一排生锈储物柜中有一扇微微敞开",
+    tone: "safe"
+  }
 };
 
 export const SHOP_SCENE = Object.freeze({

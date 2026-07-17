@@ -11,11 +11,10 @@ function namedFunctionSource(name) {
   return appSource.slice(start, next === -1 ? appSource.length : next);
 }
 
-test("精英刻印页面只读取本场冻结候选，无候选时走原子跳过而不回退整副卡组", () => {
+test("精英刻印页面读取进入阶段时冻结的全部合格牌，无候选时走原子跳过", () => {
   const source = namedFunctionSource("showEnchantmentReward");
-  assert.match(source, /const usedUids = Array\.isArray\(pending\.usedCardUids\)/);
-  assert.match(source, /const cards = game\.enchantableCards\(usedUids\)/);
-  assert.doesNotMatch(source, /game\.enchantableCards\(\)/);
+  assert.match(source, /const cards = game\.eligiblePendingEliteEnchantCards\(\)/);
+  assert.doesNotMatch(source, /pending\.usedCardUids|game\.enchantableCards\(/);
   assert.match(source, /game\.resolvePendingEnchantment\(null\)/);
 });
 

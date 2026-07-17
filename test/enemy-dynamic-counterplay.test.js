@@ -23,6 +23,8 @@ test("八名敌人的每个行动步骤都有简短的当前回合建议", () =>
     phoneSpirit: 3,
     groupChat: 3,
     printerJam: 3,
+    rollCallWarden: 3,
+    clubMegaphone: 3,
     rivalShadow: 4,
     finalExam: 4
   };

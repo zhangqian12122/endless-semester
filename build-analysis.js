@@ -1,5 +1,5 @@
-import { cardDefinition } from "./game-engine.js";
-import { DEFAULT_PET_ID, PET_DEFS, PET_EGG_DEFS } from "./game-data.js";
+import { cardDefinition } from "./game-engine.js?v=1.8.62";
+import { DEFAULT_PET_ID, PET_DEFS, PET_EGG_DEFS } from "./game-data.js?v=1.8.62";
 
 const DEFAULT_PET = PET_DEFS[DEFAULT_PET_ID];
 
@@ -33,20 +33,26 @@ export function cardStyleContribution(card) {
     scores.pet += 0.55;
   }
   if (typeof definition.cost === "number" && definition.cost >= 2) counts.highCost += 1;
-  if (effect.damage) scores.offense += 2 + Math.min(4, (effect.damage * (effect.hits || 1)) / 5);
+  const expectedDamage = (effect.damage || 0) + (effect.damagePerSummon || 0) * 2;
+  if (expectedDamage) scores.offense += 2 + Math.min(4, (expectedDamage * (effect.hits || 1)) / 5);
   if (effect.attackBonus || effect.doubleNextAttack) scores.offense += 4;
-  if (effect.block) {
+  const expectedBlock = (effect.block || 0) + (effect.blockPerSummon || 0) * 2;
+  if (expectedBlock) {
     counts.guards += 1;
-    scores.defense += 2 + Math.min(4, effect.block / 5);
+    scores.defense += 2 + Math.min(4, expectedBlock / 5);
   }
+  if (effect.enemyAttackDown) scores.defense += 2 + effect.enemyAttackDown;
+  if (effect.enemyExposed) scores.offense += 2 + effect.enemyExposed;
   if (effect.clearDistracted || effect.exhaustStatuses) scores.defense += 2;
   if (effect.draw || effect.nextDrawBonus || definition.cost === 0 || effect.discard) {
     counts.cycleCards += 1;
     scores.cycle += (effect.draw || 0) * 2 + (effect.nextDrawBonus || 0) * 1.5 + (definition.cost === 0 ? 1.5 : 0) + (effect.discard ? 1 : 0);
   }
-  if (effect.petCharge) {
+  if (effect.petCharge || effect.summon || effect.damagePerSummon || effect.blockPerSummon || effect.consumeSummons) {
     counts.petCards += 1;
-    scores.pet += 7 * effect.petCharge;
+    scores.pet += 7 * (effect.petCharge || 0) + (effect.summon || 0) * 6
+      + (effect.damagePerSummon || 0) + (effect.blockPerSummon || 0)
+      + (effect.consumeSummons ? 3 : 0);
   }
   return { scores, counts };
 }

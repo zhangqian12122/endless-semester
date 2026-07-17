@@ -6,8 +6,13 @@ import {
   PET_DEFS,
   PET_EGG_DEFS,
   PET_TALENT_DEFS
-} from "../game-data.js";
-import { CHALLENGE_REWARD_DEFS, SemesterGame, TAROT_DEFS } from "../game-engine.js";
+} from "../game-data.js?v=1.8.62";
+import {
+  CHALLENGE_REWARD_DEFS,
+  CHALLENGE_RULES,
+  SemesterGame,
+  TAROT_DEFS
+} from "../game-engine.js";
 
 function finishCombat(game, result = "won", enemyId = "alarmClock") {
   game.startCombat(enemyId);
@@ -18,11 +23,37 @@ function finishCombat(game, result = "won", enemyId = "alarmClock") {
 }
 
 function prepareChallenge(game, enemyId = "sleepyBug") {
+  if (!game.tarotId) game.chooseTarot("chariot");
   game.week = 5;
-  game.startCombat(enemyId, { challenge: true, affix: "deadline" });
+  game.semesterPlan[game.week] = [{
+    type: "combat",
+    enemy: enemyId,
+    label: "测试挑战",
+    challenge: true,
+    affix: "deadline"
+  }];
+  const pendingStart = game.prepareCombatStart(enemyId, "challenge", {
+    challenge: true,
+    hpMultiplier: CHALLENGE_RULES.hpMultiplier,
+    damageMultiplier: CHALLENGE_RULES.damageMultiplier,
+    affix: "deadline"
+  });
+  assert.ok(pendingStart);
+  game.startCombat(pendingStart.enemyId, pendingStart.modifiers);
   game.combat.enemy.hp = 0;
   game.checkCombatEnd();
-  return game.prepareChallengeCombatReward({ affix: "deadline" });
+  assert.equal(game.completePendingCombatStart(), true);
+  return game.prepareChallengeCombatReward({ affix: "deadline", enemyId });
+}
+
+function prepareHatchRest(game, after = 0) {
+  if (!game.tarotId) game.chooseTarot("chariot");
+  const restWeeks = game.semesterPlan
+    .map((nodes, week) => ({ nodes, week }))
+    .filter(({ nodes, week }) => week > 0 && week < 16 && nodes.some((node) => node.type === "rest"))
+    .map(({ week }) => week);
+  game.week = restWeeks.find((week) => week > after) || restWeeks[0];
+  return game.prepareRest();
 }
 
 test("开局宠物只从生涯解锁列表中选择，并在本局保持同一活动伙伴", () => {
@@ -149,39 +180,50 @@ test("非瞌睡虫、已有幼崽或孵化位占用时，伙伴路线固定回�
   assert.equal(occupiedPending.rewardVariant, "bond");
   assert.equal(occupied.choosePendingChallengeReward("pet"), true);
   assert.equal(occupied.pet.bond, occupiedBond + 2);
-  assert.deepEqual(occupied.incubator, { eggId: "sleepyBugEgg", battles: 1 });
+  assert.deepEqual(occupied.incubator, { eggId: "sleepyBugEgg", battles: 0 });
 });
 
-test("困困虫蛋只在三场胜利后推进并孵化，且不会自动替换参战宠物", () => {
+test("困困虫蛋只在三次休息孵化后解锁，且不会自动替换参战宠物", () => {
   const game = new SemesterGame(708, "cancer");
   assert.equal(PET_EGG_DEFS.sleepyBugEgg.requiredCombats, 3);
   game.claimEgg("sleepyBugEgg");
 
-  const first = finishCombat(game);
+  const combat = finishCombat(game);
+  assert.equal(combat.petIncubationEvent, null);
+  assert.deepEqual(game.incubator, { eggId: "sleepyBugEgg", battles: 0 });
+
+  let previousWeek = 0;
+  prepareHatchRest(game, previousWeek);
+  previousWeek = game.week;
+  const first = game.resolveRestHatch();
   assert.deepEqual(game.incubator, { eggId: "sleepyBugEgg", battles: 1 });
-  assert.deepEqual(first.petIncubationEvent, {
+  assert.deepEqual(first, {
     type: "progress",
     eggId: "sleepyBugEgg",
     petId: "sleepyBugCub",
     battles: 1,
     requiredCombats: 3
   });
-  game.checkCombatEnd();
+  assert.equal(game.resolveRestHatch(), null);
+  game.completePendingRest();
   assert.deepEqual(game.incubator, { eggId: "sleepyBugEgg", battles: 1 });
 
-  const second = finishCombat(game);
-  assert.equal(second.petIncubationEvent.battles, 2);
+  prepareHatchRest(game, previousWeek);
+  previousWeek = game.week;
+  const second = game.resolveRestHatch();
+  assert.equal(second.battles, 2);
+  game.completePendingRest();
   assert.deepEqual(game.incubator, { eggId: "sleepyBugEgg", battles: 2 });
 
-  const third = finishCombat(game);
-  assert.equal(third.petIncubationEvent.type, "hatched");
-  assert.equal(third.petIncubationEvent.petId, "sleepyBugCub");
+  prepareHatchRest(game, previousWeek);
+  const third = game.resolveRestHatch();
+  assert.equal(third.type, "hatched");
+  assert.equal(third.petId, "sleepyBugCub");
   assert.equal(game.incubator, null);
   assert.equal(game.hasPet("sleepyBugCub"), true);
   assert.equal(game.activePetId, DEFAULT_PET_ID);
   assert.equal(game.pet, game.pets[DEFAULT_PET_ID]);
-  assert.equal(game.combatSummary().hatchedPetId, "sleepyBugCub");
-  assert.deepEqual(game.combatSummary().petIncubationEvent, third.petIncubationEvent);
+  assert.deepEqual(game.pendingRest, { stage: "hatch", cardUids: [], ...third });
 });
 
 test("战斗失败不推进也不倒扣孵化进度", () => {

@@ -1,4 +1,4 @@
-import { ACHIEVEMENT_DEFS, DEFAULT_PET_ID, ENEMY_DEFS, NORMAL_ENEMY_IDS, PET_DEFS } from "./game-data.js";
+import { ACHIEVEMENT_DEFS, DEFAULT_PET_ID, ENEMY_DEFS, NORMAL_ENEMY_IDS, PERSONA_DEFS, PET_DEFS } from "./game-data.js?v=1.8.62";
 
 export const CAREER_TRIAL_IDS = Object.freeze(["aries", "gemini", "cancer"]);
 
@@ -12,6 +12,8 @@ export function createCareerProfile() {
     discoveredEnemies: [],
     unlockedAchievements: [],
     unlockedPetIds: [DEFAULT_PET_ID],
+    unlockedPersonaIds: ["student"],
+    highestSemesterCompleted: 0,
     combatsCompleted: 0,
     combatsWon: 0,
     cleanWins: 0,
@@ -42,6 +44,20 @@ export function normalizeCareerProfile(data) {
     DEFAULT_PET_ID,
     ...(Array.isArray(data.unlockedPetIds) ? data.unlockedPetIds : [])
   ].filter((id) => PET_DEFS[id])));
+  profile.highestSemesterCompleted = safeCount(data.highestSemesterCompleted);
+  profile.unlockedPersonaIds = Array.from(new Set([
+    "student",
+    ...(Array.isArray(data.unlockedPersonaIds) ? data.unlockedPersonaIds : [])
+  ].filter((id) => (
+    PERSONA_DEFS[id]
+    && profile.highestSemesterCompleted >= PERSONA_DEFS[id].unlockSemester
+  ))));
+  for (const persona of Object.values(PERSONA_DEFS)) {
+    if (profile.highestSemesterCompleted >= persona.unlockSemester
+      && !profile.unlockedPersonaIds.includes(persona.id)) {
+      profile.unlockedPersonaIds.push(persona.id);
+    }
+  }
   for (const key of ["combatsCompleted", "combatsWon", "cleanWins", "quickWins", "challengeWins", "eliteWins", "bossWins", "petUses", "cardsPlayed"]) {
     profile[key] = safeCount(data[key]);
   }
@@ -49,6 +65,30 @@ export function normalizeCareerProfile(data) {
     profile.trialCompletions[id] = safeCount(data.trialCompletions?.[id]);
   }
   return profile;
+}
+
+export function canSelectPersona(profile, personaId) {
+  if (personaId === "student") return true;
+  const persona = PERSONA_DEFS[personaId];
+  return Boolean(
+    persona
+    && safeCount(profile?.highestSemesterCompleted) >= persona.unlockSemester
+    && profile?.unlockedPersonaIds?.includes(personaId)
+  );
+}
+
+export function recordSemesterCompletion(profile, semester) {
+  const completed = Math.max(0, Math.floor(Number(semester) || 0));
+  profile.highestSemesterCompleted = Math.max(safeCount(profile.highestSemesterCompleted), completed);
+  profile.unlockedPersonaIds = Array.from(new Set([
+    "student",
+    ...(Array.isArray(profile.unlockedPersonaIds) ? profile.unlockedPersonaIds : [])
+  ].filter((id) => PERSONA_DEFS[id])));
+  for (const persona of Object.values(PERSONA_DEFS)) {
+    if (profile.highestSemesterCompleted >= persona.unlockSemester
+      && !profile.unlockedPersonaIds.includes(persona.id)) profile.unlockedPersonaIds.push(persona.id);
+  }
+  return [...profile.unlockedPersonaIds];
 }
 
 export function trialCollectionProgress(profile) {
